@@ -1,0 +1,110 @@
+version: "3.8"  
+services:
+  server:
+    build: .
+    restart: on-failure:10
+    environment:
+      GROOVE_CONFIG: /config.yml
+    ports:
+      - 4000:4000
+    volumes:
+      # - ./hide/certs:/certs/
+      - ./hide/configs/config_docker.yml:/config.yml
+      # - ./hide/logs/groove.log:/logs/groove.log
+    networks: 
+      - storage
+      - metrics
+    depends_on:
+      - dgraph
+      - memcached
+      - postgres
+      - redis
+          
+  dgraph:
+    image: dgraph/standalone:v21.03.0
+    restart: on-failure:5
+    expose:
+      - 9080 # Dgraph Zero GRPC api
+    ports:
+      - 8080:8080 # Ratel UI
+    networks:
+      - storage
+              
+  memcached:
+    image: memcached:1.6.9-alpine
+    restart: on-failure:5
+    ports:
+      - 11211:11211
+    networks:
+      - storage
+
+  postgres:
+    image: postgres:13.3-alpine
+    command: -c 'config_file=/etc/postgresql/postgresql.conf'
+    restart: on-failure:5
+    environment:
+      POSTGRES_USER: groove # A user and a database are created with this name
+      POSTGRES_PASSWORD: groove
+    ports:
+      - 5432:5432
+    volumes: 
+      - ./hide/configs/postgres.conf:/etc/postgresql/postgresql.conf
+    #   - ./hide/data/postgres:/var/lib/postgresql/data
+    networks: 
+      - storage
+
+  redis:
+    image: redis:6.2.4-alpine
+    restart: on-failure:5
+    ports:
+      - 6379:6379
+    volumes:
+      - ./hide/configs/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      #   - ./hide/data/redis:/data
+    networks:
+      - storage
+      # - redis
+
+  prometheus:
+    image: prom/prometheus:latest
+    restart: on-failure:5
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    ports:
+      - 9090:9090
+    volumes:
+      - ./hide/configs/prometheus.yml/:/etc/prometheus/prometheus.yml:ro
+      # - ./hide/certs:/certs/
+      # - ./hide/data/prometheus:/prometheus
+    networks: 
+      - metrics
+
+  # Enable when necessary, works right away
+  # node_exporter:
+  #   image: quay.io/prometheus/node-exporter:latest
+  #   restart: unless-stopped
+  #   command:
+  #     - '--path.rootfs=/host'
+  #   expose:
+  #   - 9100
+  #   networks:
+  #     - metrics
+
+  # Enable when necessary, works right away
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   restart: on-failure:5
+  #   ports:
+  #     - 3000:3000
+  #   # volumes:
+  #     # - ./hide/data/grafana:/var/lib/grafana
+  #   networks:
+  #     - metrics
+
+networks:
+  storage:
+  metrics:
+  # redis:

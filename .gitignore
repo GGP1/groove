@@ -1,0 +1,17 @@
+# Profiling files
+*.out
+*.pprof
+*.prof
+
+# Test binaries
+*.test
+
+# Windows binaries
+*.exe
+
+# Private files
+hide
+
+# IDEs
+.vscode
+.idea

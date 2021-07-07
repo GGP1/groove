@@ -1,0 +1,19 @@
+development: true
+database:
+  host: localhost
+  port: 5432
+  name: postgres
+  username: postgres 
+  password: password
+server:
+  host: localhost
+  port: 4444
+  tls:
+    keyfile: key.pem
+    cerfile: cert.pem
+  timeout:
+    read: 1
+    write: 1
+    shutdown: 5
+  secrets:
+    encryption: Nf)GW( 8T\3UO/Aw4juCqI{5_6&r7.MP
