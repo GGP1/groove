@@ -13,10 +13,14 @@ import (
 
 var errInvalidUUIDFormat = errors.New("invalid UUID format")
 
+const maxResults = 50
+
 // Object types
 const (
-	User = iota
+	User obj = iota
 	Event
+	Media
+	Product
 )
 
 type obj uint8
@@ -46,24 +50,13 @@ func ParseQuery(rawQuery string, obj obj) (Query, error) {
 		// As the other fields won't be used, just return here
 		return Query{Count: count}, nil
 	}
-	var fields []string
-	switch obj {
-	case User:
-		fields = split(values.Get("user.fields"))
-		if err := validateUserFields(fields); err != nil {
-			return Query{}, err
-		}
-	case Event:
-		fields = split(values.Get("event.fields"))
-		if err := validateEventFields(fields); err != nil {
-			return Query{}, err
-		}
-	default:
-		// Just in case obj is not valid
-		fields = nil
+
+	fields, err := parseFields(obj, values)
+	if err != nil {
+		return Query{}, err
 	}
-	lookupID := values.Get("lookup.id")
-	if lookupID != "" {
+
+	if lookupID := values.Get("lookup.id"); lookupID != "" {
 		if err := ValidateUUID(lookupID); err != nil {
 			return Query{}, err
 		}
@@ -71,11 +64,11 @@ func ParseQuery(rawQuery string, obj obj) (Query, error) {
 		return Query{Fields: fields, LookupID: lookupID}, nil
 	}
 
-	cursor, err := parseInt(values.Get("cursor"), "0", 200)
+	cursor, err := parseInt(values.Get("cursor"), "0", 0)
 	if err != nil {
 		return Query{}, errors.Wrap(err, "cursor")
 	}
-	limit, err := parseInt(values.Get("limit"), "20", 100)
+	limit, err := parseInt(values.Get("limit"), "20", maxResults)
 	if err != nil {
 		return Query{}, errors.Wrap(err, "limit")
 	}
@@ -86,18 +79,6 @@ func ParseQuery(rawQuery string, obj obj) (Query, error) {
 		Fields: fields,
 	}
 	return params, nil
-}
-
-// GetEventPredicate validates that the predicate passed corresponds to an event node and returns it.
-func GetEventPredicate(params httprouter.Params) (string, error) {
-	predicate := params.ByName("predicate")
-	switch predicate {
-	case "banned", "confirmed", "invited", "liked_by":
-		return predicate, nil
-	default:
-		// Predicates accepted: banned, confirmed, invited, liked_by
-		return "", errors.Errorf("invalid predicate (%s).", predicate)
-	}
 }
 
 // UUIDFromCtx takes the id parameter from context and validates it.
@@ -170,6 +151,41 @@ func ValidateUUIDs(ids ...string) error {
 	return nil
 }
 
+func parseFields(obj obj, values url.Values) ([]string, error) {
+	var fields []string
+	switch obj {
+	case User:
+		fields = split(values.Get("user.fields"))
+		if err := validateUserFields(fields); err != nil {
+			return nil, err
+		}
+
+	case Event:
+		fields = split(values.Get("event.fields"))
+		if err := validateEventFields(fields); err != nil {
+			return nil, err
+		}
+
+	case Media:
+		fields = split(values.Get("media.fields"))
+		if err := validateMediaFields(fields); err != nil {
+			return nil, err
+		}
+
+	case Product:
+		fields = split(values.Get("product.fields"))
+		if err := validateProductFields(fields); err != nil {
+			return nil, err
+		}
+
+	default:
+		// Just in case obj is not valid
+		fields = nil
+	}
+
+	return fields, nil
+}
+
 // validateEventFields validates the fields requested.
 func validateEventFields(fields []string) error {
 	if fields == nil {
@@ -179,40 +195,51 @@ func validateEventFields(fields []string) error {
 		switch f {
 		case "":
 			return errors.Errorf("invalid empty field at index %d", i)
-		case "id":
-			continue
-		case "creator_id":
-			continue
-		case "created_at":
-			continue
-		case "updated_at":
-			continue
-		case "name":
-			continue
-		case "event_id":
-			continue
-		case "type":
-			continue
-		case "public":
-			continue
-		case "virtual":
-			continue
-		case "ticket_cost":
-			continue
-		case "slots":
-			continue
-		case "attending":
-			continue
-		case "start_time":
-			continue
-		case "end_time":
-			continue
-		case "min_age":
+		case "id", "creator_id", "created_at", "updated_at", "name", "event_id",
+			"type", "public", "virtual", "ticket_cost", "slots", "attending",
+			"start_time", "end_time", "min_age":
 			continue
 		default:
 			return errors.Errorf("unrecognized field (%s)", f)
 		}
 	}
+	return nil
+}
+
+func validateMediaFields(fields []string) error {
+	if fields == nil {
+		return nil
+	}
+	for i, f := range fields {
+		switch f {
+		case "":
+			return errors.Errorf("invalid empty field at index %d", i)
+		case "id", "event_id", "url", "created_at":
+			continue
+		default:
+			return errors.Errorf("unrecognized field %q", f)
+		}
+	}
+
+	return nil
+}
+
+func validateProductFields(fields []string) error {
+	if fields == nil {
+		return nil
+	}
+	for i, f := range fields {
+		switch f {
+		case "":
+			return errors.Errorf("invalid empty field at index %d", i)
+		case "id", "event_id", "stock", "brand", "type", "description",
+			"discount", "taxes", "subtotal", "total", "created_at":
+			continue
+		default:
+			return errors.Errorf("unrecognized field %q", f)
+		}
+	}
+
 	return nil
 }
 
@@ -225,29 +252,9 @@ func validateUserFields(fields []string) error {
 		switch f {
 		case "":
 			return errors.Errorf("invalid empty field at index %d", i)
-		case "id":
-			continue
-		case "created_at":
-			continue
-		case "updated_at":
-			continue
-		case "name":
-			continue
-		case "user_id":
-			continue
-		case "username":
-			continue
-		case "email":
-			continue
-		case "description":
-			continue
-		case "birth_date":
-			continue
-		case "profile_image_url":
-			continue
-		case "premium":
-			continue
-		case "verified_email":
+		case "id", "created_at", "updated_at", "name", "user_id", "username",
+			"email", "description", "birth_date", "profile_image_url",
+			"premium", "private", "verified_email":
 			continue
 		default:
 			return errors.Errorf("unrecognized field %q", f)
@@ -271,7 +278,7 @@ func parseBool(str string) (bool, error) {
 	case "", "false", "False", "FALSE", "f", "F", "0":
 		return false, nil
 	}
-	return false, errors.Errorf("invalid bool %q", str)
+	return false, errors.Errorf("invalid boolean (%q)", str)
 }
 
 // parseInt parses an integer from a url value and validates it.
