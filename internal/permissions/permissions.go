@@ -58,6 +58,10 @@ type Set struct {
 
 // Require makes sure the user has all the permissions required
 func Require(userPermKeys map[string]struct{}, required ...string) error {
+	if _, ok := userPermKeys[All]; ok {
+		return nil
+	}
+
 	for _, r := range required {
 		if _, ok := userPermKeys[r]; !ok {
 			return errors.Errorf("permission key %q missing", r)
