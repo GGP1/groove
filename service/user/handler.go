@@ -35,7 +35,7 @@ func NewHandler(service Service, cache *memcache.Client) Handler {
 	}
 }
 
-// Block ..
+// Block executes a block from the user passed to another one.
 func (h *Handler) Block() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -47,13 +47,13 @@ func (h *Handler) Block() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		id := httprouter.ParamsFromContext(ctx).ByName("id")
-		if err := params.ValidateUUIDs(id, reqBody.BlockedID); err != nil {
+		userID := httprouter.ParamsFromContext(ctx).ByName("id")
+		if err := params.ValidateUUIDs(userID, reqBody.BlockedID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		if err := h.service.Block(ctx, id, reqBody.BlockedID); err != nil {
+		if err := h.service.Block(ctx, userID, reqBody.BlockedID); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -62,13 +62,15 @@ func (h *Handler) Block() http.HandlerFunc {
 			ID        string `json:"id,omitempty"`
 			BlockedID string `json:"blocked_id,omitempty"`
 		}
-		response.JSON(w, http.StatusOK, resp{ID: id, BlockedID: reqBody.BlockedID})
+		response.JSON(w, http.StatusOK, resp{ID: userID, BlockedID: reqBody.BlockedID})
 	}
 }
 
-// Create ..
+// Create creates a new user.
 func (h *Handler) Create() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
 		var user CreateUser
 		if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
@@ -81,13 +83,13 @@ func (h *Handler) Create() http.HandlerFunc {
 			return
 		}
 
-		id := uuid.NewString()
-		if err := h.service.Create(r.Context(), id, user); err != nil {
+		userID := uuid.NewString()
+		if err := h.service.Create(ctx, userID, user); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		apiKey, err := apikey.New(id)
+		apiKey, err := apikey.New(userID)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -97,31 +99,31 @@ func (h *Handler) Create() http.HandlerFunc {
 			ID     string `json:"id,omitempty"`
 			APIKey string `json:"api_key,omitempty"`
 		}
-		response.JSON(w, http.StatusCreated, resp{ID: id, APIKey: apiKey})
+		response.JSON(w, http.StatusCreated, resp{ID: userID, APIKey: apiKey})
 	}
 }
 
-// Delete ..
+// Delete removes a user from the system.
 func (h *Handler) Delete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		userID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		if err := h.service.Delete(ctx, id); err != nil {
+		if err := h.service.Delete(ctx, userID); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, id)
+		response.JSONMessage(w, http.StatusOK, userID)
 	}
 }
 
-// Follow ..
+// Follow executes the follow from the user passed to another one.
 func (h *Handler) Follow() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -133,13 +135,13 @@ func (h *Handler) Follow() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		id := httprouter.ParamsFromContext(ctx).ByName("id")
-		if err := params.ValidateUUIDs(id, reqBody.FollowedID); err != nil {
+		userID := httprouter.ParamsFromContext(ctx).ByName("id")
+		if err := params.ValidateUUIDs(userID, reqBody.FollowedID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		if err := h.service.Follow(ctx, id, reqBody.FollowedID); err != nil {
+		if err := h.service.Follow(ctx, userID, reqBody.FollowedID); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -149,27 +151,28 @@ func (h *Handler) Follow() http.HandlerFunc {
 			FollowedID    string `json:"followed_id,omitempty"`
 			PendingFollow bool   `json:"pending_follow,omitempty"` // If the follow was already performed or not
 		}
-		response.JSON(w, http.StatusOK, resp{ID: id, FollowedID: reqBody.FollowedID})
+		response.JSON(w, http.StatusOK, resp{ID: userID, FollowedID: reqBody.FollowedID})
 	}
 }
 
-// GetBannedEvents ..
+// GetBannedEvents gets the events from which the user passed is banned.
 func (h *Handler) GetBannedEvents() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		userID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
+
 		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		events, err := h.service.GetConfirmedEvents(ctx, id, params)
+		events, err := h.service.GetConfirmedEvents(ctx, userID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -179,15 +182,17 @@ func (h *Handler) GetBannedEvents() http.HandlerFunc {
 	}
 }
 
-// GetBlocked ..
+// GetBlocked gets the users the user passed blocked.
 func (h *Handler) GetBlocked() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		id, err := params.UUIDFromCtx(ctx)
+
+		userID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
+
 		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
@@ -195,7 +200,7 @@ func (h *Handler) GetBlocked() http.HandlerFunc {
 		}
 
 		if params.Count {
-			count, err := h.service.GetBlockedCount(ctx, id)
+			count, err := h.service.GetBlockedCount(ctx, userID)
 			if err != nil {
 				response.Error(w, http.StatusInternalServerError, err)
 				return
@@ -205,7 +210,7 @@ func (h *Handler) GetBlocked() http.HandlerFunc {
 			return
 		}
 
-		blocked, err := h.service.GetBlocked(ctx, id, params)
+		blocked, err := h.service.GetBlocked(ctx, userID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -215,15 +220,17 @@ func (h *Handler) GetBlocked() http.HandlerFunc {
 	}
 }
 
-// GetBlockedBy ..
+// GetBlockedBy gets the users that blocked the user passed.
 func (h *Handler) GetBlockedBy() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		id, err := params.UUIDFromCtx(ctx)
+
+		userID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
+
 		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
@@ -231,7 +238,7 @@ func (h *Handler) GetBlockedBy() http.HandlerFunc {
 		}
 
 		if params.Count {
-			count, err := h.service.GetBlockedByCount(ctx, id)
+			count, err := h.service.GetBlockedByCount(ctx, userID)
 			if err != nil {
 				response.Error(w, http.StatusInternalServerError, err)
 				return
@@ -241,7 +248,7 @@ func (h *Handler) GetBlockedBy() http.HandlerFunc {
 			return
 		}
 
-		blockedBy, err := h.service.GetBlockedBy(ctx, id, params)
+		blockedBy, err := h.service.GetBlockedBy(ctx, userID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -251,38 +258,38 @@ func (h *Handler) GetBlockedBy() http.HandlerFunc {
 	}
 }
 
-// GetByID ..
+// GetByID gets a user by its id.
 func (h *Handler) GetByID() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		userID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		if item, err := h.cache.Get(id); err == nil {
+		if item, err := h.cache.Get(userID); err == nil {
 			response.EncodedJSON(w, item.Value)
 			return
 		}
 
-		user, err := h.service.GetByID(ctx, id)
+		user, err := h.service.GetByID(ctx, userID)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		response.JSONAndCache(h.cache, w, id, user)
+		response.JSONAndCache(h.cache, w, userID, user)
 	}
 }
 
-// GetConfirmedEvents ..
+// GetConfirmedEvents gets the events the user is attending to.
 func (h *Handler) GetConfirmedEvents() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		userID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -293,7 +300,7 @@ func (h *Handler) GetConfirmedEvents() http.HandlerFunc {
 			return
 		}
 
-		events, err := h.service.GetConfirmedEvents(ctx, id, params)
+		events, err := h.service.GetConfirmedEvents(ctx, userID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -303,11 +310,11 @@ func (h *Handler) GetConfirmedEvents() http.HandlerFunc {
 	}
 }
 
-// GetFollowers ..
+// GetFollowers get the users following the user passed.
 func (h *Handler) GetFollowers() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		id, err := params.UUIDFromCtx(ctx)
+		userID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -319,7 +326,7 @@ func (h *Handler) GetFollowers() http.HandlerFunc {
 		}
 
 		if params.Count {
-			count, err := h.service.GetFollowersCount(ctx, id)
+			count, err := h.service.GetFollowersCount(ctx, userID)
 			if err != nil {
 				response.Error(w, http.StatusInternalServerError, err)
 				return
@@ -329,7 +336,7 @@ func (h *Handler) GetFollowers() http.HandlerFunc {
 			return
 		}
 
-		followers, err := h.service.GetFollowers(ctx, id, params)
+		followers, err := h.service.GetFollowers(ctx, userID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -339,11 +346,11 @@ func (h *Handler) GetFollowers() http.HandlerFunc {
 	}
 }
 
-// GetFollowing ..
+// GetFollowing gets the users followed by the user passed.
 func (h *Handler) GetFollowing() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		id, err := params.UUIDFromCtx(ctx)
+		userID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -355,7 +362,7 @@ func (h *Handler) GetFollowing() http.HandlerFunc {
 		}
 
 		if params.Count {
-			count, err := h.service.GetFollowingCount(ctx, id)
+			count, err := h.service.GetFollowingCount(ctx, userID)
 			if err != nil {
 				response.Error(w, http.StatusInternalServerError, err)
 				return
@@ -365,7 +372,7 @@ func (h *Handler) GetFollowing() http.HandlerFunc {
 			return
 		}
 
-		following, err := h.service.GetFollowing(ctx, id, params)
+		following, err := h.service.GetFollowing(ctx, userID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -375,12 +382,12 @@ func (h *Handler) GetFollowing() http.HandlerFunc {
 	}
 }
 
-// GetHostedEvents ..
+// GetHostedEvents gets the events hosted by the user.
 func (h *Handler) GetHostedEvents() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		userID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -391,7 +398,7 @@ func (h *Handler) GetHostedEvents() http.HandlerFunc {
 			return
 		}
 
-		events, err := h.service.GetHostedEvents(ctx, id, params)
+		events, err := h.service.GetHostedEvents(ctx, userID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -401,12 +408,12 @@ func (h *Handler) GetHostedEvents() http.HandlerFunc {
 	}
 }
 
-// GetInvitedEvents ..
+// GetInvitedEvents gets the events that the user is invited to.
 func (h *Handler) GetInvitedEvents() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		userID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -417,7 +424,7 @@ func (h *Handler) GetInvitedEvents() http.HandlerFunc {
 			return
 		}
 
-		events, err := h.service.GetInvitedEvents(ctx, id, params)
+		events, err := h.service.GetInvitedEvents(ctx, userID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -427,12 +434,12 @@ func (h *Handler) GetInvitedEvents() http.HandlerFunc {
 	}
 }
 
-// GetLikedEvents ..
+// GetLikedEvents gets the events liked by a user.
 func (h *Handler) GetLikedEvents() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		userID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -443,7 +450,7 @@ func (h *Handler) GetLikedEvents() http.HandlerFunc {
 			return
 		}
 
-		events, err := h.service.GetLikedEvents(ctx, id, params)
+		events, err := h.service.GetLikedEvents(ctx, userID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -453,7 +460,7 @@ func (h *Handler) GetLikedEvents() http.HandlerFunc {
 	}
 }
 
-// Search ..
+// Search performs a user search.
 func (h *Handler) Search() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -475,7 +482,7 @@ func (h *Handler) Search() http.HandlerFunc {
 	}
 }
 
-// Unblock ..
+// Unblock removes the block from the user passed to another.
 func (h *Handler) Unblock() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -487,13 +494,13 @@ func (h *Handler) Unblock() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		id := httprouter.ParamsFromContext(ctx).ByName("id")
-		if err := params.ValidateUUIDs(id, reqBody.BlockedID); err != nil {
+		userID := httprouter.ParamsFromContext(ctx).ByName("id")
+		if err := params.ValidateUUIDs(userID, reqBody.BlockedID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		if err := h.service.Unblock(ctx, id, reqBody.BlockedID); err != nil {
+		if err := h.service.Unblock(ctx, userID, reqBody.BlockedID); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -502,11 +509,11 @@ func (h *Handler) Unblock() http.HandlerFunc {
 			ID          string `json:"id,omitempty"`
 			UnblockedID string `json:"unblocked_id,omitempty"`
 		}
-		response.JSON(w, http.StatusOK, resp{ID: id, UnblockedID: reqBody.BlockedID})
+		response.JSON(w, http.StatusOK, resp{ID: userID, UnblockedID: reqBody.BlockedID})
 	}
 }
 
-// Unfollow ..
+// Unfollow removes the follow from the user passed to another.
 func (h *Handler) Unfollow() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -518,13 +525,13 @@ func (h *Handler) Unfollow() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		id := httprouter.ParamsFromContext(ctx).ByName("id")
-		if err := params.ValidateUUIDs(id, reqBody.FollowedID); err != nil {
+		userID := httprouter.ParamsFromContext(ctx).ByName("id")
+		if err := params.ValidateUUIDs(userID, reqBody.FollowedID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		if err := h.service.Unfollow(ctx, id, reqBody.FollowedID); err != nil {
+		if err := h.service.Unfollow(ctx, userID, reqBody.FollowedID); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -533,16 +540,16 @@ func (h *Handler) Unfollow() http.HandlerFunc {
 			ID           string `json:"id,omitempty"`
 			UnfollowedID string `json:"unfollowed_id,omitempty"`
 		}
-		response.JSON(w, http.StatusOK, resp{ID: id, UnfollowedID: reqBody.FollowedID})
+		response.JSON(w, http.StatusOK, resp{ID: userID, UnfollowedID: reqBody.FollowedID})
 	}
 }
 
-// Update ..
+// Update updates a user.
 func (h *Handler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		userID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -560,11 +567,11 @@ func (h *Handler) Update() http.HandlerFunc {
 			return
 		}
 
-		if err := h.service.Update(ctx, id, uptUser); err != nil {
+		if err := h.service.Update(ctx, userID, uptUser); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, id)
+		response.JSONMessage(w, http.StatusOK, userID)
 	}
 }

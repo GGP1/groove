@@ -138,6 +138,8 @@ type UpdateEvent struct {
 // User represents a user in the context of an event.
 //
 // Use pointers to distinguish default values.
+//
+// TODO: add RoleName string? Remember to add it to the table as well
 type User struct {
 	ID              string     `json:"id,omitempty"`
 	Name            string     `json:"name,omitempty"`
@@ -182,9 +184,10 @@ func (r Role) Validate() error {
 
 // Permission represents a privilege inside an event.
 type Permission struct {
-	Name        string `json:"name,omitempty"`
-	Key         string `json:"key,omitempty"`
-	Description string `json:"description,omitempty"`
+	Name        string     `json:"name,omitempty"`
+	Key         string     `json:"key,omitempty"`
+	Description string     `json:"description,omitempty"`
+	CreatedAt   *time.Time `json:"created_at,omitempty" db:"created_at"`
 }
 
 // Validate ..
@@ -227,6 +230,7 @@ type Location struct {
 
 // Validate ..
 func (l Location) Validate() error {
+	// TODO: remove from main struct and put it in the events_locations table
 	if l.Virtual == nil {
 		return errors.New("virtual required")
 	}
@@ -250,9 +254,10 @@ func (l Location) Validate() error {
 
 // Media reprensents images, videos and audio.
 type Media struct {
-	ID      string `json:"id,omitempty"`
-	EventID string `json:"event_id,omitempty" db:"event_id"`
-	URL     string `json:"url,omitempty"`
+	ID        string     `json:"id,omitempty"`
+	EventID   string     `json:"event_id,omitempty" db:"event_id"`
+	URL       string     `json:"url,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty" db:"created_at"`
 }
 
 // Validate ..
@@ -270,16 +275,17 @@ func (m Media) Validate() error {
 //
 // Amounts to be provided in a currency’s smallest unit.
 type Product struct {
-	ID          string `json:"id,omitempty"`
-	EventID     string `json:"event_id" db:"event_id"`
-	Stock       uint   `json:"stock"`
-	Brand       string `json:"brand"`
-	Type        string `json:"type"`
-	Description string `json:"description"`
-	Discount    int64  `json:"discount"`
-	Taxes       int64  `json:"taxes"`
-	Subtotal    int64  `json:"subtotal"`
-	Total       int64  `json:"total"`
+	ID          string     `json:"id,omitempty"`
+	EventID     string     `json:"event_id" db:"event_id"`
+	Stock       uint       `json:"stock"`
+	Brand       string     `json:"brand"`
+	Type        string     `json:"type"`
+	Description string     `json:"description"`
+	Discount    int64      `json:"discount"`
+	Taxes       int64      `json:"taxes"`
+	Subtotal    int64      `json:"subtotal"`
+	Total       int64      `json:"total"`
+	CreatedAt   *time.Time `json:"created_at,omitempty" db:"created_at"`
 }
 
 // Validate ..
@@ -301,8 +307,9 @@ func (p Product) Validate() error {
 
 // Report represents a report made by a user on an event/user
 type Report struct {
-	EventID string `json:"event_id,omitempty" db:"event_id"` // TODO: make the report for other users as well?
-	UserID  string `json:"user_id,omitempty" db:"user_id"`
-	Type    string `json:"type,omitempty"`
-	Details string `json:"details,omitempty"`
+	EventID   string     `json:"event_id,omitempty" db:"event_id"` // TODO: make the report for other users as well?
+	UserID    string     `json:"user_id,omitempty" db:"user_id"`
+	Type      string     `json:"type,omitempty"`
+	Details   string     `json:"details,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty" db:"created_at"`
 }

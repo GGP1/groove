@@ -112,7 +112,7 @@ func (s *service) Create(ctx context.Context, userID string, user CreateUser) er
 	defer psqlTx.Rollback()
 
 	q1 := "SELECT EXISTS(SELECT 1 FROM users WHERE email=$1)"
-	emailExists, err := postgres.ScanBool(ctx, psqlTx, q1, user.Email)
+	emailExists, err := postgres.QueryBool(ctx, psqlTx, q1, user.Email)
 	if err != nil {
 		return errors.Wrap(err, "scanning email")
 	}
@@ -120,7 +120,7 @@ func (s *service) Create(ctx context.Context, userID string, user CreateUser) er
 		return errors.New("email is already taken")
 	}
 	q2 := "SELECT EXISTS(SELECT 1 FROM users WHERE username=$1)"
-	usernameExists, err := postgres.ScanBool(ctx, psqlTx, q2, user.Username)
+	usernameExists, err := postgres.QueryBool(ctx, psqlTx, q2, user.Username)
 	if err != nil {
 		return errors.Wrap(err, "scanning username")
 	}
@@ -217,7 +217,7 @@ func (s *service) Delete(ctx context.Context, userID string) error {
 	return nil
 }
 
-// Follow creates the "following" edge between id and followedID.
+// Follow creates the "following" edge between userID and followedID.
 func (s *service) Follow(ctx context.Context, userID, followedID string) error {
 	s.metrics.incMethodCalls("Follow")
 
@@ -227,6 +227,7 @@ func (s *service) Follow(ctx context.Context, userID, followedID string) error {
 	}
 	if private {
 		// TODO: put petition on pending
+		// Store the petition inside a pending_follows table for later confirmation?
 	}
 
 	vars := map[string]string{"$follower_id": userID, "$followed_id": followedID}
@@ -331,7 +332,7 @@ func (s *service) GetByUsername(ctx context.Context, username string) (ListUser,
 	return s.getBy(ctx, q, username)
 }
 
-// GetConfirmedEvents returns the events that the user is attending.
+// GetConfirmedEvents returns the events that the user is attending to.
 func (s *service) GetConfirmedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error) {
 	s.metrics.incMethodCalls("GetConfirmedEvents")
 
@@ -391,8 +392,10 @@ func (s *service) GetHostedEvents(ctx context.Context, userID string, params par
 	}
 	defer tx.Rollback()
 
+	// TODO: handle pagination
 	var rows *sql.Rows
 	if params.LookupID != "" {
+		// TODO: query directly to avoid doing two calls? No pagination needed here
 		q1 := "SELECT event_id FROM events_users_roles WHERE user_id=$1 AND role_name='host' AND event_id=$2"
 		rows, err = tx.QueryContext(ctx, q1, userID, params.LookupID)
 		if err != nil {
@@ -406,45 +409,30 @@ func (s *service) GetHostedEvents(ctx context.Context, userID string, params par
 		}
 	}
 
-	// Fetch id only to be consistent with the other methods
-	var eventIds []string
-	for rows.Next() {
-		var eventID string
-		if err := rows.Scan(&eventID); err != nil {
-			return nil, errors.Wrap(err, "scanning rows")
-		}
-		eventIds = append(eventIds, eventID)
-	}
-	if err := rows.Err(); err != nil {
+	eventsIds, err := postgres.ScanStringSlice(rows)
+	if err != nil {
 		return nil, err
 	}
 
-	if len(eventIds) == 0 {
+	if len(eventsIds) == 0 {
 		return nil, nil
 	}
 
-	q2 := postgres.SelectInID(postgres.Events, eventIds, params.Fields)
+	q2 := postgres.SelectInID(postgres.Events, eventsIds, params.Fields)
 	rows2, err := tx.QueryContext(ctx, q2)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching events")
 	}
 
-	var events []event.Event
-	for rows2.Next() {
-		event, err := scanEvent(rows2)
-		if err != nil {
-			return nil, err
-		}
-		events = append(events, event)
-	}
-	if err := rows2.Err(); err != nil {
+	events, err := scanEvents(rows2)
+	if err != nil {
 		return nil, err
 	}
 
 	return events, nil
 }
 
-// GetInvitedEvents returns the events that the user is attending.
+// GetInvitedEvents returns the events that the user is invited to.
 func (s *service) GetInvitedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error) {
 	s.metrics.incMethodCalls("GetInvitedEvents")
 
@@ -506,7 +494,7 @@ func (s *service) GetNode(ctx context.Context, userID string) (Node, error) {
 	return node, nil
 }
 
-// GetLikedEvents returns the events that the user is attending.
+// GetLikedEvents returns the events that the user likes.
 func (s *service) GetLikedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error) {
 	s.metrics.incMethodCalls("GetLikedEvents")
 
@@ -520,7 +508,7 @@ func (s *service) GetLikedEvents(ctx context.Context, userID string, params para
 
 // IsAdmin returns if the user is an administrator or not.
 func (s *service) IsAdmin(ctx context.Context, tx *sql.Tx, userID string) (bool, error) {
-	isAdmin, err := postgres.ScanBool(ctx, tx, "SELECT is_admin FROM users WHERE id=$1", userID)
+	isAdmin, err := postgres.QueryBool(ctx, tx, "SELECT is_admin FROM users WHERE id=$1", userID)
 	if err != nil {
 		return false, err
 	}
@@ -535,12 +523,12 @@ func (s *service) PrivateProfile(ctx context.Context, userID string) (bool, erro
 	if err != nil {
 		return false, errors.Wrap(err, "starting transaction")
 	}
+	defer tx.Rollback()
 
-	isPrivate, err := postgres.ScanBool(ctx, tx, "SELECT private FROM users WHERE id=$1", userID)
+	isPrivate, err := postgres.QueryBool(ctx, tx, "SELECT private FROM users WHERE id=$1", userID)
 	if err != nil {
 		return false, err
 	}
-	tx.Commit()
 
 	return isPrivate, nil
 }
@@ -626,11 +614,17 @@ func (s *service) Unfollow(ctx context.Context, userID string, followedID string
 func (s *service) Update(ctx context.Context, userID string, user UpdateUser) error {
 	s.metrics.incMethodCalls("Update")
 
-	q := `UPDATE users SET 
-	name=$2 username=$3 premium=$4 private=$5 invitations=$6 payment=$7 
+	// TODO: build update query according to the values received (omit nil values)
+	var inv string
+	if user.Invitations != nil {
+		inv = user.Invitations.String()
+	}
+
+	q := `UPDATE users 
+	SET name=$2 username=$3 premium=$4 private=$5 invitations=$6 payment=$7 
 	WHERE id=$1`
 	_, err := s.db.ExecContext(ctx, q, userID, user.Name, user.Username,
-		user.Premium, user.Private, user.Invitations.toString(), user.Payment)
+		user.Premium, user.Private, inv, user.Payment)
 	if err != nil {
 		return errors.Wrap(err, "updating user")
 	}
@@ -646,7 +640,7 @@ func (s *service) getEventsEdge(ctx context.Context, userID string, query query,
 	vars := dgraph.QueryVars(userID, params)
 	res, err := s.dc.NewReadOnlyTxn().QueryRDFWithVars(ctx, getQuery[query], vars)
 	if err != nil {
-		return nil, errors.Wrap(err, "fetching events from dgraph")
+		return nil, errors.Wrap(err, "dgraph: fetching events")
 	}
 
 	ids := dgraph.ParseRDFUUIDs(res.Rdf)
@@ -660,16 +654,8 @@ func (s *service) getEventsEdge(ctx context.Context, userID string, query query,
 		return nil, errors.Wrap(err, "postgres: fetching events")
 	}
 
-	var events []event.Event
-	for rows.Next() {
-		event, err := scanEvent(rows)
-		if err != nil {
-			return nil, err
-		}
-		events = append(events, event)
-	}
-
-	if err := rows.Err(); err != nil {
+	events, err := scanEvents(rows)
+	if err != nil {
 		return nil, err
 	}
 
@@ -694,16 +680,8 @@ func (s *service) getUsersEdge(ctx context.Context, userID string, query query, 
 		return nil, errors.Wrap(err, "postgres: fetching users")
 	}
 
-	var users []ListUser
-	for rows.Next() {
-		user, err := scanUser(rows)
-		if err != nil {
-			return nil, err
-		}
-		users = append(users, user)
-	}
-
-	if err := rows.Err(); err != nil {
+	users, err := scanUsers(rows)
+	if err != nil {
 		return nil, err
 	}
 
@@ -713,7 +691,7 @@ func (s *service) getUsersEdge(ctx context.Context, userID string, query query, 
 func (s *service) getBy(ctx context.Context, query, value string) (ListUser, error) {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
-		return ListUser{}, errors.Wrap(err, "")
+		return ListUser{}, errors.Wrap(err, "starting transaction")
 	}
 	defer tx.Commit()
 
@@ -726,7 +704,7 @@ func (s *service) getBy(ctx context.Context, query, value string) (ListUser, err
 		&user.Invitations, &user.CreatedAt, &user.UpdatedAt,
 	)
 	if err != nil {
-		return ListUser{}, errors.Wrap(err, "fetching user")
+		return ListUser{}, errors.Wrap(err, "scanning user")
 	}
 
 	if err := s.getCounts(ctx, &user); err != nil {

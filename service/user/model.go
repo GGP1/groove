@@ -172,7 +172,7 @@ const (
 
 type invitations uint8
 
-func (i invitations) toString() string {
+func (i invitations) String() string {
 	switch i {
 	case Anyone:
 		return "anyone"
@@ -180,9 +180,9 @@ func (i invitations) toString() string {
 		return "mutual_follow"
 	case Nobody:
 		return "nobody"
+	default:
+		return ""
 	}
-
-	return ""
 }
 
 func (i invitations) Validate() error {

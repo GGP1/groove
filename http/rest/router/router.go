@@ -65,11 +65,8 @@ func New(config config.Config, db *sqlx.DB, dc *dgo.Dgraph, rdb *redis.Client, m
 	adminsOnly := authMw.AdminsOnly
 	requireAPIKey := authMw.RequireAPIKey
 	requireLogin := authMw.RequireLogin
-	// Below middlewares already check that the user is logged in
-	requireHost := authMw.RequireHost
+	// OwnUserOnly already checks if the user is logged in
 	ownUserOnly := authMw.OwnUserOnly
-	privateEvent := authMw.PrivateEvent
-	requirePermissions := authMw.RequirePermissions
 
 	// auth
 	router.post("/login", auth.Login(session))
@@ -109,37 +106,41 @@ func New(config config.Config, db *sqlx.DB, dc *dgo.Dgraph, rdb *redis.Client, m
 		// /events/:id
 		id := ev.group("/:id")
 		{
-			id.get("/bans", events.GetBans(), privateEvent)
-			id.post("/bans/add", events.AddBanned(), requireHost)
+			id.get("/bans", events.GetBans(), requireLogin)
+			id.post("/bans/add", events.AddBanned(), requireLogin)
 			id.get("/bans/following/:user_id", events.GetBansFollowing())
-			id.post("/bans/remove", events.RemoveBanned(), requireHost)
-			id.get("/confirmed", events.GetConfirmed(), privateEvent)
+			id.post("/bans/remove", events.RemoveBanned(), requireLogin)
+			id.get("/confirmed", events.GetConfirmed(), requireLogin)
 			id.post("/confirmed/add", events.AddConfirmed(), requireLogin)
 			id.get("/confirmed/following/:user_id", events.GetConfirmedFollowing())
 			id.post("/confirmed/remove", events.RemoveConfirmed(), requireLogin)
-			id.post("/create/media", events.CreateMedia(), requireHost)
-			id.post("/create/permission", events.CreatePermission(), requireHost)
-			id.post("/create/product", events.CreateProduct(), requireHost)
-			id.post("/create/role", events.CreateRole(), requireHost)
-			id.delete("/delete", events.Delete())
+			id.post("/create/media", events.CreateMedia(), requireLogin)
+			id.post("/create/permission", events.CreatePermission(), requireLogin)
+			id.post("/create/product", events.CreateProduct(), requireLogin)
+			id.post("/create/role", events.CreateRole(), requireLogin)
+			id.delete("/delete", events.Delete(), requireLogin)
 			id.get("/get", events.GetByID())
-			id.get("/hosts", events.GetHosts(), privateEvent)
-			id.get("/invited", events.GetInvited(), privateEvent)
-			id.post("/invited/add", events.AddInvited(), requirePermissions)
+			id.get("/hosts", events.GetHosts(), requireLogin)
+			id.get("/invited", events.GetInvited(), requireLogin)
+			id.post("/invited/add", events.AddInvited(), requireLogin)
 			id.get("/invited/following/:user_id", events.GetInvitedFollowing())
 			id.post("/invited/remove", events.RemoveInvited(), requireLogin)
-			id.get("/likes", events.GetLikes(), privateEvent)
+			id.get("/likes", events.GetLikes(), requireLogin)
 			id.post("/likes/add", events.AddLike(), requireLogin)
 			id.get("/likes/following/:user_id", events.GetLikesFollowing())
 			id.post("/likes/remove", events.RemoveLike(), requireLogin)
-			id.get("/permissions", events.GetPermissions(), requireHost)
-			id.get("/roles", events.GetRoles(), requireHost)
-			id.post("/roles/set", events.SetRole(), requireHost)
-			id.post("/roles/get", events.GetRole(), privateEvent)
-			id.get("/reports", events.GetReports(), privateEvent)
-			id.put("/update", events.Update(), requireHost)
-			id.put("/update/media", events.UpdateMedia(), requireHost)
-			id.put("/update/product", events.UpdateProduct(), requireHost)
+			id.get("/media", events.GetMedia())
+			id.get("/permissions", events.GetPermissions(), requireLogin)
+			id.post("/permissions/clone", events.ClonePermissions(), requireLogin)
+			id.get("/products", events.GetProducts())
+			id.get("/roles", events.GetRoles(), requireLogin)
+			id.get("/roles/clone", events.CloneRoles(), requireLogin)
+			id.post("/roles/get", events.GetRole(), requireLogin)
+			id.post("/roles/set", events.SetRole(), requireLogin)
+			id.get("/reports", events.GetReports(), requireLogin)
+			id.put("/update", events.Update(), requireLogin)
+			id.put("/update/media", events.UpdateMedia(), requireLogin)
+			id.put("/update/product", events.UpdateProduct(), requireLogin)
 		}
 	}
 

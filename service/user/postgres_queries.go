@@ -10,30 +10,9 @@ import (
 
 // Consider creating stored procedures or views to pre-compile queries in the future
 
-func scanEvent(rows *sql.Rows) (event.Event, error) {
-	var e event.Event
-	cols, _ := rows.Columns()
-	if len(cols) > 0 {
-		columns := eventColumns(&e, cols)
-		if err := rows.Scan(columns...); err != nil {
-			return event.Event{}, errors.Wrap(err, "scanning rows")
-		}
-	}
-	return e, nil
-}
-
-func scanUser(rows *sql.Rows) (ListUser, error) {
-	var u ListUser
-	cols, _ := rows.Columns()
-	if len(cols) > 0 {
-		columns := userColumns(&u, cols)
-		if err := rows.Scan(columns...); err != nil {
-			return ListUser{}, errors.Wrap(err, "scanning rows")
-		}
-	}
-	return u, nil
-}
-
+// eventColumns returns the event fields that will be scanned.
+//
+// When Scan() is called the values are stored inside the variables we passed.
 func eventColumns(e *event.Event, columns []string) []interface{} {
 	result := make([]interface{}, 0, len(columns))
 
@@ -69,6 +48,60 @@ func eventColumns(e *event.Event, columns []string) []interface{} {
 	return result
 }
 
+func scanEvents(rows *sql.Rows) ([]event.Event, error) {
+	var (
+		events []event.Event
+		// Reuse object, there's no need to reset fields as they will be always overwritten
+		event event.Event
+	)
+
+	cols, _ := rows.Columns()
+	if len(cols) > 0 {
+		columns := eventColumns(&event, cols)
+		for rows.Next() {
+			if err := rows.Scan(columns...); err != nil {
+				return nil, errors.Wrap(err, "scanning event rows")
+			}
+			events = append(events, event)
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return events, nil
+}
+
+func scanUsers(rows *sql.Rows) ([]ListUser, error) {
+	var (
+		// Reuse object, there's no need to reset fields as they will be always overwritten
+		user  ListUser
+		users []ListUser
+	)
+
+	cols, _ := rows.Columns()
+	if len(cols) > 0 {
+		columns := userColumns(&user, cols)
+
+		for rows.Next() {
+			if err := rows.Scan(columns...); err != nil {
+				return nil, errors.Wrap(err, "scanning rows")
+			}
+			users = append(users, user)
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return users, nil
+}
+
+// userColumns returns the user fields that will be scanned.
+//
+// When Scan() is called the values are stored inside the variables we passed.
 func userColumns(u *ListUser, columns []string) []interface{} {
 	result := make([]interface{}, 0, len(columns))
 

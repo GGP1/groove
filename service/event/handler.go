@@ -1,6 +1,8 @@
 package event
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -9,12 +11,14 @@ import (
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/response"
-	"github.com/pkg/errors"
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/google/uuid"
 	"github.com/julienschmidt/httprouter"
+	"github.com/pkg/errors"
 )
+
+var errAccessDenied = errors.New("Access denied")
 
 type userIDBody struct {
 	UserID string `json:"user_id,omitempty"`
@@ -40,7 +44,7 @@ func NewHandler(service Service, cache *memcache.Client) Handler {
 	}
 }
 
-// AddBanned ..
+// AddBanned bans a user in an event.
 func (h *Handler) AddBanned() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -52,9 +56,26 @@ func (h *Handler) AddBanned() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
 		eventID := httprouter.ParamsFromContext(ctx).ByName("id")
 		if err := params.ValidateUUIDs(eventID, reqBody.UserID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		errStatus, err := h.service.SQLTx(ctx, true, func(tx *sql.Tx) (int, error) {
+			if err := h.requireHost(ctx, tx, sessionInfo.ID, eventID); err != nil {
+				return http.StatusForbidden, err
+			}
+			return 0, nil
+		})
+		if err != nil {
+			response.Error(w, errStatus, err)
 			return
 		}
 
@@ -71,7 +92,7 @@ func (h *Handler) AddBanned() http.HandlerFunc {
 	}
 }
 
-// AddConfirmed ..
+// AddConfirmed confirms a user in an event.
 func (h *Handler) AddConfirmed() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -83,19 +104,37 @@ func (h *Handler) AddConfirmed() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
 		eventID := httprouter.ParamsFromContext(ctx).ByName("id")
 		if err := params.ValidateUUIDs(eventID, reqBody.UserID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		if err := h.service.AddEdge(ctx, eventID, Confirmed, reqBody.UserID); err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
-			return
-		}
+		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
+			err := h.requirePermissions(ctx, tx, sessionInfo.ID, eventID, []string{permissions.InviteUsers})
+			if err != nil {
+				return http.StatusForbidden, err
+			}
 
-		if err := h.service.SetRole(ctx, eventID, reqBody.UserID, permissions.Attendant); err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
+			if err := h.service.AddEdge(ctx, eventID, Confirmed, reqBody.UserID); err != nil {
+				return http.StatusInternalServerError, err
+			}
+
+			err = h.service.SetRole(ctx, tx, eventID, reqBody.UserID, permissions.Attendant)
+			if err != nil {
+				return http.StatusInternalServerError, err
+			}
+
+			return 0, nil
+		})
+		if err != nil {
+			response.Error(w, errStatus, err)
 			return
 		}
 
@@ -107,7 +146,7 @@ func (h *Handler) AddConfirmed() http.HandlerFunc {
 	}
 }
 
-// AddInvited ..
+// AddInvited invites a user to an event.
 func (h *Handler) AddInvited() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -131,21 +170,26 @@ func (h *Handler) AddInvited() http.HandlerFunc {
 			return
 		}
 
-		tx, err := h.service.PqTx(ctx, true)
-		if err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-		defer tx.Rollback()
+		errStatus, err := h.service.SQLTx(ctx, true, func(tx *sql.Tx) (int, error) {
+			err := h.requirePermissions(ctx, tx, sessionInfo.ID, eventID, []string{permissions.InviteUsers})
+			if err != nil {
+				return http.StatusForbidden, err
+			}
 
-		// Check the invited user settings to verify the invitation can be performed
-		canInvite, err := h.service.CanInvite(ctx, tx, sessionInfo.ID, reqBody.UserID)
+			// Check the invited user settings to verify the invitation can be performed
+			// TODO: this should be in the user service
+			canInvite, err := h.service.CanInvite(ctx, tx, sessionInfo.ID, reqBody.UserID)
+			if err != nil {
+				return http.StatusInternalServerError, err
+			}
+			if !canInvite {
+				return http.StatusForbidden, errors.New("user settings do not allow this invitation")
+			}
+
+			return 0, nil
+		})
 		if err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-		if !canInvite {
-			response.Error(w, http.StatusForbidden, errors.New("user settings do not allow this invitation"))
+			response.Error(w, errStatus, err)
 			return
 		}
 
@@ -162,7 +206,7 @@ func (h *Handler) AddInvited() http.HandlerFunc {
 	}
 }
 
-// AddLike ..
+// AddLike adds the like of a user to an event.
 func (h *Handler) AddLike() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -180,6 +224,28 @@ func (h *Handler) AddLike() http.HandlerFunc {
 			return
 		}
 
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusUnauthorized, err)
+			return
+		}
+
+		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
+			role, err := h.service.GetUserRole(ctx, tx, eventID, sessionInfo.ID)
+			if err != nil {
+				return http.StatusInternalServerError, err
+			}
+
+			if role.Name != permissions.Attendant {
+				return http.StatusForbidden, errors.New("must have attended to the event to like it")
+			}
+			return 0, nil
+		})
+		if err != nil {
+			response.Error(w, errStatus, err)
+			return
+		}
+
 		if err := h.service.AddEdge(ctx, eventID, LikedBy, reqBody.UserID); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -193,9 +259,107 @@ func (h *Handler) AddLike() http.HandlerFunc {
 	}
 }
 
-// Create ..
+// ClonePermissions clones the permissions from one event to another.
+func (h *Handler) ClonePermissions() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusUnauthorized, err)
+			return
+		}
+
+		var req struct {
+			ImporterEventID string `json:"importer_event_id,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		defer r.Body.Close()
+
+		exporterEventID, err := params.UUIDFromCtx(ctx)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
+			if err := h.requireHost(ctx, tx, sessionInfo.ID, exporterEventID, req.ImporterEventID); err != nil {
+				return http.StatusForbidden, err
+			}
+
+			if err := h.service.ClonePermissions(ctx, tx, exporterEventID, req.ImporterEventID); err != nil {
+				return http.StatusInternalServerError, err
+			}
+			return 0, nil
+		})
+		if err != nil {
+			response.Error(w, errStatus, err)
+			return
+		}
+
+		response.JSONMessage(w, http.StatusOK, "Permissions cloned successfully")
+	}
+}
+
+// CloneRoles imports the roles from an event and saves them into another, it also clones the permissions.
+func (h *Handler) CloneRoles() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusUnauthorized, err)
+			return
+		}
+
+		var req struct {
+			ImporterEventID string `json:"importer_event_id,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		defer r.Body.Close()
+
+		exporterEventID, err := params.UUIDFromCtx(ctx)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
+			// Verify that the user is a host in both events
+			if err := h.requireHost(ctx, tx, sessionInfo.ID, exporterEventID, req.ImporterEventID); err != nil {
+				return http.StatusForbidden, err
+			}
+
+			if err := h.service.ClonePermissions(ctx, tx, exporterEventID, req.ImporterEventID); err != nil {
+				return http.StatusInternalServerError, err
+			}
+
+			if err := h.service.CloneRoles(ctx, tx, exporterEventID, req.ImporterEventID); err != nil {
+				return http.StatusInternalServerError, err
+			}
+
+			return 0, nil
+		})
+		if err != nil {
+			response.Error(w, errStatus, err)
+			return
+		}
+
+		response.JSONMessage(w, http.StatusOK, "Roles cloned successfully")
+	}
+}
+
+// Create creates an event.
 func (h *Handler) Create() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
 		var event CreateEvent
 		if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
@@ -208,22 +372,30 @@ func (h *Handler) Create() http.HandlerFunc {
 			return
 		}
 
-		id := uuid.NewString()
-		if err := h.service.Create(r.Context(), id, event); err != nil {
+		eventID := uuid.NewString()
+		if err := h.service.Create(ctx, eventID, event); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		response.JSONMessage(w, http.StatusCreated, id)
+		type eventResp struct {
+			ID    string      `json:"id,omitempty"`
+			Event CreateEvent `json:"event,omitempty"`
+		}
+
+		response.JSON(w, http.StatusCreated, eventResp{
+			ID:    eventID,
+			Event: event,
+		})
 	}
 }
 
-// CreateMedia creates an image/video inside an event.
+// CreateMedia creates a media inside an event.
 func (h *Handler) CreateMedia() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -241,8 +413,24 @@ func (h *Handler) CreateMedia() http.Handler {
 			return
 		}
 
-		if err := h.service.CreateMedia(ctx, id, media); err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
+			if err := h.requireHost(ctx, tx, sessionInfo.ID); err != nil {
+				return http.StatusForbidden, err
+			}
+			if err := h.service.CreateMedia(ctx, tx, eventID, media); err != nil {
+				return http.StatusInternalServerError, err
+			}
+
+			return 0, nil
+		})
+		if err != nil {
+			response.Error(w, errStatus, err)
 			return
 		}
 
@@ -255,7 +443,7 @@ func (h *Handler) CreatePermission() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -273,9 +461,25 @@ func (h *Handler) CreatePermission() http.Handler {
 			return
 		}
 
-		permission.Key = strings.ToLower(permission.Key)
-		if err := h.service.CreatePermission(ctx, id, permission); err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
+			if err := h.requireHost(ctx, tx, sessionInfo.ID); err != nil {
+				return http.StatusForbidden, err
+			}
+
+			permission.Key = strings.ToLower(permission.Key)
+			if err := h.service.CreatePermission(ctx, tx, eventID, permission); err != nil {
+				return http.StatusInternalServerError, err
+			}
+			return 0, nil
+		})
+		if err != nil {
+			response.Error(w, errStatus, err)
 			return
 		}
 
@@ -288,7 +492,7 @@ func (h *Handler) CreateProduct() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -306,8 +510,24 @@ func (h *Handler) CreateProduct() http.Handler {
 			return
 		}
 
-		if err := h.service.CreateProduct(ctx, id, product); err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
+			if err := h.requireHost(ctx, tx, sessionInfo.ID); err != nil {
+				return http.StatusForbidden, err
+			}
+			if err := h.service.CreateProduct(ctx, tx, eventID, product); err != nil {
+				return http.StatusInternalServerError, err
+			}
+
+			return 0, nil
+		})
+		if err != nil {
+			response.Error(w, errStatus, err)
 			return
 		}
 
@@ -320,7 +540,7 @@ func (h *Handler) CreateRole() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -338,9 +558,26 @@ func (h *Handler) CreateRole() http.Handler {
 			return
 		}
 
-		role.Name = strings.ToLower(role.Name)
-		if err := h.service.CreateRole(ctx, id, role); err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
+			permKeys := []string{permissions.CreateRole}
+			if err := h.requirePermissions(ctx, tx, sessionInfo.ID, eventID, permKeys); err != nil {
+				return http.StatusForbidden, err
+			}
+
+			role.Name = strings.ToLower(role.Name)
+			if err := h.service.CreateRole(ctx, tx, eventID, role); err != nil {
+				return http.StatusInternalServerError, err
+			}
+			return 0, nil
+		})
+		if err != nil {
+			response.Error(w, errStatus, err)
 			return
 		}
 
@@ -348,32 +585,49 @@ func (h *Handler) CreateRole() http.Handler {
 	})
 }
 
-// Delete ..
+// Delete removes an event from the system.
 func (h *Handler) Delete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		if err := h.service.Delete(ctx, id); err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusUnauthorized, err)
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, id)
+		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
+			if err := h.requireHost(ctx, tx, sessionInfo.ID, eventID); err != nil {
+				return http.StatusForbidden, err
+			}
+
+			if err := h.service.Delete(ctx, tx, eventID); err != nil {
+				return http.StatusInternalServerError, err
+			}
+
+			return 0, nil
+		})
+		if err != nil {
+			response.Error(w, errStatus, err)
+			return
+		}
+
+		response.JSONMessage(w, http.StatusOK, eventID)
 	}
 }
 
-// GetBans ..
+// GetBans gets an event's banned users.
 func (h *Handler) GetBans() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -385,7 +639,7 @@ func (h *Handler) GetBans() http.HandlerFunc {
 		}
 
 		if params.Count {
-			count, err := h.service.GetBannedCount(ctx, id)
+			count, err := h.service.GetBannedCount(ctx, eventID)
 			if err != nil {
 				response.Error(w, http.StatusInternalServerError, err)
 				return
@@ -395,7 +649,21 @@ func (h *Handler) GetBans() http.HandlerFunc {
 			return
 		}
 
-		bans, err := h.service.GetBanned(ctx, id, params)
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusUnauthorized, err)
+			return
+		}
+
+		sqlTx := h.service.BeginSQLTx(ctx, true)
+		defer sqlTx.Rollback()
+
+		if err := h.privacyFilter(ctx, sqlTx, sessionInfo.ID, eventID); err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		bans, err := h.service.GetBanned(ctx, sqlTx, eventID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -424,48 +692,65 @@ func (h *Handler) GetBansFollowing() http.HandlerFunc {
 			return
 		}
 
-		users, err := h.service.GetBannedFollowing(ctx, eventID, userID, params)
+		sqlTx := h.service.BeginSQLTx(ctx, true)
+		users, err := h.service.GetBannedFollowing(ctx, sqlTx, eventID, userID, params)
 		if err != nil {
+			sqlTx.Rollback()
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
+		sqlTx.Rollback()
 
 		response.JSON(w, http.StatusOK, users)
 	}
 }
 
-// GetByID ..
+// GetByID gets an event by its id.
 func (h *Handler) GetByID() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		if item, err := h.cache.Get(id); err == nil {
+		if item, err := h.cache.Get(eventID); err == nil {
 			response.EncodedJSON(w, item.Value)
 			return
 		}
 
-		event, err := h.service.GetByID(ctx, id)
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusUnauthorized, err)
+			return
+		}
+
+		sqlTx := h.service.BeginSQLTx(ctx, true)
+		defer sqlTx.Rollback()
+
+		if err := h.privacyFilter(ctx, sqlTx, sessionInfo.ID, eventID); err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		event, err := h.service.GetByID(ctx, sqlTx, eventID)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		response.JSONAndCache(h.cache, w, id, event)
+		response.JSONAndCache(h.cache, w, eventID, event)
 	}
 }
 
-// GetConfirmed ..
+// GetConfirmed gets an event's confirmed users.
 func (h *Handler) GetConfirmed() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -477,7 +762,7 @@ func (h *Handler) GetConfirmed() http.HandlerFunc {
 		}
 
 		if params.Count {
-			count, err := h.service.GetConfirmedCount(ctx, id)
+			count, err := h.service.GetConfirmedCount(ctx, eventID)
 			if err != nil {
 				response.Error(w, http.StatusInternalServerError, err)
 				return
@@ -487,7 +772,21 @@ func (h *Handler) GetConfirmed() http.HandlerFunc {
 			return
 		}
 
-		confirmed, err := h.service.GetConfirmed(ctx, id, params)
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusUnauthorized, err)
+			return
+		}
+
+		sqlTx := h.service.BeginSQLTx(ctx, true)
+		defer sqlTx.Rollback()
+
+		if err := h.privacyFilter(ctx, sqlTx, sessionInfo.ID, eventID); err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		confirmed, err := h.service.GetConfirmed(ctx, sqlTx, eventID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -516,22 +815,25 @@ func (h *Handler) GetConfirmedFollowing() http.HandlerFunc {
 			return
 		}
 
-		users, err := h.service.GetConfirmedFollowing(ctx, eventID, userID, params)
+		sqlTx := h.service.BeginSQLTx(ctx, true)
+		users, err := h.service.GetConfirmedFollowing(ctx, sqlTx, eventID, userID, params)
 		if err != nil {
+			sqlTx.Rollback()
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
+		sqlTx.Rollback()
 
 		response.JSON(w, http.StatusOK, users)
 	}
 }
 
-// GetHosts ..
+// GetHosts gets an event's host users.
 func (h *Handler) GetHosts() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -543,7 +845,7 @@ func (h *Handler) GetHosts() http.HandlerFunc {
 		}
 
 		if params.Count {
-			count, err := h.service.GetInvitedCount(ctx, id)
+			count, err := h.service.GetInvitedCount(ctx, eventID)
 			if err != nil {
 				response.Error(w, http.StatusInternalServerError, err)
 				return
@@ -553,7 +855,21 @@ func (h *Handler) GetHosts() http.HandlerFunc {
 			return
 		}
 
-		hosts, err := h.service.GetHosts(ctx, id, params)
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		sqlTx := h.service.BeginSQLTx(ctx, true)
+		defer sqlTx.Rollback()
+
+		if err := h.privacyFilter(ctx, sqlTx, sessionInfo.ID, eventID); err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		hosts, err := h.service.GetHosts(ctx, sqlTx, eventID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -563,12 +879,12 @@ func (h *Handler) GetHosts() http.HandlerFunc {
 	}
 }
 
-// GetInvited ..
+// GetInvited gets an event's invited users.
 func (h *Handler) GetInvited() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -580,7 +896,7 @@ func (h *Handler) GetInvited() http.HandlerFunc {
 		}
 
 		if params.Count {
-			count, err := h.service.GetInvitedCount(ctx, id)
+			count, err := h.service.GetInvitedCount(ctx, eventID)
 			if err != nil {
 				response.Error(w, http.StatusInternalServerError, err)
 				return
@@ -590,7 +906,21 @@ func (h *Handler) GetInvited() http.HandlerFunc {
 			return
 		}
 
-		invited, err := h.service.GetInvited(ctx, id, params)
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		sqlTx := h.service.BeginSQLTx(ctx, true)
+		defer sqlTx.Rollback()
+
+		if err := h.privacyFilter(ctx, sqlTx, sessionInfo.ID, eventID); err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		invited, err := h.service.GetInvited(ctx, sqlTx, eventID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -619,22 +949,25 @@ func (h *Handler) GetInvitedFollowing() http.HandlerFunc {
 			return
 		}
 
-		users, err := h.service.GetInvitedFollowing(ctx, eventID, userID, params)
+		sqlTx := h.service.BeginSQLTx(ctx, true)
+		users, err := h.service.GetInvitedFollowing(ctx, sqlTx, eventID, userID, params)
 		if err != nil {
+			sqlTx.Rollback()
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
+		sqlTx.Rollback()
 
 		response.JSON(w, http.StatusOK, users)
 	}
 }
 
-// GetLikes returns the users liking the event.
+// GetLikes gets the users liking an event.
 func (h *Handler) GetLikes() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -646,7 +979,7 @@ func (h *Handler) GetLikes() http.HandlerFunc {
 		}
 
 		if params.Count {
-			count, err := h.service.GetLikedByCount(ctx, id)
+			count, err := h.service.GetLikedByCount(ctx, eventID)
 			if err != nil {
 				response.Error(w, http.StatusInternalServerError, err)
 				return
@@ -656,7 +989,21 @@ func (h *Handler) GetLikes() http.HandlerFunc {
 			return
 		}
 
-		likes, err := h.service.GetLikedBy(ctx, id, params)
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		sqlTx := h.service.BeginSQLTx(ctx, true)
+		defer sqlTx.Rollback()
+
+		if err := h.privacyFilter(ctx, sqlTx, sessionInfo.ID, eventID); err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		likes, err := h.service.GetLikedBy(ctx, sqlTx, eventID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -685,13 +1032,62 @@ func (h *Handler) GetLikesFollowing() http.HandlerFunc {
 			return
 		}
 
-		users, err := h.service.GetLikedByFollowing(ctx, eventID, userID, params)
+		sqlTx := h.service.BeginSQLTx(ctx, true)
+		users, err := h.service.GetLikedByFollowing(ctx, sqlTx, eventID, userID, params)
+		if err != nil {
+			sqlTx.Rollback()
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+		sqlTx.Rollback()
+
+		response.JSON(w, http.StatusOK, users)
+	}
+}
+
+// GetMedia gets the media of an event.
+func (h *Handler) GetMedia() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		eventID, err := params.UUIDFromCtx(ctx)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		params, err := params.ParseQuery(r.URL.RawQuery, params.Media)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		sqlTx := h.service.BeginSQLTx(ctx, true)
+		defer sqlTx.Rollback()
+
+		if err := h.privacyFilter(ctx, sqlTx, sessionInfo.ID, eventID); err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		cacheKey := eventID + "_media"
+		if item, err := h.cache.Get(cacheKey); err == nil {
+			response.EncodedJSON(w, item.Value)
+			return
+		}
+
+		media, err := h.service.GetMedia(ctx, sqlTx, eventID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		response.JSON(w, http.StatusOK, users)
+		response.JSONAndCache(h.cache, w, cacheKey, media)
 	}
 }
 
@@ -700,20 +1096,33 @@ func (h *Handler) GetPermissions() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		cacheKey := id + "_permissions"
-		item, err := h.cache.Get(cacheKey)
-		if err == nil {
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		sqlTx := h.service.BeginSQLTx(ctx, true)
+		defer sqlTx.Rollback()
+
+		if err := h.requireHost(ctx, sqlTx, sessionInfo.ID, eventID); err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		cacheKey := eventID + "_permissions"
+		if item, err := h.cache.Get(cacheKey); err == nil {
 			response.EncodedJSON(w, item.Value)
 			return
 		}
 
-		permissions, err := h.service.GetPermissions(ctx, id)
+		permissions, err := h.service.GetPermissions(ctx, sqlTx, eventID)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -723,7 +1132,52 @@ func (h *Handler) GetPermissions() http.HandlerFunc {
 	}
 }
 
-// GetRole ..
+// GetProducts gets the products of an event.
+func (h *Handler) GetProducts() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		eventID, err := params.UUIDFromCtx(ctx)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		params, err := params.ParseQuery(r.URL.RawQuery, params.Media)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		sqlTx := h.service.BeginSQLTx(ctx, true)
+		defer sqlTx.Rollback()
+
+		if err := h.privacyFilter(ctx, sqlTx, sessionInfo.ID, eventID); err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		cacheKey := eventID + "_products"
+		if item, err := h.cache.Get(cacheKey); err == nil {
+			response.EncodedJSON(w, item.Value)
+			return
+		}
+
+		products, err := h.service.GetProducts(ctx, sqlTx, eventID, params)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		response.JSONAndCache(h.cache, w, cacheKey, products)
+	}
+}
+
+// GetRole gets the role of a user inside an event
 func (h *Handler) GetRole() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -741,42 +1195,62 @@ func (h *Handler) GetRole() http.HandlerFunc {
 			return
 		}
 
-		tx, err := h.service.PqTx(ctx, true)
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
 		if err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
+			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
-		role, err := h.service.GetUserRole(ctx, tx, eventID, reqBody.UserID)
+		sqlTx := h.service.BeginSQLTx(ctx, true)
+		defer sqlTx.Rollback()
+
+		if err := h.privacyFilter(ctx, sqlTx, sessionInfo.ID, eventID); err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		role, err := h.service.GetUserRole(ctx, sqlTx, eventID, reqBody.UserID)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
-		tx.Commit()
 
 		response.JSON(w, http.StatusOK, role)
 	}
 }
 
-// GetRoles retrives all event's permissions.
+// GetRoles retrives all event's roles.
 func (h *Handler) GetRoles() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		cacheKey := id + "_roles"
-		item, err := h.cache.Get(cacheKey)
-		if err == nil {
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		sqlTx := h.service.BeginSQLTx(ctx, true)
+		defer sqlTx.Rollback()
+
+		if err := h.requireHost(ctx, sqlTx, sessionInfo.ID, eventID); err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		cacheKey := eventID + "_roles"
+		if item, err := h.cache.Get(cacheKey); err == nil {
 			response.EncodedJSON(w, item.Value)
 			return
 		}
 
-		permissions, err := h.service.GetRoles(ctx, id)
+		permissions, err := h.service.GetRoles(ctx, sqlTx, eventID)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -786,18 +1260,32 @@ func (h *Handler) GetRoles() http.HandlerFunc {
 	}
 }
 
-// GetReports ..
+// GetReports gets an event's reports.
 func (h *Handler) GetReports() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		reports, err := h.service.GetReports(ctx, id)
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		sqlTx := h.service.BeginSQLTx(ctx, true)
+		defer sqlTx.Rollback()
+
+		if err := h.privacyFilter(ctx, sqlTx, sessionInfo.ID, eventID); err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		reports, err := h.service.GetReports(ctx, sqlTx, eventID)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -807,7 +1295,7 @@ func (h *Handler) GetReports() http.HandlerFunc {
 	}
 }
 
-// RemoveBanned ..
+// RemoveBanned removes the ban on a user.
 func (h *Handler) RemoveBanned() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -825,6 +1313,23 @@ func (h *Handler) RemoveBanned() http.HandlerFunc {
 			return
 		}
 
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusUnauthorized, err)
+			return
+		}
+
+		errStatus, err := h.service.SQLTx(ctx, true, func(tx *sql.Tx) (int, error) {
+			if err := h.requireHost(ctx, tx, sessionInfo.ID, eventID); err != nil {
+				return http.StatusForbidden, err
+			}
+			return 0, nil
+		})
+		if err != nil {
+			response.Error(w, errStatus, err)
+			return
+		}
+
 		if err := h.service.RemoveEdge(ctx, eventID, Banned, reqBody.UserID); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -838,7 +1343,7 @@ func (h *Handler) RemoveBanned() http.HandlerFunc {
 	}
 }
 
-// RemoveConfirmed ..
+// RemoveConfirmed removes the confirmation of a user.
 func (h *Handler) RemoveConfirmed() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -869,7 +1374,7 @@ func (h *Handler) RemoveConfirmed() http.HandlerFunc {
 	}
 }
 
-// RemoveInvited ..
+// RemoveInvited removes an invitation from a user.
 func (h *Handler) RemoveInvited() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -900,7 +1405,7 @@ func (h *Handler) RemoveInvited() http.HandlerFunc {
 	}
 }
 
-// RemoveLike ..
+// RemoveLike removes a like from a user.
 func (h *Handler) RemoveLike() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -931,7 +1436,7 @@ func (h *Handler) RemoveLike() http.HandlerFunc {
 	}
 }
 
-// Search ..
+// Search performs an event search.
 func (h *Handler) Search() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -947,7 +1452,7 @@ func (h *Handler) Search() http.HandlerFunc {
 	}
 }
 
-// SetRole ..
+// SetRole sets a role to a user inside the event passed.
 func (h *Handler) SetRole() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -968,8 +1473,25 @@ func (h *Handler) SetRole() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := h.service.SetRole(ctx, eventID, reqBody.UserID, reqBody.RoleName); err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
+			if err := h.requireHost(ctx, tx, sessionInfo.ID, eventID); err != nil {
+				return http.StatusForbidden, err
+			}
+
+			err := h.service.SetRole(ctx, tx, eventID, reqBody.UserID, reqBody.RoleName)
+			if err != nil {
+				return http.StatusInternalServerError, err
+			}
+			return 0, nil
+		})
+		if err != nil {
+			response.Error(w, errStatus, err)
 			return
 		}
 
@@ -977,12 +1499,12 @@ func (h *Handler) SetRole() http.HandlerFunc {
 	}
 }
 
-// Update ..
+// Update updates an event.
 func (h *Handler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -995,21 +1517,38 @@ func (h *Handler) Update() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := h.service.Update(ctx, id, uptEvent); err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, id)
+		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
+			if err := h.requireHost(ctx, tx, sessionInfo.ID); err != nil {
+				return http.StatusForbidden, err
+			}
+
+			if err := h.service.Update(ctx, tx, eventID, uptEvent); err != nil {
+				return http.StatusInternalServerError, err
+			}
+
+			return 0, nil
+		})
+		if err != nil {
+			response.Error(w, errStatus, err)
+			return
+		}
+
+		response.JSONMessage(w, http.StatusOK, eventID)
 	}
 }
 
-// UpdateMedia ..
+// UpdateMedia updates a media of an event.
 func (h *Handler) UpdateMedia() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -1022,21 +1561,38 @@ func (h *Handler) UpdateMedia() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := h.service.UpdateMedia(ctx, id, media); err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, id)
+		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
+			if err := h.requireHost(ctx, tx, sessionInfo.ID); err != nil {
+				return http.StatusForbidden, err
+			}
+
+			if err := h.service.UpdateMedia(ctx, tx, eventID, media); err != nil {
+				return http.StatusInternalServerError, err
+			}
+
+			return 0, nil
+		})
+		if err != nil {
+			response.Error(w, errStatus, err)
+			return
+		}
+
+		response.JSONMessage(w, http.StatusOK, eventID)
 	}
 }
 
-// UpdateProduct ..
+// UpdateProduct updates a product of an event.
 func (h *Handler) UpdateProduct() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		id, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.UUIDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -1049,11 +1605,81 @@ func (h *Handler) UpdateProduct() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := h.service.UpdateProduct(ctx, id, product); err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
+		sessionInfo, err := auth.GetSessionInfo(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, id)
+		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
+			if err := h.requireHost(ctx, tx, sessionInfo.ID); err != nil {
+				return http.StatusForbidden, err
+			}
+
+			if err := h.service.UpdateProduct(ctx, tx, eventID, product); err != nil {
+				return http.StatusInternalServerError, err
+			}
+
+			return 0, nil
+		})
+		if err != nil {
+			response.Error(w, errStatus, err)
+			return
+		}
+
+		response.JSONMessage(w, http.StatusOK, eventID)
 	}
+}
+
+// privacyFilter lets through only users that can fetch the event data if it's private,
+// if it's public it lets anyone in.
+func (h *Handler) privacyFilter(ctx context.Context, tx *sql.Tx, authUserID, eventID string) error {
+	isPublic, err := h.service.IsPublic(ctx, tx, eventID)
+	if err != nil {
+		return errors.Wrap(err, "privacyFilter: scanning event privacy")
+	}
+
+	if isPublic {
+		// Event is public, no restrictions applied
+		return nil
+	}
+
+	// If the user has a role in the event, then he's able to retrieve its information
+	hasRole, err := h.service.UserHasRole(ctx, tx, eventID, authUserID)
+	if err != nil {
+		return errors.Wrap(err, "privacyFilter: scanning user role")
+	}
+	if !hasRole {
+		return errAccessDenied
+	}
+
+	return nil
+}
+
+// requireHost returns an error if the user is not a host of any of the event passed.
+func (h *Handler) requireHost(ctx context.Context, tx *sql.Tx, authUserID string, eventIDs ...string) error {
+	isHost, err := h.service.IsHost(ctx, tx, authUserID, eventIDs...)
+	if err != nil {
+		return errors.Wrap(err, "requireHost: scanning user role")
+	}
+
+	if !isHost {
+		return errAccessDenied
+	}
+
+	return nil
+}
+
+// requirePermissions returns an error if the user hasn't the permissions required on the event passed.
+func (h *Handler) requirePermissions(ctx context.Context, tx *sql.Tx, authUserID, eventID string, permRequired []string) error {
+	role, err := h.service.GetUserRole(ctx, tx, eventID, authUserID)
+	if err != nil {
+		return errors.Wrap(err, "requirePermissions: scanning user role")
+	}
+
+	if err := permissions.Require(role.PermissionKeys, permRequired...); err != nil {
+		return errAccessDenied
+	}
+
+	return nil
 }
