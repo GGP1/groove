@@ -53,7 +53,6 @@ func TestParseSessionInfo(t *testing.T) {
 	assert.NoError(t, err)
 	token := parseSessionInfo(id, salt, true)
 
-	t.Log(token)
 	assert.Equal(t, token[:len(token)-saltLen-1], id)
 	assert.Equal(t, token[len(token)-saltLen-1:len(token)-1], string(salt))
 	assert.Equal(t, token[len(token)-1], uint8('t'))
@@ -73,4 +72,27 @@ func TestUnparseSessionInfo(t *testing.T) {
 	assert.Equal(t, sessionInfo.ID, id)
 	assert.Equal(t, sessionInfo.Salt, string(salt))
 	assert.Equal(t, sessionInfo.Premium, premium)
+}
+
+func BenchmarkGetSessionInfo(b *testing.B) {
+	ctx := context.Background()
+	id := uuid.NewString()
+	salt := make([]byte, saltLen)
+	_, err := rand.Read(salt)
+	assert.NoError(b, err)
+
+	token := parseSessionInfo(id, salt, true)
+	ciphertext, err := crypt.Encrypt([]byte(token))
+	assert.NoError(b, err)
+
+	r := httptest.NewRequest("GET", "/", nil)
+	r.AddCookie(&http.Cookie{
+		Name:  cookie.Session,
+		Value: hex.EncodeToString(ciphertext),
+		Path:  "/",
+	})
+
+	for i := 0; i < b.N; i++ {
+		GetSessionInfo(ctx, r)
+	}
 }

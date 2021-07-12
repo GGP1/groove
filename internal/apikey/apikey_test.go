@@ -25,11 +25,21 @@ func TestNew(t *testing.T) {
 }
 
 func TestCheck(t *testing.T) {
-	apiKey, err := New(uuid.NewString())
-	assert.NoError(t, err)
+	t.Run("Valid", func(t *testing.T) {
+		apiKey, err := New(uuid.NewString())
+		assert.NoError(t, err)
 
-	err = Check(apiKey)
-	assert.NoError(t, err)
+		err = Check(apiKey)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Invalid", func(t *testing.T) {
+		apiKey, err := New(uuid.NewString())
+		assert.NoError(t, err)
+
+		err = Check("2" + apiKey)
+		assert.Error(t, err)
+	})
 }
 
 func TestFromRequest(t *testing.T) {

@@ -25,6 +25,7 @@ var (
 	userSv  user.Service
 	eventSv event.Service
 	db      *sqlx.DB
+	sqlTx   *sql.Tx
 	dc      *dgo.Dgraph
 	mc      *memcache.Client
 )
@@ -44,12 +45,20 @@ func TestMain(m *testing.M) {
 	}
 
 	db = postgres
+	sqlTx, err = db.BeginTx(context.Background(), nil)
+	if err != nil {
+		log.Fatal(err)
+	}
 	dc = dgraph
 	mc = memcached
 
 	eventSv = event.NewService(postgres, dgraph, memcached)
 
 	code := m.Run()
+
+	if err := sqlTx.Rollback(); err != nil {
+		log.Fatal(err)
+	}
 
 	if err := poolPg.Purge(resourcePg); err != nil {
 		log.Fatal(err)
@@ -72,21 +81,21 @@ func TestBanned(t *testing.T) {
 	eventID := uuid.NewString()
 	userID := uuid.NewString()
 
-	err := test.CreateEvent(ctx, db, eventID, "banned")
+	err := test.CreateEvent(ctx, db, dc, eventID, "banned")
 	assert.NoError(t, err)
-	err = test.CreateUser(ctx, db, userID, "banned@email.com", "banned", "1")
+	err = test.CreateUser(ctx, db, dc, userID, "banned@email.com", "banned", "1")
 	assert.NoError(t, err)
 
 	err = eventSv.AddEdge(ctx, eventID, event.Banned, userID)
 	assert.NoError(t, err)
 
-	users, err := eventSv.GetBanned(ctx, eventID, params.Query{LookupID: userID})
+	users, err := eventSv.GetBanned(ctx, sqlTx, eventID, params.Query{LookupID: userID})
 	assert.NoError(t, err)
 
 	count, err := eventSv.GetBannedCount(ctx, eventID)
 	assert.NoError(t, err)
 
-	assert.Equal(t, count, len(users))
+	assert.Equal(t, *count, uint64(len(users)))
 	assert.Equal(t, userID, users[0].ID)
 
 	err = eventSv.RemoveEdge(ctx, eventID, event.Banned, userID)
@@ -98,21 +107,21 @@ func TestConfirmed(t *testing.T) {
 	eventID := uuid.NewString()
 	userID := uuid.NewString()
 
-	err := test.CreateEvent(ctx, db, eventID, "confirmed")
+	err := test.CreateEvent(ctx, db, dc, eventID, "confirmed")
 	assert.NoError(t, err)
-	err = test.CreateUser(ctx, db, userID, "confirmed@email.com", "confirmed", "1")
+	err = test.CreateUser(ctx, db, dc, userID, "confirmed@email.com", "confirmed", "1")
 	assert.NoError(t, err)
 
 	err = eventSv.AddEdge(ctx, eventID, event.Confirmed, userID)
 	assert.NoError(t, err)
 
-	users, err := eventSv.GetConfirmed(ctx, eventID, params.Query{LookupID: userID})
+	users, err := eventSv.GetConfirmed(ctx, sqlTx, eventID, params.Query{LookupID: userID})
 	assert.NoError(t, err)
 
 	count, err := eventSv.GetConfirmedCount(ctx, eventID)
 	assert.NoError(t, err)
 
-	assert.Equal(t, count, len(users))
+	assert.Equal(t, *count, uint64(len(users)))
 	assert.Equal(t, userID, users[0].ID)
 
 	err = eventSv.RemoveEdge(ctx, eventID, event.Confirmed, userID)
@@ -124,21 +133,21 @@ func TestInvited(t *testing.T) {
 	eventID := uuid.NewString()
 	userID := uuid.NewString()
 
-	err := test.CreateEvent(ctx, db, eventID, "invited")
+	err := test.CreateEvent(ctx, db, dc, eventID, "invited")
 	assert.NoError(t, err)
-	err = test.CreateUser(ctx, db, userID, "invited@email.com", "invited", "1")
+	err = test.CreateUser(ctx, db, dc, userID, "invited@email.com", "invited", "1")
 	assert.NoError(t, err)
 
 	err = eventSv.AddEdge(ctx, eventID, event.Invited, userID)
 	assert.NoError(t, err)
 
-	users, err := eventSv.GetInvited(ctx, eventID, params.Query{LookupID: userID})
+	users, err := eventSv.GetInvited(ctx, sqlTx, eventID, params.Query{LookupID: userID})
 	assert.NoError(t, err)
 
 	count, err := eventSv.GetInvitedCount(ctx, eventID)
 	assert.NoError(t, err)
 
-	assert.Equal(t, count, len(users))
+	assert.Equal(t, *count, uint64(len(users)))
 	assert.Equal(t, userID, users[0].ID)
 
 	err = eventSv.RemoveEdge(ctx, eventID, event.Invited, userID)
@@ -150,21 +159,21 @@ func TestLikedBy(t *testing.T) {
 	eventID := uuid.NewString()
 	userID := uuid.NewString()
 
-	err := test.CreateEvent(ctx, db, eventID, "liked_by")
+	err := test.CreateEvent(ctx, db, dc, eventID, "liked_by")
 	assert.NoError(t, err)
-	err = test.CreateUser(ctx, db, userID, "liked_by@email.com", "liked_by", "1")
+	err = test.CreateUser(ctx, db, dc, userID, "liked_by@email.com", "liked_by", "1")
 	assert.NoError(t, err)
 
 	err = eventSv.AddEdge(ctx, eventID, event.LikedBy, userID)
 	assert.NoError(t, err)
 
-	users, err := eventSv.GetLikedBy(ctx, eventID, params.Query{LookupID: userID})
+	users, err := eventSv.GetLikedBy(ctx, sqlTx, eventID, params.Query{LookupID: userID})
 	assert.NoError(t, err)
 
 	count, err := eventSv.GetLikedByCount(ctx, eventID)
 	assert.NoError(t, err)
 
-	assert.Equal(t, count, len(users))
+	assert.Equal(t, *count, uint64(len(users)))
 	assert.Equal(t, userID, users[0].ID)
 
 	err = eventSv.RemoveEdge(ctx, eventID, event.LikedBy, userID)
@@ -176,9 +185,9 @@ func TestCanInvite(t *testing.T) {
 	userID := uuid.NewString()
 	invitedID := uuid.NewString()
 
-	err := test.CreateUser(ctx, db, userID, "can_invite@email.com", "can_invite", "1")
+	err := test.CreateUser(ctx, db, dc, userID, "can_invite@email.com", "can_invite", "1")
 	assert.NoError(t, err)
-	err = test.CreateUser(ctx, db, invitedID, "can_invite2@email.com", "can_invite2", "1")
+	err = test.CreateUser(ctx, db, dc, invitedID, "can_invite2@email.com", "can_invite2", "1")
 	assert.NoError(t, err)
 
 	// TODO: test scenarios where the invited user has nobody and mutual_follow settings
@@ -193,7 +202,7 @@ func TestCreate(t *testing.T) {
 	eventID := uuid.NewString()
 	creatorID := uuid.NewString()
 
-	err := test.CreateUser(ctx, db, creatorID, "create@email.com", "create", "1")
+	err := test.CreateUser(ctx, db, dc, creatorID, "create@email.com", "create", "1")
 	assert.NoError(t, err)
 
 	boolean := false
@@ -212,7 +221,7 @@ func TestCreate(t *testing.T) {
 	err = eventSv.Create(ctx, eventID, createEvent)
 	assert.NoError(t, err)
 
-	_, err = eventSv.GetByID(ctx, eventID)
+	_, err = eventSv.GetByID(ctx, sqlTx, eventID)
 	assert.NoError(t, err)
 }
 
@@ -220,14 +229,14 @@ func TestCreateMedia(t *testing.T) {
 	ctx := context.Background()
 	eventID := uuid.NewString()
 
-	err := test.CreateEvent(ctx, db, eventID, "create_media")
+	err := test.CreateEvent(ctx, db, dc, eventID, "create_media")
 	assert.NoError(t, err)
 
 	media := event.Media{
 		EventID: eventID,
 		URL:     "create_media.com/images/a.jpg",
 	}
-	err = eventSv.CreateMedia(ctx, eventID, media)
+	err = eventSv.CreateMedia(ctx, sqlTx, eventID, media)
 	assert.NoError(t, err)
 }
 
@@ -235,7 +244,7 @@ func TestCreatePermission(t *testing.T) {
 	ctx := context.Background()
 	eventID := uuid.NewString()
 
-	err := test.CreateEvent(ctx, db, eventID, "create_permission")
+	err := test.CreateEvent(ctx, db, dc, eventID, "create_permission")
 	assert.NoError(t, err)
 
 	permission := event.Permission{
@@ -243,7 +252,7 @@ func TestCreatePermission(t *testing.T) {
 		Key:         "create_permission",
 		Description: "TestCreatePermission",
 	}
-	err = eventSv.CreatePermission(ctx, eventID, permission)
+	err = eventSv.CreatePermission(ctx, sqlTx, eventID, permission)
 	assert.NoError(t, err)
 }
 
@@ -251,7 +260,7 @@ func TestCreateProduct(t *testing.T) {
 	ctx := context.Background()
 	eventID := uuid.NewString()
 
-	err := test.CreateEvent(ctx, db, eventID, "create_product")
+	err := test.CreateEvent(ctx, db, dc, eventID, "create_product")
 	assert.NoError(t, err)
 
 	product := event.Product{
@@ -265,7 +274,7 @@ func TestCreateProduct(t *testing.T) {
 		Total:       7,
 		Description: "TestCreatePermission",
 	}
-	err = eventSv.CreateProduct(ctx, eventID, product)
+	err = eventSv.CreateProduct(ctx, sqlTx, eventID, product)
 	assert.NoError(t, err)
 }
 
@@ -273,13 +282,13 @@ func TestDelete(t *testing.T) {
 	ctx := context.Background()
 	eventID := uuid.NewString()
 
-	err := test.CreateEvent(ctx, db, eventID, "delete")
+	err := test.CreateEvent(ctx, db, dc, eventID, "delete")
 	assert.NoError(t, err)
 
-	err = eventSv.Delete(ctx, eventID)
+	err = eventSv.Delete(ctx, sqlTx, eventID)
 	assert.NoError(t, err)
 
-	_, err = eventSv.GetByID(ctx, eventID)
+	_, err = eventSv.GetByID(ctx, sqlTx, eventID)
 	assert.Error(t, err)
 }
 
@@ -288,10 +297,10 @@ func TestGetByID(t *testing.T) {
 	eventID := uuid.NewString()
 
 	name := "get_by_id"
-	err := test.CreateEvent(ctx, db, eventID, name)
+	err := test.CreateEvent(ctx, db, dc, eventID, name)
 	assert.NoError(t, err)
 
-	event, err := eventSv.GetByID(ctx, eventID)
+	event, err := eventSv.GetByID(ctx, sqlTx, eventID)
 	assert.NoError(t, err)
 
 	assert.Equal(t, name, event.Name)
@@ -311,16 +320,16 @@ func TestGetHosts(t *testing.T) {
 	userID := uuid.NewString()
 
 	email := "host@email.com"
-	err := test.CreateUser(ctx, db, userID, email, "host", "1")
+	err := test.CreateUser(ctx, db, dc, userID, email, "host", "1")
 	assert.NoError(t, err)
 
-	err = test.CreateEvent(ctx, db, eventID, "hosts")
+	err = test.CreateEvent(ctx, db, dc, eventID, "hosts")
 	assert.NoError(t, err)
 
-	err = eventSv.SetRole(ctx, eventID, userID, permissions.Host)
+	err = eventSv.SetRole(ctx, sqlTx, eventID, userID, permissions.Host)
 	assert.NoError(t, err)
 
-	users, err := eventSv.GetHosts(ctx, eventID, params.Query{LookupID: userID})
+	users, err := eventSv.GetHosts(ctx, sqlTx, eventID, params.Query{LookupID: userID})
 	assert.NoError(t, err)
 
 	assert.Equal(t, 1, len(users))
@@ -342,7 +351,7 @@ func TestGetPermissions(t *testing.T) {
 	ctx := context.Background()
 	eventID := uuid.NewString()
 
-	err := test.CreateEvent(ctx, db, eventID, "permissions")
+	err := test.CreateEvent(ctx, db, dc, eventID, "permissions")
 	assert.NoError(t, err)
 
 	expectedKey := "create_permission"
@@ -352,12 +361,12 @@ func TestGetPermissions(t *testing.T) {
 			Key:         expectedKey,
 			Description: "TestCreatePermission",
 		}
-		err = eventSv.CreatePermission(ctx, eventID, permission)
+		err = eventSv.CreatePermission(ctx, sqlTx, eventID, permission)
 		assert.NoError(t, err)
 	})
 
 	t.Run("GetPermissions", func(t *testing.T) {
-		permissions, err := eventSv.GetPermissions(ctx, eventID)
+		permissions, err := eventSv.GetPermissions(ctx, sqlTx, eventID)
 		assert.NoError(t, err)
 
 		assert.Equal(t, expectedKey, permissions[0].Key)
@@ -373,10 +382,10 @@ func TestRoles(t *testing.T) {
 	defer tx.Rollback()
 
 	email := "role@email.com"
-	err = test.CreateUser(ctx, db, userID, email, "role", "1")
+	err = test.CreateUser(ctx, db, dc, userID, email, "role", "1")
 	assert.NoError(t, err)
 
-	err = test.CreateEvent(ctx, db, eventID, "roles")
+	err = test.CreateEvent(ctx, db, dc, eventID, "roles")
 	assert.NoError(t, err)
 
 	expectedRole := permissions.Attendant
@@ -389,17 +398,17 @@ func TestRoles(t *testing.T) {
 			Name:           expectedRole,
 			PermissionKeys: expectedPermKeys,
 		}
-		err = eventSv.CreateRole(ctx, eventID, role)
+		err = eventSv.CreateRole(ctx, sqlTx, eventID, role)
 		assert.NoError(t, err)
 	})
 
 	t.Run("SetRole", func(t *testing.T) {
-		err = eventSv.SetRole(ctx, eventID, userID, expectedRole)
+		err = eventSv.SetRole(ctx, db.MustBegin().Tx, eventID, userID, expectedRole)
 		assert.NoError(t, err)
 	})
 
 	t.Run("GetRoles", func(t *testing.T) {
-		roles, err := eventSv.GetRoles(ctx, eventID)
+		roles, err := eventSv.GetRoles(ctx, sqlTx, eventID)
 		assert.NoError(t, err)
 
 		assert.Equal(t, 1, len(roles))
@@ -426,10 +435,10 @@ func TestReports(t *testing.T) {
 	eventID := uuid.NewString()
 	userID := uuid.NewString()
 
-	err := test.CreateUser(ctx, db, userID, "report@email.com", "report", "1")
+	err := test.CreateUser(ctx, db, dc, userID, "report@email.com", "report", "1")
 	assert.NoError(t, err)
 
-	err = test.CreateEvent(ctx, db, eventID, "reports")
+	err = test.CreateEvent(ctx, db, dc, eventID, "reports")
 	assert.NoError(t, err)
 
 	expectedType := "report"
@@ -445,7 +454,7 @@ func TestReports(t *testing.T) {
 	})
 
 	t.Run("GetReports", func(t *testing.T) {
-		reports, err := eventSv.GetReports(ctx, eventID)
+		reports, err := eventSv.GetReports(ctx, sqlTx, eventID)
 		assert.NoError(t, err)
 
 		assert.Equal(t, 1, len(reports))
@@ -457,7 +466,7 @@ func TestIsPublic(t *testing.T) {
 	ctx := context.Background()
 	eventID := uuid.NewString()
 
-	err := test.CreateEvent(ctx, db, eventID, "reports")
+	err := test.CreateEvent(ctx, db, dc, eventID, "reports")
 	assert.NoError(t, err)
 
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
@@ -472,27 +481,28 @@ func TestIsPublic(t *testing.T) {
 
 func TestSearch(t *testing.T) {}
 
-func TestPqTx(t *testing.T) {
-	tx, err := eventSv.PqTx(context.Background(), true)
-	assert.NoError(t, err)
-	assert.NoError(t, tx.Rollback())
+func TestPgTx(t *testing.T) {
+	assert.NotPanics(t, func() {
+		tx := eventSv.BeginSQLTx(context.Background(), true)
+		assert.NoError(t, tx.Rollback())
+	})
 }
 
 func TestUpdate(t *testing.T) {
 	ctx := context.Background()
 	eventID := uuid.NewString()
 
-	err := test.CreateEvent(ctx, db, eventID, "update")
+	err := test.CreateEvent(ctx, db, dc, eventID, "update")
 	assert.NoError(t, err)
 
 	name := "update_updated"
 	updateEvent := event.UpdateEvent{
 		Name: &name,
 	}
-	err = eventSv.Update(ctx, eventID, updateEvent)
+	err = eventSv.Update(ctx, sqlTx, eventID, updateEvent)
 	assert.NoError(t, err)
 
-	event, err := eventSv.GetByID(ctx, eventID)
+	event, err := eventSv.GetByID(ctx, sqlTx, eventID)
 	assert.NoError(t, err)
 
 	assert.Equal(t, name, event.Name)
@@ -503,5 +513,9 @@ func TestUpdateMedia(t *testing.T) {
 }
 
 func TestUpdateProduct(t *testing.T) {
+
+}
+
+func TestUserHasRole(t *testing.T) {
 
 }

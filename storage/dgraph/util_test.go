@@ -127,3 +127,9 @@ func BenchmarkParseRDFResponseWithMap(b *testing.B) {
 		_, _ = ParseRDFWithMap(rdf)
 	}
 }
+
+func BenchmarkTriple(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Triple("uid(1234)", "invited", "7568")
+	}
+}

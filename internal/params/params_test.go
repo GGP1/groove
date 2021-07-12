@@ -38,6 +38,26 @@ func TestParseQuery(t *testing.T) {
 			},
 		},
 		{
+			desc:     "Media",
+			obj:      Media,
+			rawQuery: "cursor=39&limit=8&media.fields=id,url,created_at",
+			expected: Query{
+				Cursor: "39",
+				Fields: []string{"id", "url", "created_at"},
+				Limit:  "8",
+			},
+		},
+		{
+			desc:     "Product",
+			obj:      Product,
+			rawQuery: "cursor=2&limit=50&product.fields=stock,brand,type",
+			expected: Query{
+				Cursor: "2",
+				Fields: []string{"stock", "brand", "type"},
+				Limit:  "50",
+			},
+		},
+		{
 			desc:     "Lookup ID",
 			obj:      User,
 			rawQuery: "lookup.id=1573b020-be65-4691-ab99-d744f8febbc4",
@@ -71,32 +91,23 @@ func TestParseQuery(t *testing.T) {
 		})
 	}
 
+	t.Run("Invalid boolean", func(t *testing.T) {
+		rawQuery := "count=invalid"
+
+		_, err := ParseQuery(rawQuery, User)
+		assert.Error(t, err)
+	})
 	t.Run("Invalid lookup ID", func(t *testing.T) {
 		rawQuery := "lookup.id=4691-ab99-d744f8febbc4"
 
 		_, err := ParseQuery(rawQuery, User)
 		assert.Error(t, err)
 	})
-}
+	t.Run("Maximum exceeded", func(t *testing.T) {
+		rawQuery := "limit=100"
 
-func TestParseEventPredicate(t *testing.T) {
-	t.Run("Valid", func(t *testing.T) {
-		expected := "invited"
-		params := httprouter.Params{
-			{Key: "predicate", Value: expected},
-		}
-		got, err := GetEventPredicate(params)
-		assert.NoError(t, err)
-
-		assert.Equal(t, expected, got)
-	})
-
-	t.Run("Invalid", func(t *testing.T) {
-		params := httprouter.Params{
-			{Key: "predicate", Value: "followers"},
-		}
-		_, err := GetEventPredicate(params)
-		assert.Error(t, err, "Expected an error and got nil")
+		_, err := ParseQuery(rawQuery, Event)
+		assert.Error(t, err)
 	})
 }
 
@@ -218,7 +229,7 @@ func TestUUIDs(t *testing.T) {
 	})
 }
 
-func TestValidateFields(t *testing.T) {
+func TestValidateEventFields(t *testing.T) {
 	t.Run("Valid", func(t *testing.T) {
 		fields := []string{"id", "name", "type", "public", "start_time", "end_time", "created_at", "updated_at"}
 		err := validateEventFields(fields)
@@ -227,6 +238,48 @@ func TestValidateFields(t *testing.T) {
 
 	t.Run("Invalid", func(t *testing.T) {
 		err := validateEventFields([]string{"username"})
+		assert.Error(t, err, "Expected an error and got nil")
+	})
+}
+
+func TestValidateMediaFields(t *testing.T) {
+	t.Run("Valid", func(t *testing.T) {
+		fields := []string{"id", "event_id", "url", "created_at"}
+		err := validateMediaFields(fields)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Invalid", func(t *testing.T) {
+		err := validateMediaFields([]string{"username"})
+		assert.Error(t, err, "Expected an error and got nil")
+	})
+}
+
+func TestValidateProductFields(t *testing.T) {
+	t.Run("Valid", func(t *testing.T) {
+		fields := []string{"id", "event_id", "stock", "brand", "type", "description",
+			"discount", "taxes", "subtotal", "total", "created_at"}
+		err := validateProductFields(fields)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Invalid", func(t *testing.T) {
+		err := validateProductFields([]string{"username"})
+		assert.Error(t, err, "Expected an error and got nil")
+	})
+}
+
+func TestValidateUserFields(t *testing.T) {
+	t.Run("Valid", func(t *testing.T) {
+		fields := []string{"id", "created_at", "updated_at", "name", "user_id", "username",
+			"email", "description", "birth_date", "profile_image_url",
+			"premium", "private", "verified_email"}
+		err := validateUserFields(fields)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Invalid", func(t *testing.T) {
+		err := validateUserFields([]string{"type"})
 		assert.Error(t, err, "Expected an error and got nil")
 	})
 }

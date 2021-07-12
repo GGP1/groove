@@ -1,4 +1,4 @@
-package response
+package response_test
 
 import (
 	"bytes"
@@ -9,14 +9,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/test"
+
 	"github.com/stretchr/testify/assert"
 )
 
 func TestEncodedJSON(t *testing.T) {
 	expected := []byte("test")
 	rec := httptest.NewRecorder()
-	EncodedJSON(rec, []byte("test"))
+	response.EncodedJSON(rec, []byte("test"))
 
 	var buf bytes.Buffer
 	_, err := buf.ReadFrom(rec.Body)
@@ -31,7 +33,7 @@ func TestError(t *testing.T) {
 	expectedText := "{\"status\":404,\"error\":\"test\"}\n"
 
 	rec := httptest.NewRecorder()
-	Error(rec, http.StatusNotFound, errors.New("test"))
+	response.Error(rec, http.StatusNotFound, errors.New("test"))
 
 	assert.Equal(t, expectedHeaderCT, rec.Header().Get("Content-Type"))
 	assert.Equal(t, expectedStatus, rec.Code)
@@ -49,7 +51,7 @@ func TestJSON(t *testing.T) {
 	expectedText := "\"test\"\n"
 
 	rec := httptest.NewRecorder()
-	JSON(rec, http.StatusCreated, "test")
+	response.JSON(rec, http.StatusCreated, "test")
 
 	assert.Equal(t, expectedHeader, rec.Header().Get("Content-Type"))
 	assert.Equal(t, expectedStatus, rec.Code)
@@ -71,7 +73,7 @@ func TestJSONAndCache(t *testing.T) {
 	value := "test"
 
 	rec := httptest.NewRecorder()
-	JSONAndCache(mc, rec, key, value)
+	response.JSONAndCache(mc, rec, key, value)
 
 	assert.Equal(t, expectedHeader, rec.Header().Get("Content-Type"))
 
@@ -97,7 +99,7 @@ func TestJSONText(t *testing.T) {
 	expectedRes := "{\"status\":200,\"message\":\"test\"}\n"
 
 	rec := httptest.NewRecorder()
-	JSONMessage(rec, http.StatusOK, "test")
+	response.JSONMessage(rec, http.StatusOK, "test")
 
 	assert.Equal(t, expectedHeader, rec.Header().Get("Content-Type"))
 	assert.Equal(t, expectedStatus, rec.Code)
@@ -128,13 +130,13 @@ func BenchmarkEncodedJSON(b *testing.B) {
 	assert.NoError(b, err)
 
 	for i := 0; i < b.N; i++ {
-		EncodedJSON(rec, buf.Bytes())
+		response.EncodedJSON(rec, buf.Bytes())
 	}
 }
 
 func BenchmarkJSON(b *testing.B) {
 	rec := httptest.NewRecorder()
 	for i := 0; i < b.N; i++ {
-		JSON(rec, 200, benchMessage)
+		response.JSON(rec, 200, benchMessage)
 	}
 }

@@ -49,3 +49,13 @@ func TestSelectInID(t *testing.T) {
 		})
 	})
 }
+
+func BenchmarkSelectWhereID(b *testing.B) {
+	fields := []string{"id", "name", "type", "public", "premium", "created_at", "slots", "ticket_cost"}
+	idField := "event_id"
+	id := "123456789"
+
+	for i := 0; i < b.N; i++ {
+		_ = SelectWhereID(Events, fields, idField, id)
+	}
+}

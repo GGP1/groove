@@ -57,10 +57,10 @@ func TestMain(m *testing.M) {
 	if err := poolPg.Purge(resourcePg); err != nil {
 		log.Fatal(err)
 	}
-	if err := poolDc.Purge(resourceDc); err != nil {
+	if err := conn.Close(); err != nil {
 		log.Fatal(err)
 	}
-	if err := conn.Close(); err != nil {
+	if err := poolDc.Purge(resourceDc); err != nil {
 		log.Fatal(err)
 	}
 	if err := poolMc.Purge(resourceMc); err != nil {
@@ -75,21 +75,19 @@ func TestBlock(t *testing.T) {
 	userID := uuid.NewString()
 	blockedID := uuid.NewString()
 
-	err := test.CreateUser(ctx, db, userID, "block1@email.com", "block1", "1")
+	err := test.CreateUser(ctx, db, dc, userID, "block1@email.com", "block1", "1")
 	assert.NoError(t, err)
-	err = test.CreateUser(ctx, db, blockedID, "block2@email.com", "block2", "2")
+	err = test.CreateUser(ctx, db, dc, blockedID, "block2@email.com", "block2", "2")
 	assert.NoError(t, err)
 
 	err = userSv.Block(context.Background(), userID, blockedID)
 	assert.NoError(t, err)
 
-	// Test if we receive the blocked user
 	blocked, err := userSv.GetBlocked(ctx, userID, params.Query{LookupID: blockedID})
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(blocked))
 	assert.Equal(t, blockedID, blocked[0].ID)
 
-	// Test if we receive the blocker user
 	blockedBy, err := userSv.GetBlockedBy(ctx, blockedID, params.Query{LookupID: userID})
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(blockedBy))
@@ -105,34 +103,32 @@ func TestBlock(t *testing.T) {
 
 	blockedBy2, err := userSv.GetBlockedBy(ctx, blockedID, params.Query{LookupID: userID})
 	assert.NoError(t, err)
-
 	assert.Equal(t, 0, len(blockedBy2))
 }
 
 func TestCreate(t *testing.T) {
 	ctx := context.Background()
 	id := uuid.NewString()
-	tm := time.Now()
+	now := time.Now()
 	createUser := user.CreateUser{
 		Name:      "Create",
 		Username:  "Create",
 		Email:     "create@email.com",
 		Password:  "1",
-		BirthDate: &tm,
+		BirthDate: &now,
 	}
 	err := userSv.Create(ctx, id, createUser)
 	assert.NoError(t, err)
 
 	user, err := userSv.GetByUsername(ctx, createUser.Username)
 	assert.NoError(t, err)
-
 	assert.Equal(t, id, user.ID)
 }
 
 func TestDelete(t *testing.T) {
 	ctx := context.Background()
 	id := uuid.NewString()
-	err := test.CreateUser(ctx, db, id, "delete@email.com", "delete", "1")
+	err := test.CreateUser(ctx, db, dc, id, "delete@email.com", "delete", "1")
 	assert.NoError(t, err)
 
 	err = userSv.Delete(ctx, id)
@@ -147,9 +143,9 @@ func TestFollow(t *testing.T) {
 	userID := uuid.NewString()
 	followedID := uuid.NewString()
 
-	err := test.CreateUser(ctx, db, userID, "follow1@email.com", "follow1", "1")
+	err := test.CreateUser(ctx, db, dc, userID, "follow1@email.com", "follow1", "1")
 	assert.NoError(t, err)
-	err = test.CreateUser(ctx, db, followedID, "follow2@email.com", "follow2", "2")
+	err = test.CreateUser(ctx, db, dc, followedID, "follow2@email.com", "follow2", "2")
 	assert.NoError(t, err)
 
 	err = userSv.Follow(context.Background(), userID, followedID)
@@ -186,9 +182,10 @@ func TestGetBy(t *testing.T) {
 	username := "username"
 	email := "email"
 
-	err := test.CreateUser(ctx, db, id, email, username, "1")
+	err := test.CreateUser(ctx, db, dc, id, email, username, "1")
 	assert.NoError(t, err)
 
+	// TODO: scanning empty fields is not allowed, use sql.Null..?
 	eUser, err := userSv.GetByEmail(ctx, email)
 	assert.NoError(t, err)
 
@@ -208,9 +205,9 @@ func TestGetConfirmedEvents(t *testing.T) {
 	eventID := uuid.NewString()
 	userID := uuid.NewString()
 
-	err := test.CreateEvent(ctx, db, eventID, "TestGetConfirmedEvents")
+	err := test.CreateEvent(ctx, db, dc, eventID, "TestGetConfirmedEvents")
 	assert.NoError(t, err)
-	err = test.CreateUser(ctx, db, userID, "confirmed@email.com", "confirmed", "1")
+	err = test.CreateUser(ctx, db, dc, userID, "confirmed@email.com", "confirmed", "1")
 	assert.NoError(t, err)
 
 	err = eventSv.AddEdge(ctx, eventID, event.Confirmed, userID)
@@ -227,9 +224,9 @@ func TestGetInvitedEvents(t *testing.T) {
 	eventID := uuid.NewString()
 	userID := uuid.NewString()
 
-	err := test.CreateEvent(ctx, db, eventID, "TestGetInvitedEvents")
+	err := test.CreateEvent(ctx, db, dc, eventID, "TestGetInvitedEvents")
 	assert.NoError(t, err)
-	err = test.CreateUser(ctx, db, userID, "invited@email.com", "invited", "1")
+	err = test.CreateUser(ctx, db, dc, userID, "invited@email.com", "invited", "1")
 	assert.NoError(t, err)
 
 	err = eventSv.AddEdge(ctx, eventID, event.Invited, userID)
@@ -246,12 +243,19 @@ func TestGetHostedEvents(t *testing.T) {
 	eventID := uuid.NewString()
 	userID := uuid.NewString()
 
-	err := test.CreateUser(ctx, db, userID, "hosted@email.com", "hosted", "1")
+	err := test.CreateUser(ctx, db, dc, userID, "hosted@email.com", "hosted", "1")
 	assert.NoError(t, err)
 
+	boolean := false
 	createEvent := event.CreateEvent{
 		CreatorID: userID,
 		Name:      "TestGetHostedEvents",
+		Type:      event.Talk,
+		Public:    &boolean,
+		Virtual:   &boolean,
+		Slots:     100,
+		StartTime: 1,
+		EndTime:   2,
 	}
 	err = eventSv.Create(ctx, eventID, createEvent)
 	assert.NoError(t, err)
@@ -267,9 +271,9 @@ func TestGetLikedEvents(t *testing.T) {
 	eventID := uuid.NewString()
 	userID := uuid.NewString()
 
-	err := test.CreateEvent(ctx, db, eventID, "TestGetLikedEvents")
+	err := test.CreateEvent(ctx, db, dc, eventID, "TestGetLikedEvents")
 	assert.NoError(t, err)
-	err = test.CreateUser(ctx, db, userID, "liked@email.com", "liked", "1")
+	err = test.CreateUser(ctx, db, dc, userID, "liked@email.com", "liked", "1")
 	assert.NoError(t, err)
 
 	err = eventSv.AddEdge(ctx, eventID, event.LikedBy, userID)
@@ -286,9 +290,17 @@ func TestIsAdmin(t *testing.T) {
 	adminID := uuid.NewString()
 	nonAdminID := uuid.NewString()
 
-	err := test.CreateUser(ctx, db, adminID, adminEmail, "admin", "1")
+	now := time.Now()
+	err := userSv.Create(ctx, adminID, user.CreateUser{
+		Name:      "admin",
+		Username:  "admin",
+		Email:     adminEmail,
+		Password:  "1",
+		BirthDate: &now,
+	})
 	assert.NoError(t, err)
-	err = test.CreateUser(ctx, db, nonAdminID, "nonadmin@email.com", "nonadmin", "1")
+
+	err = test.CreateUser(ctx, db, dc, nonAdminID, "nonadmin@email.com", "nonadmin", "1")
 	assert.NoError(t, err)
 
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
@@ -308,7 +320,7 @@ func TestPrivateProfile(t *testing.T) {
 	ctx := context.Background()
 	id := uuid.NewString()
 
-	err := test.CreateUser(ctx, db, id, "private@email.com", "private", "1")
+	err := test.CreateUser(ctx, db, dc, id, "private@email.com", "private", "1")
 	assert.NoError(t, err)
 
 	ok, err := userSv.PrivateProfile(ctx, id)
@@ -332,7 +344,7 @@ func TestUpdate(t *testing.T) {
 	ctx := context.Background()
 	id := uuid.NewString()
 
-	err := test.CreateUser(ctx, db, id, "update@email.com", "update", "1")
+	err := test.CreateUser(ctx, db, dc, id, "update@email.com", "update", "1")
 	assert.NoError(t, err)
 
 	uptUName := "updatedUsername"
