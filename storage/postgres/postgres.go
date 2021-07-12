@@ -32,7 +32,7 @@ func Connect(ctx context.Context, c config.Postgres) (*sqlx.DB, error) {
 	return db, nil
 }
 
-// CreateTables ..
+// CreateTables creates postgres tables.
 func CreateTables(ctx context.Context, db *sqlx.DB) error {
 	if _, err := db.ExecContext(ctx, tables); err != nil {
 		return errors.Wrap(err, "creating tables")
@@ -103,7 +103,8 @@ CREATE TABLE IF NOT EXISTS events_permissions
 	key varchar(20) NOT NULL,
  	name varchar(20) NOT NULL,
  	description varchar(50),
- 	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
+    created_at timestamp with time zone DEFAULT NOW(),
+	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS events_roles
@@ -111,7 +112,8 @@ CREATE TABLE IF NOT EXISTS events_roles
 	event_id UUID NOT NULL,
 	name varchar(20) NOT NULL,
  	permissions_keys text NOT NULL,
- 	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
+    created_at timestamp with time zone DEFAULT NOW(),
+	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS events_users_roles
@@ -119,7 +121,7 @@ CREATE TABLE IF NOT EXISTS events_users_roles
 	event_id UUID NOT NULL,
 	user_id UUID NOT NULL,
  	role_name varchar(20) NOT NULL,
- 	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,
+	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,
  	FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );
 
@@ -130,9 +132,31 @@ CREATE TABLE IF NOT EXISTS events_locations
 	state text,
 	city text,
 	address text,
-    virtual boolean NOT NULL,
-    platform text,
-    invite_url text,
+    FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS events_media
+(
+    id UUID NOT NULL,
+    event_id UUID NOT NULL,
+	url text NOT NULL,
+    created_at timestamp with time zone DEFAULT NOW(),
+    FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS events_products
+(
+    id UUID NOT NULL,
+    event_id UUID NOT NULL,
+    stock integer NOT NULL,
+    brand text NOT NULL,
+	type text NOT NULL,
+    description text,
+    discount integer,
+	taxes integer,
+    subtotal integer NOT NULL,
+    total integer NOT NULL,
+    created_at timestamp with time zone DEFAULT NOW(),
     FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
 );
 
@@ -142,6 +166,15 @@ CREATE TABLE IF NOT EXISTS events_reports
 	user_id UUID NOT NULL,
 	type text NOT NULL,
 	details text NOT NULL,
+    created_at timestamp with time zone DEFAULT NOW(),
     FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );`
+
+// CREATE INDEX ON events(created_at);
+// CREATE INDEX ON users(created_at);
+// CREATE INDEX ON events_media(created_at);
+// CREATE INDEX ON events_roles(created_at);
+// CREATE INDEX ON events_permissions(created_at);
+// CREATE INDEX ON events_products(created_at);
+// CREATE INDEX ON events_reports(created_at);
