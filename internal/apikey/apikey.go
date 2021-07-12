@@ -74,6 +74,10 @@ func New(id string) (string, error) {
 
 // Check validates the API key received.
 func Check(key string) error {
+	if key[:len(prefix)] != prefix {
+		return ErrInvalidAPIKey
+	}
+
 	token, err := jwt.ParseWithClaims(key[len(prefix):], &Claims{}, func(t *jwt.Token) (interface{}, error) {
 		return secretKey, nil
 	})
