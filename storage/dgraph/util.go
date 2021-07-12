@@ -33,6 +33,8 @@ const (
 type dgraphType int
 
 // CreateNode creates a node of the given type in dgraph.
+//
+// CreateNode does not commit the transaction passed.
 func CreateNode(ctx context.Context, tx *dgo.Txn, dType dgraphType, id string) error {
 	predicate := ""
 	object := ""
@@ -52,17 +54,23 @@ func CreateNode(ctx context.Context, tx *dgo.Txn, dType dgraphType, id string) e
 
 	// _:1 <predicate> "uuid" .
 	buf.WriteString(createSubject)
-	buf.WriteString(" <")
+	buf.WriteByte(' ')
+	buf.WriteByte('<')
 	buf.WriteString(predicate)
-	buf.WriteString(`>"`)
+	buf.WriteByte('>')
+	buf.WriteByte('"')
 	buf.WriteString(id)
-	buf.WriteString("\".\n")
+	buf.WriteByte('"')
+	buf.WriteByte('.')
+	buf.WriteByte('\n')
 
 	// _:1 <dgraph.type> "type" .
 	buf.WriteString(createSubject)
 	buf.WriteString(" <dgraph.type>\"")
 	buf.WriteString(object)
-	buf.WriteString("\".")
+	buf.WriteByte('"')
+	buf.WriteByte('.')
+	buf.WriteByte('\n')
 
 	mu := &api.Mutation{
 		Cond:      "@if(eq(len(node), 0))",
@@ -107,7 +115,6 @@ func EventEdgeRequest(eventID, predicate, userID string, set bool) *api.Request 
 		Vars:      vars,
 		Query:     q,
 		Mutations: []*api.Mutation{mu},
-		CommitNow: true,
 	}
 }
 
@@ -324,9 +331,11 @@ func Triple(subject, predicate, object string) []byte {
 	// Do not use bufferpool as it will be called multiple times in a row
 	buf := bytes.NewBufferString(subject)
 	buf.Grow(len(predicate) + len(object) + literalStrings)
-	buf.WriteString(" <")
+	buf.WriteByte(' ')
+	buf.WriteByte('<')
 	buf.WriteString(predicate)
-	buf.WriteString("> ")
+	buf.WriteByte('>')
+	buf.WriteByte(' ')
 	if !isUID {
 		buf.WriteByte('"')
 	}
@@ -334,23 +343,27 @@ func Triple(subject, predicate, object string) []byte {
 	if !isUID {
 		buf.WriteByte('"')
 	}
-	buf.WriteString(" .")
+	buf.WriteByte(' ')
+	buf.WriteByte('.')
 
 	return buf.Bytes()
 }
 
-// TripleUID is like Triple but with uids
+// TripleUID is like Triple but with uids.
 func TripleUID(subjectUID, predicate, objectUID string) []byte {
 	buf := bufferpool.Get()
 	defer bufferpool.Put(buf)
 
 	buf.Grow(len(subjectUID) + len(predicate) + len(objectUID) + 6)
 	buf.WriteString(subjectUID)
-	buf.WriteString(" <")
+	buf.WriteByte(' ')
+	buf.WriteByte('<')
 	buf.WriteString(predicate)
-	buf.WriteString("> ")
+	buf.WriteByte('>')
+	buf.WriteByte(' ')
 	buf.WriteString(objectUID)
-	buf.WriteString(" .")
+	buf.WriteByte(' ')
+	buf.WriteByte('.')
 
 	return buf.Bytes()
 }

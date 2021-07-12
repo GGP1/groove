@@ -31,12 +31,21 @@ func Connect(ctx context.Context, config config.Dgraph) (*dgo.Dgraph, func() err
 	}
 
 	dc := dgo.NewDgraphClient(api.NewDgraphClient(conn))
-	if err := dc.Alter(ctx, &api.Operation{Schema: schema}); err != nil {
-		return nil, nil, errors.Wrap(err, "creating schema")
+	if err := CreateSchema(ctx, dc); err != nil {
+		return nil, nil, err
 	}
 
 	log.Sugar().Infof("Connected to dgraph on %s", addr)
 	return dc, conn.Close, nil
+}
+
+// CreateSchema creates the dgraph schema.
+func CreateSchema(ctx context.Context, dc *dgo.Dgraph) error {
+	if err := dc.Alter(ctx, &api.Operation{Schema: schema}); err != nil {
+		return errors.Wrap(err, "creating schema")
+	}
+
+	return nil
 }
 
 const schema = `
