@@ -16,7 +16,10 @@ var (
 	sessionKey          sessionCtxKey = struct{}{}
 )
 
-const saltLen = 16
+const (
+	idLen   = 36 // UUID string length
+	saltLen = 16
+)
 
 // SessionInfo contains the information about the user session.
 type SessionInfo struct {
@@ -62,17 +65,21 @@ func parseSessionInfo(id string, salt []byte, premium bool) string {
 	if premium {
 		prem = 't'
 	}
+
 	buf := bufferpool.Get()
-	defer bufferpool.Put(buf)
+	buf.Grow(idLen + saltLen + 1)
 	buf.WriteString(id)
 	buf.Write(salt)
 	buf.WriteByte(prem)
-	return buf.String()
+	sessionInfo := buf.String()
+	bufferpool.Put(buf)
+
+	return sessionInfo
 }
 
 func unparseSessionInfo(sessionID string) (SessionInfo, error) {
 	// sessionID = uuid(36)+salt(saltLen)+premium(1)
-	if len(sessionID) != 36+saltLen+1 {
+	if len(sessionID) != idLen+saltLen+1 {
 		return SessionInfo{}, errCorruptedSession
 	}
 	id := sessionID[:len(sessionID)-saltLen-1]

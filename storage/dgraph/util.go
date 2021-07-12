@@ -1,7 +1,6 @@
 package dgraph
 
 import (
-	"bytes"
 	"context"
 	"strconv"
 	"strings"
@@ -328,9 +327,9 @@ func Triple(subject, predicate, object string) []byte {
 		literalStrings -= 2
 	}
 
-	// Do not use bufferpool as it will be called multiple times in a row
-	buf := bytes.NewBufferString(subject)
-	buf.Grow(len(predicate) + len(object) + literalStrings)
+	buf := bufferpool.Get()
+	buf.Grow(len(subject) + len(predicate) + len(object) + literalStrings)
+	buf.WriteString(subject)
 	buf.WriteByte(' ')
 	buf.WriteByte('<')
 	buf.WriteString(predicate)
@@ -346,14 +345,15 @@ func Triple(subject, predicate, object string) []byte {
 	buf.WriteByte(' ')
 	buf.WriteByte('.')
 
-	return buf.Bytes()
+	triple := buf.Bytes()
+	bufferpool.Put(buf)
+
+	return triple
 }
 
 // TripleUID is like Triple but with uids.
 func TripleUID(subjectUID, predicate, objectUID string) []byte {
 	buf := bufferpool.Get()
-	defer bufferpool.Put(buf)
-
 	buf.Grow(len(subjectUID) + len(predicate) + len(objectUID) + 6)
 	buf.WriteString(subjectUID)
 	buf.WriteByte(' ')
@@ -365,7 +365,10 @@ func TripleUID(subjectUID, predicate, objectUID string) []byte {
 	buf.WriteByte(' ')
 	buf.WriteByte('.')
 
-	return buf.Bytes()
+	triple := buf.Bytes()
+	bufferpool.Put(buf)
+
+	return triple
 }
 
 // UserEdgeRequest returns a new request creating an edge using upsert.

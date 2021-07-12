@@ -2,6 +2,7 @@ package permissions
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -37,10 +38,14 @@ func TestParseKeys(t *testing.T) {
 		InviteUsers: {},
 		UpdateEvent: {},
 	}
-	expected := "ban_users/invite_users/update_event"
 
 	got := ParseKeys(mp)
-	assert.Equal(t, expected, got)
+
+	for _, s := range strings.Split(got, Separator) {
+		if s != BanUsers && s != InviteUsers && s != UpdateEvent {
+			t.Fail()
+		}
+	}
 }
 
 func TestUnparseKeys(t *testing.T) {

@@ -94,7 +94,6 @@ func ScanStringSlice(rows *sql.Rows) ([]string, error) {
 // 	SELECT fields FROM table WHERE idfield='id'
 func SelectWhereID(table table, fields []string, idField, id string) string {
 	buf := bufferpool.Get()
-	defer bufferpool.Put(buf)
 
 	buf.WriteString("SELECT ")
 	writeFields(buf, table, fields)
@@ -106,7 +105,10 @@ func SelectWhereID(table table, fields []string, idField, id string) string {
 	buf.WriteString(id)
 	buf.WriteByte('\'')
 
-	return buf.String()
+	query := buf.String()
+	bufferpool.Put(buf)
+
+	return query
 }
 
 // SelectInID builds a postgres select from in statement.
@@ -114,7 +116,6 @@ func SelectWhereID(table table, fields []string, idField, id string) string {
 // 	SELECT fields FROM table WHERE id IN ('id1', 'id2', ...)
 func SelectInID(table table, ids, fields []string) string {
 	buf := bufferpool.Get()
-	defer bufferpool.Put(buf)
 
 	buf.WriteString("SELECT ")
 	writeFields(buf, table, fields)
@@ -132,7 +133,10 @@ func SelectInID(table table, ids, fields []string) string {
 	}
 	buf.WriteByte(')')
 
-	return buf.String()
+	query := buf.String()
+	bufferpool.Put(buf)
+
+	return query
 }
 
 func writeFields(buf *bytes.Buffer, table table, fields []string) {
