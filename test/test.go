@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GGP1/groove/service/event"
+	"github.com/GGP1/groove/storage/dgraph"
 	"github.com/GGP1/groove/storage/postgres"
 	"golang.org/x/crypto/bcrypt"
 
@@ -19,6 +21,7 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/encoding/gzip"
 
 	// Used to open a connection with postgres database
@@ -26,21 +29,34 @@ import (
 )
 
 // CreateEvent creates a new user for testing purposes.
-func CreateEvent(ctx context.Context, db *sqlx.DB, id, name string) error {
-	typ := ""
+func CreateEvent(ctx context.Context, db *sqlx.DB, dc *dgo.Dgraph, id, name string) error {
+	typ := event.GrandPrix
 	public := true
 	virtual := false
 	ticketCost := 10
 	slots := 100
-	startTime := 15000000000
-	endTime := 32000000000
-	q := "INSERT INTO events (id, name, type, public, virtual, ticket_cost, slots, start_time, end_Time) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)"
-	_, err := db.ExecContext(ctx, q, id, name, typ, public, virtual, ticketCost, slots, startTime, endTime)
-	return err
+	startTime := 150000
+	endTime := 320000
+	q := `INSERT INTO events 
+	(id, name, type, public, virtual, ticket_cost, slots, start_time, end_Time) 
+	VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`
+	_, err := db.ExecContext(ctx, q, id, name, typ, public, virtual,
+		ticketCost, slots, startTime, endTime)
+	if err != nil {
+		return err
+	}
+
+	dcTx := dc.NewTxn()
+	if err := dgraph.CreateNode(ctx, dcTx, dgraph.Event, id); err != nil {
+		dcTx.Discard(ctx)
+		return err
+	}
+
+	return dcTx.Commit(ctx)
 }
 
 // CreateUser creates a new user for testing purposes.
-func CreateUser(ctx context.Context, db *sqlx.DB, id, email, username, password string) error {
+func CreateUser(ctx context.Context, db *sqlx.DB, dc *dgo.Dgraph, id, email, username, password string) error {
 	pwd, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return err
@@ -48,7 +64,17 @@ func CreateUser(ctx context.Context, db *sqlx.DB, id, email, username, password 
 	password = string(pwd)
 	q := "INSERT INTO users (id, name, email, username, password, birth_date) VALUES ($1,$2,$3,$4,$5,$6)"
 	_, err = db.ExecContext(ctx, q, id, "test", email, username, password, time.Now())
-	return err
+	if err != nil {
+		return err
+	}
+
+	dcTx := dc.NewTxn()
+	if err := dgraph.CreateNode(ctx, dcTx, dgraph.User, id); err != nil {
+		dcTx.Discard(ctx)
+		return err
+	}
+
+	return dcTx.Commit(ctx)
 }
 
 // NewResource returns a new pool, a docker container and handles its purge.
@@ -97,6 +123,27 @@ func RunDgraph() (*dockertest.Pool, *dockertest.Resource, *dgo.Dgraph, *grpc.Cli
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
+
+	ctx := context.Background()
+	// Wait for the connection to establish before running tests
+	ticker := time.NewTicker(1 * time.Second)
+	for {
+		<-ticker.C
+		state := conn.GetState()
+		if state == connectivity.Ready {
+			break
+		}
+	}
+
+	// The connection is established but the server is still initiating
+	// retry creating schema until success
+	for {
+		<-ticker.C
+		if err := dgraph.CreateSchema(ctx, dc); err == nil {
+			break
+		}
+	}
+	ticker.Stop()
 
 	return pool, resource, dc, conn, nil
 }
