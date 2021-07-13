@@ -126,7 +126,7 @@ func (h *Handler) AddConfirmed() http.HandlerFunc {
 				return http.StatusInternalServerError, err
 			}
 
-			err = h.service.SetRole(ctx, tx, eventID, reqBody.UserID, permissions.Attendant)
+			err = h.service.SetRoles(ctx, tx, eventID, permissions.Attendant, reqBody.UserID)
 			if err != nil {
 				return http.StatusInternalServerError, err
 			}
@@ -1452,8 +1452,8 @@ func (h *Handler) Search() http.HandlerFunc {
 	}
 }
 
-// SetRole sets a role to a user inside the event passed.
-func (h *Handler) SetRole() http.HandlerFunc {
+// SetRoles sets a role to n users inside the event passed.
+func (h *Handler) SetRoles() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -1464,8 +1464,8 @@ func (h *Handler) SetRole() http.HandlerFunc {
 		}
 
 		var reqBody struct {
-			UserID   string `json:"user_id,omitempty"`
-			RoleName string `json:"role_name,omitempty"`
+			UserIDs  []string `json:"user_ids,omitempty"`
+			RoleName string   `json:"role_name,omitempty"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
@@ -1484,7 +1484,7 @@ func (h *Handler) SetRole() http.HandlerFunc {
 				return http.StatusForbidden, err
 			}
 
-			err := h.service.SetRole(ctx, tx, eventID, reqBody.UserID, reqBody.RoleName)
+			err := h.service.SetRoles(ctx, tx, eventID, reqBody.RoleName, reqBody.UserIDs...)
 			if err != nil {
 				return http.StatusInternalServerError, err
 			}

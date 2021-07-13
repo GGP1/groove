@@ -61,7 +61,7 @@ type Service interface {
 	IsPublic(ctx context.Context, sqlTx *sql.Tx, eventID string) (bool, error)
 	RemoveEdge(ctx context.Context, eventID string, predicate predicate, userID string) error
 	Search(ctx context.Context, query string) ([]Event, error)
-	SetRole(ctx context.Context, sqlTx *sql.Tx, eventID, userID, roleName string) error
+	SetRoles(ctx context.Context, sqlTx *sql.Tx, eventID, roleName string, userIDs ...string) error
 	SQLTx(ctx context.Context, readOnly bool, f func(tx *sql.Tx) (int, error)) (int, error)
 	Update(ctx context.Context, sqlTx *sql.Tx, eventID string, event UpdateEvent) error
 	UpdateMedia(ctx context.Context, sqlTx *sql.Tx, eventID string, media Media) error
@@ -854,13 +854,15 @@ func (s *service) Search(ctx context.Context, query string) ([]Event, error) {
 	return nil, nil
 }
 
-// SetRole assigns a role to a user inside an event.
-func (s *service) SetRole(ctx context.Context, sqlTx *sql.Tx, eventID, userID, roleName string) error {
-	s.metrics.incMethodCalls("SetRole")
+// SetRoles assigns a role to n users inside an event.
+func (s *service) SetRoles(ctx context.Context, sqlTx *sql.Tx, eventID, roleName string, userIDs ...string) error {
+	s.metrics.incMethodCalls("SetRoles")
 
-	insert := "INSERT INTO events_users_roles (event_id, user_id, role_name) VALUES ($1, $2, $3)"
-	if _, err := sqlTx.ExecContext(ctx, insert, eventID, userID, roleName); err != nil {
-		return errors.Wrap(err, "setting role")
+	q := "INSERT INTO events_users_roles (event_id, user_id, role_name) VALUES"
+	insert := postgres.BulkInsertRoles(q, eventID, roleName, userIDs)
+
+	if _, err := sqlTx.ExecContext(ctx, insert); err != nil {
+		return errors.Wrap(err, "setting roles")
 	}
 
 	return nil

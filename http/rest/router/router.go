@@ -137,7 +137,7 @@ func New(config config.Config, db *sqlx.DB, dc *dgo.Dgraph, rdb *redis.Client, m
 			id.get("/roles", events.GetRoles(), requireLogin)
 			id.get("/roles/clone", events.CloneRoles(), requireLogin)
 			id.post("/roles/get", events.GetRole(), requireLogin)
-			id.post("/roles/set", events.SetRole(), requireLogin)
+			id.post("/roles/set", events.SetRoles(), requireLogin)
 			id.get("/reports", events.GetReports(), requireLogin)
 			id.put("/update", events.Update(), requireLogin)
 			id.put("/update/media", events.UpdateMedia(), requireLogin)

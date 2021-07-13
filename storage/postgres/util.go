@@ -28,6 +28,30 @@ const (
 
 type table string
 
+// BulkInsertRoles adds the values to roles' insert query.
+func BulkInsertRoles(query, eventID, roleName string, userIDs []string) string {
+	buf := bufferpool.Get()
+
+	buf.WriteString(query)
+	for i, userID := range userIDs {
+		// query ... ('eventID','userID','roleName'), (...)
+		buf.WriteString(" ('")
+		buf.WriteString(eventID)
+		buf.WriteString("','")
+		buf.WriteString(userID)
+		buf.WriteString("','")
+		buf.WriteString(roleName)
+		buf.WriteString("')")
+		if i != len(userIDs)-1 {
+			buf.WriteByte(',')
+		}
+	}
+
+	q := buf.String()
+	bufferpool.Put(buf)
+	return q
+}
+
 // IterRows iterates over the rows passed executing f() on each iteration.
 func IterRows(rows *sql.Rows, f func(r *sql.Rows) error) error {
 	for rows.Next() {

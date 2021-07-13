@@ -326,7 +326,7 @@ func TestGetHosts(t *testing.T) {
 	err = test.CreateEvent(ctx, db, dc, eventID, "hosts")
 	assert.NoError(t, err)
 
-	err = eventSv.SetRole(ctx, sqlTx, eventID, userID, permissions.Host)
+	err = eventSv.SetRoles(ctx, sqlTx, eventID, permissions.Host, userID)
 	assert.NoError(t, err)
 
 	users, err := eventSv.GetHosts(ctx, sqlTx, eventID, params.Query{LookupID: userID})
@@ -377,12 +377,9 @@ func TestRoles(t *testing.T) {
 	ctx := context.Background()
 	eventID := uuid.NewString()
 	userID := uuid.NewString()
-	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
-	assert.NoError(t, err)
-	defer tx.Rollback()
 
 	email := "role@email.com"
-	err = test.CreateUser(ctx, db, dc, userID, email, "role", "1")
+	err := test.CreateUser(ctx, db, dc, userID, email, "role", "1")
 	assert.NoError(t, err)
 
 	err = test.CreateEvent(ctx, db, dc, eventID, "roles")
@@ -402,8 +399,8 @@ func TestRoles(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
-	t.Run("SetRole", func(t *testing.T) {
-		err = eventSv.SetRole(ctx, db.MustBegin().Tx, eventID, userID, expectedRole)
+	t.Run("SetRoles", func(t *testing.T) {
+		err = eventSv.SetRoles(ctx, sqlTx, eventID, expectedRole, userID)
 		assert.NoError(t, err)
 	})
 
@@ -416,14 +413,14 @@ func TestRoles(t *testing.T) {
 	})
 
 	t.Run("GetRole", func(t *testing.T) {
-		role, err := eventSv.GetRole(ctx, tx, eventID, expectedRole)
+		role, err := eventSv.GetRole(ctx, sqlTx, eventID, expectedRole)
 		assert.NoError(t, err)
 
 		assert.Equal(t, expectedPermKeys, role.PermissionKeys)
 	})
 
 	t.Run("GetUserRole", func(t *testing.T) {
-		gotRole, err := eventSv.GetUserRole(ctx, tx, eventID, userID)
+		gotRole, err := eventSv.GetUserRole(ctx, sqlTx, eventID, userID)
 		assert.NoError(t, err)
 
 		assert.Equal(t, expectedRole, gotRole)
@@ -469,14 +466,10 @@ func TestIsPublic(t *testing.T) {
 	err := test.CreateEvent(ctx, db, dc, eventID, "reports")
 	assert.NoError(t, err)
 
-	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
-	assert.NoError(t, err)
-
-	got, err := eventSv.IsPublic(ctx, tx, eventID)
+	got, err := eventSv.IsPublic(ctx, sqlTx, eventID)
 	assert.NoError(t, err)
 
 	assert.Equal(t, true, got)
-	assert.NoError(t, tx.Rollback())
 }
 
 func TestSearch(t *testing.T) {}

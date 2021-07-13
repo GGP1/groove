@@ -8,6 +8,17 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestBulkInsert(t *testing.T) {
+	q := "INSERT INTO events_staff (event_id, role_name, user_id) VALUES"
+	eventID := "1234"
+	userIDs := []string{"1", "2"}
+
+	expected := "INSERT INTO events_staff (event_id, role_name, user_id) VALUES ('1234','1','staff'), ('1234','2','staff')"
+	got := BulkInsertRoles(q, eventID, "staff", userIDs)
+
+	assert.Equal(t, expected, got)
+}
+
 func TestSelectInID(t *testing.T) {
 	t.Run("Users", func(t *testing.T) {
 		t.Run("Standard", func(t *testing.T) {
