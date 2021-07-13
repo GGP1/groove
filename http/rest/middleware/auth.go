@@ -8,10 +8,8 @@ import (
 	"github.com/GGP1/groove/internal/apikey"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/response"
-	"github.com/GGP1/groove/service/event"
 	"github.com/GGP1/groove/service/user"
 
-	"github.com/dgraph-io/dgo/v210"
 	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
 )
@@ -23,29 +21,25 @@ var (
 
 // Auth holds the redis instance used to authenticate users.
 type Auth struct {
-	db      *sqlx.DB
-	dc      *dgo.Dgraph
-	session auth.Session
-	// TODO: do not make calls to the database here as we will require to open another transaction later anyways
-	eventService event.Service
-	userService  user.Service
+	db          *sqlx.DB
+	session     auth.Session
+	userService user.Service
 }
 
 // NewAuth returns a new authentication/authorization middleware.
-func NewAuth(db *sqlx.DB, dc *dgo.Dgraph, session auth.Session, eventSv event.Service, userSv user.Service) Auth {
+func NewAuth(db *sqlx.DB, session auth.Session, userSv user.Service) Auth {
 	return Auth{
-		db:           db,
-		dc:           dc,
-		session:      session,
-		eventService: eventSv,
-		userService:  userSv,
+		db:          db,
+		session:     session,
+		userService: userSv,
 	}
 }
 
 // AdminsOnly requires the user to be an administrator to proceed.
+//
+// Hide endpoint existence by returning Not Found on errors.
 func (a Auth) AdminsOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Hide endpoint existence by returning Not Found on every error
 		ctx := r.Context()
 		sessionInfo, ok := a.session.AlreadyLoggedIn(ctx, r)
 		if !ok {

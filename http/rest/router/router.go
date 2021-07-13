@@ -61,7 +61,7 @@ func New(config config.Config, db *sqlx.DB, dc *dgo.Dgraph, rdb *redis.Client, m
 	userService := user.NewService(db, dc, mc, config.Admins)
 	session := auth.NewSession(db, rdb, config.Sessions)
 
-	authMw := middleware.NewAuth(db, dc, session, eventService, userService)
+	authMw := middleware.NewAuth(db, session, userService)
 	adminsOnly := authMw.AdminsOnly
 	requireAPIKey := authMw.RequireAPIKey
 	requireLogin := authMw.RequireLogin
@@ -94,11 +94,12 @@ func New(config config.Config, db *sqlx.DB, dc *dgo.Dgraph, rdb *redis.Client, m
 	}
 
 	// Prometheus default metrics
-	router.get("/metrics", promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{
+	promHandler := promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{
 		Registry: prometheus.DefaultRegisterer,
 		// The response is already compressed by the gzip middleware, avoid double compression
 		DisableCompression: true,
-	}))
+	})
+	router.get("/metrics", promHandler, adminsOnly)
 
 	events := event.NewHandler(eventService, mc)
 	ev := router.group("/events")
