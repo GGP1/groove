@@ -17,19 +17,19 @@ func TestRequire(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		err := Require(userPermsKeys, InviteUsers)
 		assert.NoError(t, err)
+
+		hostPerm := map[string]struct{}{All: {}}
+		err = Require(hostPerm, CreateRole, CreateZone)
+		assert.NoError(t, err)
 	})
 
 	t.Run("Fail", func(t *testing.T) {
 		err := Require(userPermsKeys, UpdateMedia)
 		assert.Error(t, err)
+
+		err = Require(userPermsKeys, Access, BanUsers, CreatePermission)
+		assert.Error(t, err)
 	})
-}
-
-func TestRequired(t *testing.T) {
-	url := "/update"
-	got := Required(url)
-	assert.Equal(t, Endpoint[url], got)
-
 }
 
 func TestParseKeys(t *testing.T) {
@@ -60,9 +60,40 @@ func TestUnparseKeys(t *testing.T) {
 		UpdateProduct:    {},
 	}
 	permissionsKeys := fmt.Sprintf("%s/%s/%s/%s/%s/%s/%s/%s",
-		BanUsers, CreatePermission, CreateRole, InviteUsers, SetUserRole, UpdateEvent, UpdateMedia, UpdateProduct)
+		BanUsers, CreatePermission, CreateRole, InviteUsers,
+		SetUserRole, UpdateEvent, UpdateMedia, UpdateProduct)
 	got := UnparseKeys(permissionsKeys)
 	assert.Equal(t, expected, got)
+}
+
+func BenchmarkRequire(b *testing.B) {
+	userPermsKeys := map[string]struct{}{
+		Access:           {},
+		BanUsers:         {},
+		CreatePermission: {},
+		CreateRole:       {},
+		CreateZone:       {},
+		InviteUsers:      {},
+		SetUserRole:      {},
+		UpdateEvent:      {},
+		UpdateMedia:      {},
+		UpdateProduct:    {},
+	}
+	required := []string{
+		Access,
+		BanUsers,
+		CreatePermission,
+		CreateRole,
+		CreateZone,
+		InviteUsers,
+		SetUserRole,
+		UpdateEvent,
+		UpdateMedia,
+		UpdateProduct,
+	}
+	for i := 0; i < b.N; i++ {
+		_ = Require(userPermsKeys, required...)
+	}
 }
 
 func BenchmarkParseKeys(b *testing.B) {
