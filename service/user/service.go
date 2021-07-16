@@ -1,7 +1,6 @@
 package user
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"time"
@@ -15,7 +14,6 @@ import (
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/dgraph-io/dgo/v210"
 	"github.com/dgraph-io/dgo/v210/protos/api"
-	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
@@ -52,7 +50,7 @@ type Service interface {
 }
 
 type service struct {
-	db *sqlx.DB
+	db *sql.DB
 	dc *dgo.Dgraph
 	mc *memcache.Client
 
@@ -61,7 +59,7 @@ type service struct {
 }
 
 // NewService returns a new user service.
-func NewService(db *sqlx.DB, dc *dgo.Dgraph, mc *memcache.Client, admins map[string]interface{}) Service {
+func NewService(db *sql.DB, dc *dgo.Dgraph, mc *memcache.Client, admins map[string]interface{}) Service {
 	return &service{
 		db:      db,
 		dc:      dc,
@@ -444,56 +442,6 @@ func (s *service) GetInvitedEvents(ctx context.Context, userID string, params pa
 	return s.getEventsEdge(ctx, userID, predicate, params)
 }
 
-// GetNode returns a dgraph node representing a user and all its relationships.
-func (s *service) GetNode(ctx context.Context, userID string) (Node, error) {
-	s.metrics.incMethodCalls("GetNode")
-
-	vars := map[string]string{"$uuid": userID}
-	q := `
-	query q($uuid: string) {
-		q(func: eq(user_id, $uuid)) {
-			~banned {
-				event_id
-			}
-			~confirmed {
-				event_id
-			}
-			~following {
-				user_id
-			}
-			following {
-				user_id
-			}
-			~invited {
-				event_id
-			}
-			~liked_by {
-				event_id
-			}
-		}
-	}`
-
-	res, err := s.dc.NewReadOnlyTxn().QueryRDFWithVars(ctx, q, vars)
-	if err != nil {
-		return Node{}, errors.Wrap(err, "dgraph: fetching node")
-	}
-
-	mp, err := dgraph.ParseRDFWithMap(res.Rdf)
-	if err != nil {
-		return Node{}, err
-	}
-	node := Node{
-		Banned:     mp["~banned"],
-		Confirmed:  mp["~confirmed"],
-		InvitedTo:  mp["~invited"],
-		FollowedBy: mp["~following"],
-		Following:  mp["following"],
-		Likes:      mp["~liked_by"],
-	}
-
-	return node, nil
-}
-
 // GetLikedEvents returns the events that the user likes.
 func (s *service) GetLikedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error) {
 	s.metrics.incMethodCalls("GetLikedEvents")
@@ -538,26 +486,26 @@ func (s *service) Search(ctx context.Context, query string, params params.Query)
 	s.metrics.incMethodCalls("Search")
 
 	// TODO: improve search performance (LIMIT-OFFSET is really inefficient)
-	buf := bytes.NewBufferString("SELECT ")
-	for i, f := range params.Fields {
-		buf.WriteString(f)
-		if len(params.Fields) != 1 && i != len(params.Fields)-1 {
-			buf.WriteString(", ")
-		}
-	}
-	buf.WriteString(` FROM users
-	WHERE 
-	to_tsvector(id || ' ' || name || ' ' || username || ' ' || email) 
-	@@ plainto_tsquery($1)
-	ORDER BY id LIMIT `)
-	buf.WriteString(params.Limit)
-	buf.WriteString(" OFFSET ")
-	buf.WriteString(params.Cursor)
+	// buf := bytes.NewBufferString("SELECT ")
+	// for i, f := range params.Fields {
+	// 	buf.WriteString(f)
+	// 	if len(params.Fields) != 1 && i != len(params.Fields)-1 {
+	// 		buf.WriteString(", ")
+	// 	}
+	// }
+	// buf.WriteString(` FROM users
+	// WHERE
+	// to_tsvector(id || ' ' || name || ' ' || username || ' ' || email)
+	// @@ plainto_tsquery($1)
+	// ORDER BY id LIMIT `)
+	// buf.WriteString(params.Limit)
+	// buf.WriteString(" OFFSET ")
+	// buf.WriteString(params.Cursor)
 
-	var users []User
-	if err := s.db.SelectContext(ctx, &users, buf.String(), query); err != nil {
-		return nil, errors.Wrap(err, "querying users")
-	}
+	// var users []User
+	// if err := s.db.SelectContext(ctx, &users, buf.String(), query); err != nil {
+	// 	return nil, errors.Wrap(err, "querying users")
+	// }
 
 	return nil, nil
 }
@@ -614,17 +562,9 @@ func (s *service) Unfollow(ctx context.Context, userID string, followedID string
 func (s *service) Update(ctx context.Context, userID string, user UpdateUser) error {
 	s.metrics.incMethodCalls("Update")
 
-	// TODO: build update query according to the values received (omit nil values)
-	var inv string
-	if user.Invitations != nil {
-		inv = user.Invitations.String()
-	}
-
-	q := `UPDATE users 
-	SET name=$2 username=$3 premium=$4 private=$5 invitations=$6 payment=$7 
-	WHERE id=$1`
-	_, err := s.db.ExecContext(ctx, q, userID, user.Name, user.Username,
-		user.Premium, user.Private, inv, user.Payment)
+	// The query includes two positional parameters: id and updated_at
+	q := updateUserQuery(user)
+	_, err := s.db.ExecContext(ctx, q, userID, time.Now())
 	if err != nil {
 		return errors.Wrap(err, "updating user")
 	}
@@ -696,16 +636,23 @@ func (s *service) getBy(ctx context.Context, query, value string) (ListUser, err
 	defer tx.Commit()
 
 	userRow := tx.QueryRowContext(ctx, query, value)
-	var user ListUser
+	var (
+		user ListUser
+		// Use NullString to scan the values that can be null
+		profileImageURL sql.NullString
+		description     sql.NullString
+	)
 	err = userRow.Scan(
 		&user.ID, &user.Name, &user.Username, &user.Email,
-		&user.BirthDate, &user.Description, &user.Premium,
-		&user.Private, &user.VerifiedEmail, &user.ProfileImageURL,
+		&user.BirthDate, &description, &user.Premium,
+		&user.Private, &user.VerifiedEmail, &profileImageURL,
 		&user.Invitations, &user.CreatedAt, &user.UpdatedAt,
 	)
 	if err != nil {
 		return ListUser{}, errors.Wrap(err, "scanning user")
 	}
+	user.Description = description.String
+	user.ProfileImageURL = profileImageURL.String
 
 	if err := s.getCounts(ctx, &user); err != nil {
 		return ListUser{}, err

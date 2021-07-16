@@ -4,46 +4,32 @@ import (
 	"time"
 
 	"github.com/GGP1/groove/internal/email"
-	"github.com/GGP1/groove/service/event"
 
 	"github.com/pkg/errors"
 )
 
 // User ..
 type User struct {
-	ID              string        `json:"id,omitempty"`
-	Events          []event.Event `json:"events,omitempty"`
-	Node            Node          `json:"node,omitempty"`
-	Name            string        `json:"name,omitempty"`
-	Username        string        `json:"username,omitempty"`
-	Email           string        `json:"email,omitempty"`
-	Password        string        `json:"password,omitempty"`
-	BirthDate       time.Time     `json:"birth_date,omitempty" db:"birth_date"`
-	Description     string        `json:"description,omitempty"`
-	ProfileImageURL string        `json:"profile_image_url,omitempty" db:"profile_image_url"`
-	Premium         *bool         `json:"premium,omitempty"`
-	Private         *bool         `json:"private,omitempty"`
-	VerifiedEmail   *bool         `json:"verified_email,omitempty"`
-	IsAdmin         *bool         `json:"is_admin,omitempty" db:"is_admin"`
-	Invitations     string        `json:"invitations,omitempty"`
-	Location        Location      `json:"location,omitempty"`
-	NFollowers      uint64        `json:"n_followers,omitempty"`
-	NFollows        uint64        `json:"n_follows,omitempty"`
-	Reports         []Report      `json:"reports,omitempty"`
-	Payment         Payment       `json:"payment,omitempty"`
-	CreatedAt       time.Time     `json:"created_at,omitempty" db:"created_at"`
-	UpdatedAt       time.Time     `json:"updated_at,omitempty" db:"updated_at"`
-}
-
-// Node represents user's edges inside Dgraph.
-type Node struct {
-	Banned     []string `json:"banned,omitempty"`
-	Confirmed  []string `json:"confirmed,omitempty"`
-	InvitedTo  []string `json:"invited_to,omitempty"`
-	Hosting    []string `json:"hosting,omitempty"`
-	FollowedBy []string `json:"followed_by,omitempty"`
-	Following  []string `json:"following,omitempty"`
-	Likes      []string `json:"likes,omitempty"`
+	ID              string    `json:"id,omitempty"`
+	Name            string    `json:"name,omitempty"`
+	Username        string    `json:"username,omitempty"`
+	Email           string    `json:"email,omitempty"`
+	Password        string    `json:"password,omitempty"`
+	BirthDate       time.Time `json:"birth_date,omitempty" db:"birth_date"`
+	Description     string    `json:"description,omitempty"`
+	ProfileImageURL string    `json:"profile_image_url,omitempty" db:"profile_image_url"`
+	Premium         *bool     `json:"premium,omitempty"`
+	Private         *bool     `json:"private,omitempty"`
+	VerifiedEmail   *bool     `json:"verified_email,omitempty"`
+	IsAdmin         *bool     `json:"is_admin,omitempty" db:"is_admin"`
+	Invitations     string    `json:"invitations,omitempty"`
+	Location        Location  `json:"location,omitempty"`
+	NFollowers      uint64    `json:"n_followers,omitempty"`
+	NFollows        uint64    `json:"n_follows,omitempty"`
+	Reports         []Report  `json:"reports,omitempty"`
+	Payment         Payment   `json:"payment,omitempty"`
+	CreatedAt       time.Time `json:"created_at,omitempty" db:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at,omitempty" db:"updated_at"`
 }
 
 // CreateUser ..
@@ -120,11 +106,8 @@ type ListUser struct {
 type UpdateUser struct {
 	Name        *string      `json:"name,omitempty"`
 	Username    *string      `json:"username,omitempty"`
-	Premium     *bool        `json:"premium,omitempty"`
 	Private     *bool        `json:"private,omitempty"`
 	Invitations *invitations `json:"invitations,omitempty"`
-	Location    *Location    `json:"location,omitempty"`
-	Payment     *Payment     `json:"payment,omitempty"`
 	UpdatedAt   *time.Time   `json:"updated_at,omitempty"`
 }
 
@@ -135,7 +118,12 @@ func (u UpdateUser) Validate() error {
 			return errors.New("invalid username length, must be lower than 24 characters")
 		}
 	}
-	return u.Invitations.Validate()
+	if u.Invitations != nil {
+		if err := u.Invitations.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Location represents a location for a user.
