@@ -24,14 +24,14 @@ type followedIDBody struct {
 // Handler is the user handler.
 type Handler struct {
 	service Service
-	cache   *memcache.Client
+	mc      *memcache.Client
 }
 
 // NewHandler returns a new user handler
 func NewHandler(service Service, cache *memcache.Client) Handler {
 	return Handler{
 		service: service,
-		cache:   cache,
+		mc:      cache,
 	}
 }
 
@@ -269,7 +269,7 @@ func (h *Handler) GetByID() http.HandlerFunc {
 			return
 		}
 
-		if item, err := h.cache.Get(userID); err == nil {
+		if item, err := h.mc.Get(userID); err == nil {
 			response.EncodedJSON(w, item.Value)
 			return
 		}
@@ -280,7 +280,7 @@ func (h *Handler) GetByID() http.HandlerFunc {
 			return
 		}
 
-		response.JSONAndCache(h.cache, w, userID, user)
+		response.JSONAndCache(h.mc, w, userID, user)
 	}
 }
 

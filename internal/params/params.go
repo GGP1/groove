@@ -64,6 +64,7 @@ func ParseQuery(rawQuery string, obj obj) (Query, error) {
 		return Query{Fields: fields, LookupID: lookupID}, nil
 	}
 
+	// TODO: when receiving a negative cursor change orderasc to orderdesc in service funcs
 	cursor, err := parseInt(values.Get("cursor"), "0", 0)
 	if err != nil {
 		return Query{}, errors.Wrap(err, "cursor")
@@ -295,7 +296,7 @@ func parseInt(value, def string, max int) (string, error) {
 			return "", errors.Wrap(err, "invalid number")
 		}
 		if i < 0 {
-			return def, nil // TODO: when receiving negative values change orderasc to orderdesc in service funcs
+			return def, nil
 		}
 		if max > 0 && i > max {
 			return "", errors.Errorf("number provided (%d) exceeded maximum (%d)", i, max)
