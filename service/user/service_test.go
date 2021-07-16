@@ -15,14 +15,13 @@ import (
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/dgraph-io/dgo/v210"
 	"github.com/google/uuid"
-	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 )
 
 var (
 	userSv  user.Service
 	eventSv event.Service
-	db      *sqlx.DB
+	db      *sql.DB
 	dc      *dgo.Dgraph
 	mc      *memcache.Client
 )
@@ -248,11 +247,10 @@ func TestGetHostedEvents(t *testing.T) {
 
 	boolean := false
 	createEvent := event.CreateEvent{
-		CreatorID: userID,
+		HostID:    userID,
 		Name:      "TestGetHostedEvents",
 		Type:      event.Talk,
 		Public:    &boolean,
-		Virtual:   &boolean,
 		Slots:     100,
 		StartTime: 1,
 		EndTime:   2,

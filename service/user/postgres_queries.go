@@ -3,6 +3,7 @@ package user
 import (
 	"database/sql"
 
+	"github.com/GGP1/groove/internal/bufferpool"
 	"github.com/GGP1/groove/service/event"
 
 	"github.com/pkg/errors"
@@ -26,8 +27,6 @@ func eventColumns(e *event.Event, columns []string) []interface{} {
 			result = append(result, &e.Type)
 		case "public":
 			result = append(result, &e.Public)
-		case "virtual":
-			result = append(result, &e.Virtual)
 		case "start_time":
 			result = append(result, &e.StartTime)
 		case "end_time":
@@ -49,15 +48,14 @@ func eventColumns(e *event.Event, columns []string) []interface{} {
 }
 
 func scanEvents(rows *sql.Rows) ([]event.Event, error) {
-	var (
-		events []event.Event
-		// Reuse object, there's no need to reset fields as they will be always overwritten
-		event event.Event
-	)
+	var events []event.Event
 
 	cols, _ := rows.Columns()
 	if len(cols) > 0 {
+		// Reuse object, there's no need to reset fields as they will be always overwritten
+		var event event.Event
 		columns := eventColumns(&event, cols)
+
 		for rows.Next() {
 			if err := rows.Scan(columns...); err != nil {
 				return nil, errors.Wrap(err, "scanning event rows")
@@ -74,14 +72,12 @@ func scanEvents(rows *sql.Rows) ([]event.Event, error) {
 }
 
 func scanUsers(rows *sql.Rows) ([]ListUser, error) {
-	var (
-		// Reuse object, there's no need to reset fields as they will be always overwritten
-		user  ListUser
-		users []ListUser
-	)
+	var users []ListUser
 
 	cols, _ := rows.Columns()
 	if len(cols) > 0 {
+		// Reuse object, there's no need to reset fields as they will be always overwritten
+		var user ListUser
 		columns := userColumns(&user, cols)
 
 		for rows.Next() {
@@ -137,4 +133,40 @@ func userColumns(u *ListUser, columns []string) []interface{} {
 	}
 
 	return result
+}
+
+func updateUserQuery(u UpdateUser) string {
+	buf := bufferpool.Get()
+	buf.WriteString("UPDATE users SET")
+
+	if u.Name != nil {
+		buf.WriteString(" name='")
+		buf.WriteString(*u.Name)
+		buf.WriteString("',")
+	}
+	if u.Username != nil {
+		buf.WriteString(" username='")
+		buf.WriteString(*u.Username)
+		buf.WriteString("',")
+	}
+	if u.Private != nil {
+		buf.WriteString(" private=")
+		if *u.Private {
+			buf.WriteString("TRUE")
+		} else {
+			buf.WriteString("FALSE")
+		}
+		buf.WriteByte(',')
+	}
+	if u.Invitations != nil {
+		buf.WriteString(" invitations=")
+		buf.WriteString(u.Invitations.String())
+		buf.WriteByte(',')
+	}
+	buf.WriteString(" updated_at=$2 WHERE id=$1")
+
+	q := buf.String()
+	bufferpool.Put(buf)
+
+	return q
 }

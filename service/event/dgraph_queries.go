@@ -132,7 +132,6 @@ const (
 type mixedQuery uint8
 
 // getMixedQuery is a list with queries that check two predicates.
-// TODO: add lookup queries?
 var getMixedQuery = map[mixedQuery]string{
 	bannedFollowers: `query q($event_id: string, $user_id: string) {
 		user as var(func: eq(user_id, $user_id))

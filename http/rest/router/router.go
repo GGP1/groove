@@ -1,6 +1,7 @@
 package router
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,12 +13,12 @@ import (
 	"github.com/GGP1/groove/internal/log"
 	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/service/event"
+	"github.com/GGP1/groove/service/report"
 	"github.com/GGP1/groove/service/user"
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/dgraph-io/dgo/v210"
 	"github.com/go-redis/redis/v8"
-	"github.com/jmoiron/sqlx"
 	"github.com/julienschmidt/httprouter"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -35,7 +36,7 @@ type Router struct {
 }
 
 // New returns a new router.
-func New(config config.Config, db *sqlx.DB, dc *dgo.Dgraph, rdb *redis.Client, mc *memcache.Client) http.Handler {
+func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc *memcache.Client) http.Handler {
 	router := &Router{
 		Router: &httprouter.Router{
 			RedirectTrailingSlash:  true,
@@ -59,7 +60,7 @@ func New(config config.Config, db *sqlx.DB, dc *dgo.Dgraph, rdb *redis.Client, m
 
 	eventService := event.NewService(db, dc, mc)
 	userService := user.NewService(db, dc, mc, config.Admins)
-	session := auth.NewSession(db, rdb, config.Sessions)
+	session := auth.NewService(db, rdb, config.Sessions)
 
 	authMw := middleware.NewAuth(db, session, userService)
 	adminsOnly := authMw.AdminsOnly
@@ -107,42 +108,103 @@ func New(config config.Config, db *sqlx.DB, dc *dgo.Dgraph, rdb *redis.Client, m
 		// /events/:id
 		id := ev.group("/:id")
 		{
-			id.get("/bans", events.GetBans(), requireLogin)
-			id.post("/bans/add", events.AddBanned(), requireLogin)
-			id.get("/bans/following/:user_id", events.GetBansFollowing())
-			id.post("/bans/remove", events.RemoveBanned(), requireLogin)
-			id.get("/confirmed", events.GetConfirmed(), requireLogin)
-			id.post("/confirmed/add", events.AddConfirmed(), requireLogin)
-			id.get("/confirmed/following/:user_id", events.GetConfirmedFollowing())
-			id.post("/confirmed/remove", events.RemoveConfirmed(), requireLogin)
-			id.post("/create/media", events.CreateMedia(), requireLogin)
-			id.post("/create/permission", events.CreatePermission(), requireLogin)
-			id.post("/create/product", events.CreateProduct(), requireLogin)
-			id.post("/create/role", events.CreateRole(), requireLogin)
+			id.get("/", events.GetByID())
 			id.delete("/delete", events.Delete(), requireLogin)
-			id.get("/get", events.GetByID())
-			id.get("/hosts", events.GetHosts(), requireLogin)
-			id.get("/invited", events.GetInvited(), requireLogin)
-			id.post("/invited/add", events.AddInvited(), requireLogin)
-			id.get("/invited/following/:user_id", events.GetInvitedFollowing())
-			id.post("/invited/remove", events.RemoveInvited(), requireLogin)
-			id.get("/likes", events.GetLikes(), requireLogin)
-			id.post("/likes/add", events.AddLike(), requireLogin)
-			id.get("/likes/following/:user_id", events.GetLikesFollowing())
-			id.post("/likes/remove", events.RemoveLike(), requireLogin)
-			id.get("/media", events.GetMedia())
-			id.get("/permissions", events.GetPermissions(), requireLogin)
-			id.post("/permissions/clone", events.ClonePermissions(), requireLogin)
-			id.get("/products", events.GetProducts())
-			id.get("/roles", events.GetRoles(), requireLogin)
-			id.get("/roles/clone", events.CloneRoles(), requireLogin)
-			id.post("/roles/get", events.GetRole(), requireLogin)
-			id.post("/roles/set", events.SetRoles(), requireLogin)
-			id.get("/reports", events.GetReports(), requireLogin)
+			id.get("/hosts", events.GetHosts())
 			id.put("/update", events.Update(), requireLogin)
-			id.put("/update/media", events.UpdateMedia(), requireLogin)
-			id.put("/update/product", events.UpdateProduct(), requireLogin)
+
+			// /events/:id/bans
+			bans := id.group("/bans")
+			{
+				bans.use(requireLogin)
+				bans.get("/", events.GetBans())
+				bans.post("/add", events.AddBanned())
+				bans.get("/following/:user_id", events.GetBansFollowing())
+				bans.post("/remove", events.RemoveBanned())
+			}
+
+			// /events/:id/confirmed
+			confirmed := id.group("/confirmed")
+			{
+				confirmed.use(requireLogin)
+				confirmed.get("/", events.GetConfirmed())
+				confirmed.post("/add", events.AddConfirmed())
+				confirmed.get("/following/:user_id", events.GetConfirmedFollowing())
+				confirmed.post("/remove", events.RemoveConfirmed())
+			}
+
+			// /events/:id/invited
+			invited := id.group("/invited")
+			{
+				invited.use(requireLogin)
+				invited.get("/", events.GetInvited())
+				invited.post("/add", events.AddInvited())
+				invited.get("/following/:user_id", events.GetInvitedFollowing())
+				invited.post("/remove", events.RemoveInvited())
+			}
+
+			// /events/:id/media
+			media := id.group("/media")
+			{
+				media.get("/", events.GetMedia())
+				media.post("/create", events.CreateMedia(), requireLogin)
+				media.put("/update", events.UpdateMedia(), requireLogin)
+			}
+
+			// /events/:id/products
+			products := id.group("/products")
+			{
+				products.get("/", events.GetProducts())
+				products.post("/create", events.CreateProduct(), requireLogin)
+				products.put("/update", events.UpdateProduct(), requireLogin)
+			}
+
+			// /events/:id/likes
+			likes := id.group("/likes")
+			{
+				likes.use(requireLogin)
+				likes.get("/", events.GetLikes())
+				likes.post("/add", events.AddLike())
+				likes.get("/following/:user_id", events.GetLikesFollowing())
+				likes.post("/remove", events.RemoveLike())
+			}
+
+			// /events/:id/permissions
+			permissions := id.group("/permissions")
+			{
+				permissions.use(requireLogin)
+				permissions.get("/", events.GetPermissions())
+				permissions.post("/clone", events.ClonePermissions())
+				permissions.post("/create", events.CreatePermission())
+			}
+
+			// /events/:id/roles
+			roles := id.group("/roles")
+			{
+				roles.use(requireLogin)
+				roles.get("/", events.GetRoles())
+				roles.post("/clone", events.CloneRoles())
+				roles.post("/create", events.CreateRole())
+				roles.post("/set", events.SetRoles())
+				roles.post("/user", events.GetUserRole())
+			}
+
+			// /events/:id/zones
+			zones := id.group("/zones")
+			{
+				zones.use(requireLogin)
+				zones.get("/", events.GetZones())
+				zones.post("/create", events.CreateZone())
+				zones.get("/name/:name", events.GetZoneByName())
+			}
 		}
+	}
+
+	reports := report.NewHandler(report.NewService(db))
+	rp := router.group("/reports")
+	{
+		rp.get("/", reports.GetReports(), adminsOnly)
+		rp.post("/create", reports.CreateReport(), requireLogin)
 	}
 
 	users := user.NewHandler(userService, mc)
@@ -151,6 +213,7 @@ func New(config config.Config, db *sqlx.DB, dc *dgo.Dgraph, rdb *redis.Client, m
 		// /users/:id
 		id := us.group("/:id")
 		{
+			id.get("/", users.GetByID(), requireAPIKey)
 			id.post("/block", users.Block(), ownUserOnly)
 			id.get("/blocked", users.GetBlocked())
 			id.get("/blocked_by", users.GetBlockedBy())
@@ -158,7 +221,6 @@ func New(config config.Config, db *sqlx.DB, dc *dgo.Dgraph, rdb *redis.Client, m
 			id.post("/follow", users.Follow(), ownUserOnly)
 			id.get("/followers", users.GetFollowers())
 			id.get("/following", users.GetFollowing())
-			id.get("/get", users.GetByID(), requireAPIKey)
 			id.post("/unblock", users.Unblock(), ownUserOnly)
 			id.post("/unfollow", users.Unfollow(), ownUserOnly)
 			id.put("/update", users.Update(), ownUserOnly)
