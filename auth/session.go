@@ -21,8 +21,8 @@ const (
 	saltLen = 16
 )
 
-// SessionInfo contains the information about the user session.
-type SessionInfo struct {
+// Session contains the information about the user session.
+type Session struct {
 	ID string
 	// TODO: the cookie will be sent over https, meaning that it's infeasible that someone will get access to them, however
 	// if the cookie gets stolen on the client-side then the attacker could use replay attacks to send requests to the server,
@@ -35,32 +35,32 @@ type SessionInfo struct {
 
 type sessionCtxKey struct{}
 
-// GetSessionInfo returns the user session information.
+// GetSession returns the user session information.
 //
 // The first time it fetches the info from cookies and sets it in the request's context.
-func GetSessionInfo(ctx context.Context, r *http.Request) (SessionInfo, error) {
-	sessionInfo, ok := ctx.Value(sessionKey).(SessionInfo)
+func GetSession(ctx context.Context, r *http.Request) (Session, error) {
+	session, ok := ctx.Value(sessionKey).(Session)
 	if !ok {
-		sessionID, err := cookie.GetValue(r, cookie.Session)
+		sessionToken, err := cookie.GetValue(r, cookie.Session)
 		if err != nil {
-			return SessionInfo{}, errors.New("login to access")
+			return Session{}, errors.New("login to access")
 		}
 
-		sInfo, err := unparseSessionInfo(sessionID)
+		sess, err := unparseSessionToken(sessionToken)
 		if err != nil {
-			return SessionInfo{}, err
+			return Session{}, err
 		}
 
-		// Add SessionInfo struct to the request context
-		*r = *r.WithContext(context.WithValue(ctx, sessionKey, sInfo))
+		// Add Session struct to the request context
+		*r = *r.WithContext(context.WithValue(ctx, sessionKey, sess))
 
-		return sInfo, nil
+		return sess, nil
 	}
 
-	return sessionInfo, nil
+	return session, nil
 }
 
-func parseSessionInfo(id string, salt []byte, premium bool) string {
+func parseSessionToken(id string, salt []byte, premium bool) string {
 	prem := byte('f')
 	if premium {
 		prem = 't'
@@ -71,25 +71,26 @@ func parseSessionInfo(id string, salt []byte, premium bool) string {
 	buf.WriteString(id)
 	buf.Write(salt)
 	buf.WriteByte(prem)
-	sessionInfo := buf.String()
+	token := buf.String()
 	bufferpool.Put(buf)
 
-	return sessionInfo
+	return token
 }
 
-func unparseSessionInfo(sessionID string) (SessionInfo, error) {
+func unparseSessionToken(token string) (Session, error) {
 	// sessionID = uuid(36)+salt(saltLen)+premium(1)
-	if len(sessionID) != idLen+saltLen+1 {
-		return SessionInfo{}, errCorruptedSession
+	if len(token) != idLen+saltLen+1 {
+		return Session{}, errCorruptedSession
 	}
-	id := sessionID[:len(sessionID)-saltLen-1]
+	id := token[:idLen]
 	if err := params.ValidateUUID(id); err != nil {
-		return SessionInfo{}, errCorruptedSession
+		return Session{}, errCorruptedSession
 	}
-	salt := sessionID[len(sessionID)-saltLen-1 : len(sessionID)-1]
-	premium := sessionID[len(sessionID)-1]
+	last := len(token) - 1
+	salt := token[idLen:last]
+	premium := token[last]
 
-	return SessionInfo{
+	return Session{
 		ID:      id,
 		Salt:    salt,
 		Premium: premium == 't',

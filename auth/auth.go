@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"net/http"
 	"time"
 
@@ -12,29 +13,28 @@ import (
 	"github.com/GGP1/groove/internal/userip"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Session provides auth operations.
-type Session interface {
-	AlreadyLoggedIn(ctx context.Context, r *http.Request) (SessionInfo, bool)
+// Service provides auth operations.
+type Service interface {
+	AlreadyLoggedIn(ctx context.Context, r *http.Request) (Session, bool)
 	Login(ctx context.Context, w http.ResponseWriter, r *http.Request, email, password string) error
 	Logout(ctx context.Context, w http.ResponseWriter, r *http.Request) error
 }
 
-type session struct {
-	db           *sqlx.DB
+type service struct {
+	db           *sql.DB
 	rdb          *redis.Client
 	expiration   time.Duration
 	verifyEmails bool
 }
 
-// NewSession creates a new session with the necessary dependencies.
-func NewSession(db *sqlx.DB, rdb *redis.Client, config config.Sessions) Session {
-	return &session{
+// NewService creates a new session with the necessary dependencies.
+func NewService(db *sql.DB, rdb *redis.Client, config config.Sessions) Service {
+	return &service{
 		db:           db,
 		rdb:          rdb,
 		expiration:   config.Expiration,
@@ -43,15 +43,15 @@ func NewSession(db *sqlx.DB, rdb *redis.Client, config config.Sessions) Session 
 }
 
 // AlreadyLoggedIn returns if the user is logged in or not.
-func (s *session) AlreadyLoggedIn(ctx context.Context, r *http.Request) (SessionInfo, bool) {
-	sessionInfo, err := GetSessionInfo(ctx, r)
+func (s *service) AlreadyLoggedIn(ctx context.Context, r *http.Request) (Session, bool) {
+	sessionInfo, err := GetSession(ctx, r)
 	if err != nil {
-		return SessionInfo{}, false
+		return Session{}, false
 	}
 
 	res, err := s.rdb.Get(ctx, sessionInfo.ID).Result()
 	if err != nil {
-		return SessionInfo{}, false
+		return Session{}, false
 	}
 
 	// If the salt doens't match it means the cookie was modified since the log in
@@ -59,7 +59,7 @@ func (s *session) AlreadyLoggedIn(ctx context.Context, r *http.Request) (Session
 }
 
 // Login attempts to log a user in.
-func (s *session) Login(ctx context.Context, w http.ResponseWriter, r *http.Request, email, password string) error {
+func (s *service) Login(ctx context.Context, w http.ResponseWriter, r *http.Request, email, password string) error {
 	// Won't collide with the rate limiter as this last has the prefix "rate:"
 	ip := userip.Get(ctx, r)
 	attempts, err := s.rdb.Get(ctx, ip).Int64()
@@ -100,21 +100,21 @@ func (s *session) Login(ctx context.Context, w http.ResponseWriter, r *http.Requ
 	if err := s.rdb.Set(ctx, id, salt, s.expiration).Err(); err != nil {
 		return errors.Wrap(err, "storing session")
 	}
-	cookieValue := parseSessionInfo(id, salt, user.Premium)
+	cookieValue := parseSessionToken(id, salt, user.Premium)
 	if err := cookie.Set(w, cookie.Session, cookieValue, "/"); err != nil {
 		return errors.Wrap(err, "setting cookie")
 	}
 	return nil
 }
 
-func (s *session) addDelay(ctx context.Context, key string) error {
+func (s *service) addDelay(ctx context.Context, key string) error {
 	v := s.rdb.Incr(ctx, key).Val()
 	return s.rdb.Expire(ctx, key, delay(v)).Err()
 }
 
 // Logout removes the user session and its cookies.
-func (s *session) Logout(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-	sessionInfo, _ := GetSessionInfo(ctx, r)
+func (s *service) Logout(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+	sessionInfo, _ := GetSession(ctx, r)
 	cookie.Delete(w, cookie.Session)
 	if err := s.rdb.Del(ctx, sessionInfo.ID).Err(); err != nil {
 		return errors.Wrap(err, "deleting the session")

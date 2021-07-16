@@ -11,7 +11,7 @@ import (
 )
 
 // BasicAuth provides basic authentication.
-func BasicAuth(s Session) http.HandlerFunc {
+func BasicAuth(s Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -38,7 +38,7 @@ func BasicAuth(s Session) http.HandlerFunc {
 }
 
 // Login takes a user credentials and authenticates it.
-func Login(s Session) http.HandlerFunc {
+func Login(s Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		if _, ok := s.AlreadyLoggedIn(ctx, r); ok {
@@ -71,7 +71,7 @@ func Login(s Session) http.HandlerFunc {
 }
 
 // Logout logs the user out from the session and removes cookies.
-func Logout(s Session) http.HandlerFunc {
+func Logout(s Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// This will be executed only if the user is already logged in.
 		if err := s.Logout(r.Context(), w, r); err != nil {

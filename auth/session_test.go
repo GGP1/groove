@@ -16,12 +16,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestGetSessionInfo(t *testing.T) {
+func TestGetSession(t *testing.T) {
 	expectedID := uuid.NewString()
 	expectedSalt := []byte("0123456789012345")
 	expectedPremium := true
 	viper.Set("secrets.encryption", "l'[3 k2F]Q")
-	sessionToken := parseSessionInfo(expectedID, expectedSalt, expectedPremium)
+	sessionToken := parseSessionToken(expectedID, expectedSalt, expectedPremium)
 	ciphertext, err := crypt.Encrypt([]byte(sessionToken))
 	assert.NoError(t, err)
 
@@ -32,41 +32,41 @@ func TestGetSessionInfo(t *testing.T) {
 		Path:  "/",
 	})
 
-	sessionInfo, err := GetSessionInfo(context.Background(), r)
+	sessionInfo, err := GetSession(context.Background(), r)
 	assert.NoError(t, err)
 
 	assert.Equal(t, expectedID, sessionInfo.ID)
 	assert.Equal(t, string(expectedSalt), sessionInfo.Salt)
 	assert.Equal(t, expectedPremium, sessionInfo.Premium)
 
-	value, ok := r.Context().Value(sessionKey).(SessionInfo)
+	value, ok := r.Context().Value(sessionKey).(Session)
 	assert.True(t, ok)
 	assert.Equal(t, expectedID, value.ID)
 	assert.Equal(t, string(expectedSalt), value.Salt)
 	assert.Equal(t, expectedPremium, value.Premium)
 }
 
-func TestParseSessionInfo(t *testing.T) {
+func TestParseSessionData(t *testing.T) {
 	id := uuid.NewString()
 	salt := make([]byte, saltLen)
 	_, err := rand.Read(salt)
 	assert.NoError(t, err)
-	token := parseSessionInfo(id, salt, true)
+	token := parseSessionToken(id, salt, true)
 
 	assert.Equal(t, token[:len(token)-saltLen-1], id)
 	assert.Equal(t, token[len(token)-saltLen-1:len(token)-1], string(salt))
 	assert.Equal(t, token[len(token)-1], uint8('t'))
 }
 
-func TestUnparseSessionInfo(t *testing.T) {
+func TestUnparseSessionData(t *testing.T) {
 	id := uuid.NewString()
 	salt := make([]byte, saltLen)
 	_, err := rand.Read(salt)
 	assert.NoError(t, err)
 	premium := true
-	token := parseSessionInfo(id, salt, premium)
+	token := parseSessionToken(id, salt, premium)
 
-	sessionInfo, err := unparseSessionInfo(token)
+	sessionInfo, err := unparseSessionToken(token)
 	assert.NoError(t, err)
 
 	assert.Equal(t, sessionInfo.ID, id)
@@ -74,14 +74,14 @@ func TestUnparseSessionInfo(t *testing.T) {
 	assert.Equal(t, sessionInfo.Premium, premium)
 }
 
-func BenchmarkGetSessionInfo(b *testing.B) {
+func BenchmarkGetSession(b *testing.B) {
 	ctx := context.Background()
 	id := uuid.NewString()
 	salt := make([]byte, saltLen)
 	_, err := rand.Read(salt)
 	assert.NoError(b, err)
 
-	token := parseSessionInfo(id, salt, true)
+	token := parseSessionToken(id, salt, true)
 	ciphertext, err := crypt.Encrypt([]byte(token))
 	assert.NoError(b, err)
 
@@ -93,6 +93,6 @@ func BenchmarkGetSessionInfo(b *testing.B) {
 	})
 
 	for i := 0; i < b.N; i++ {
-		GetSessionInfo(ctx, r)
+		GetSession(ctx, r)
 	}
 }

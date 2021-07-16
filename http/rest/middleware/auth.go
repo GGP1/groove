@@ -10,7 +10,6 @@ import (
 	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/service/user"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
 )
 
@@ -21,16 +20,16 @@ var (
 
 // Auth holds the redis instance used to authenticate users.
 type Auth struct {
-	db          *sqlx.DB
-	session     auth.Session
+	db          *sql.DB
+	authService auth.Service
 	userService user.Service
 }
 
 // NewAuth returns a new authentication/authorization middleware.
-func NewAuth(db *sqlx.DB, session auth.Session, userSv user.Service) Auth {
+func NewAuth(db *sql.DB, session auth.Service, userSv user.Service) Auth {
 	return Auth{
 		db:          db,
-		session:     session,
+		authService: session,
 		userService: userSv,
 	}
 }
@@ -41,7 +40,7 @@ func NewAuth(db *sqlx.DB, session auth.Session, userSv user.Service) Auth {
 func (a Auth) AdminsOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		sessionInfo, ok := a.session.AlreadyLoggedIn(ctx, r)
+		session, ok := a.authService.AlreadyLoggedIn(ctx, r)
 		if !ok {
 			http.NotFound(w, r)
 			return
@@ -52,9 +51,9 @@ func (a Auth) AdminsOnly(next http.Handler) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		defer tx.Commit()
+		defer tx.Rollback()
 
-		isAdmin, err := a.userService.IsAdmin(ctx, tx, sessionInfo.ID)
+		isAdmin, err := a.userService.IsAdmin(ctx, tx, session.ID)
 		if err != nil {
 			http.NotFound(w, r)
 			return
@@ -75,7 +74,7 @@ func (a Auth) OwnUserOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		sessionInfo, ok := a.session.AlreadyLoggedIn(ctx, r)
+		session, ok := a.authService.AlreadyLoggedIn(ctx, r)
 		if !ok {
 			response.Error(w, http.StatusUnauthorized, errLoginToAccess)
 			return
@@ -87,7 +86,7 @@ func (a Auth) OwnUserOnly(next http.Handler) http.Handler {
 			return
 		}
 
-		if id != sessionInfo.ID {
+		if id != session.ID {
 			response.Error(w, http.StatusForbidden, errAccessDenied)
 			return
 		}
@@ -111,7 +110,7 @@ func (a *Auth) RequireAPIKey(next http.Handler) http.Handler {
 // RequireLogin makes sure the user is logged in, returns an error otherwise.
 func (a *Auth) RequireLogin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, ok := a.session.AlreadyLoggedIn(r.Context(), r); !ok {
+		if _, ok := a.authService.AlreadyLoggedIn(r.Context(), r); !ok {
 			r.Header["Www-Authenticate"] = []string{`Basic realm="restricted", charset="UTF-8"`}
 			response.Error(w, http.StatusUnauthorized, errLoginToAccess)
 			return
@@ -126,13 +125,13 @@ func (a *Auth) RequirePremium(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		sessionInfo, ok := a.session.AlreadyLoggedIn(ctx, r)
+		session, ok := a.authService.AlreadyLoggedIn(ctx, r)
 		if ok {
 			response.Error(w, http.StatusUnauthorized, errLoginToAccess)
 			return
 		}
 
-		if !sessionInfo.Premium {
+		if !session.Premium {
 			response.Error(w, http.StatusForbidden, errAccessDenied)
 			return
 		}

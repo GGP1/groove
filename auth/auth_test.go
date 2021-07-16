@@ -17,7 +17,7 @@ func TestAuth(t *testing.T) {
 	db := test.StartPostgres(t)
 	dc := test.StartDgraph(t)
 	rdb := test.StartRedis(t)
-	session := auth.NewSession(db, rdb, config.Sessions{VerifyEmails: false})
+	session := auth.NewService(db, rdb, config.Sessions{VerifyEmails: false})
 
 	ctx := context.Background()
 	w := httptest.NewRecorder()
