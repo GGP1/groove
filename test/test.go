@@ -3,6 +3,7 @@ package test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net"
 	"testing"
@@ -17,7 +18,6 @@ import (
 	"github.com/dgraph-io/dgo/v210"
 	"github.com/dgraph-io/dgo/v210/protos/api"
 	"github.com/go-redis/redis/v8"
-	"github.com/jmoiron/sqlx"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
@@ -29,7 +29,7 @@ import (
 )
 
 // CreateEvent creates a new user for testing purposes.
-func CreateEvent(ctx context.Context, db *sqlx.DB, dc *dgo.Dgraph, id, name string) error {
+func CreateEvent(ctx context.Context, db *sql.DB, dc *dgo.Dgraph, id, name string) error {
 	typ := event.GrandPrix
 	public := true
 	virtual := false
@@ -56,7 +56,7 @@ func CreateEvent(ctx context.Context, db *sqlx.DB, dc *dgo.Dgraph, id, name stri
 }
 
 // CreateUser creates a new user for testing purposes.
-func CreateUser(ctx context.Context, db *sqlx.DB, dc *dgo.Dgraph, id, email, username, password string) error {
+func CreateUser(ctx context.Context, db *sql.DB, dc *dgo.Dgraph, id, email, username, password string) error {
 	pwd, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return err
@@ -198,7 +198,7 @@ func StartMemcached(t testing.TB) *memcache.Client {
 }
 
 // RunPostgres initializes a docker container with postgres running in it.
-func RunPostgres() (*dockertest.Pool, *dockertest.Resource, *sqlx.DB, error) {
+func RunPostgres() (*dockertest.Pool, *dockertest.Resource, *sql.DB, error) {
 	pool, err := dockertest.NewPool("")
 	if err != nil {
 		return nil, nil, nil, err
@@ -210,11 +210,11 @@ func RunPostgres() (*dockertest.Pool, *dockertest.Resource, *sqlx.DB, error) {
 		return nil, nil, nil, err
 	}
 
-	var db *sqlx.DB
+	var db *sql.DB
 	err = pool.Retry(func() error {
 		url := fmt.Sprintf("host=localhost port=%s user=postgres password=postgres dbname=postgres sslmode=disable",
 			resource.GetPort("5432/tcp"))
-		db, err = sqlx.Connect("postgres", url)
+		db, err = sql.Open("postgres", url)
 		if err != nil {
 			return err
 		}
@@ -232,7 +232,7 @@ func RunPostgres() (*dockertest.Pool, *dockertest.Resource, *sqlx.DB, error) {
 }
 
 // StartPostgres starts a postgres container and makes the cleanup.
-func StartPostgres(t testing.TB) *sqlx.DB {
+func StartPostgres(t testing.TB) *sql.DB {
 	pool, resource, db, err := RunPostgres()
 	assert.NoError(t, err)
 

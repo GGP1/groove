@@ -2,24 +2,21 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/GGP1/groove/config"
 	"github.com/GGP1/groove/internal/log"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
 )
 
-// TODO: benchmark performance sqlx.Select and Get vs sql standard library.
-// Potentially drop sqlx dependency (should import pq/pgx driver)
-
 // Connect establishes a connection with the postgres database.
-func Connect(ctx context.Context, c config.Postgres) (*sqlx.DB, error) {
+func Connect(ctx context.Context, c config.Postgres) (*sql.DB, error) {
 	url := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s sslrootcert=%s sslcert=%s sslkey=%s",
 		c.Host, c.Port, c.Username, c.Password, c.Name, c.SSLMode, c.SSLRootCert, c.SSLCert, c.SSLKey)
 
-	db, err := sqlx.ConnectContext(ctx, "postgres", url)
+	db, err := sql.Open("postgres", url)
 	if err != nil {
 		return nil, errors.Wrap(err, "connecting with postgres")
 	}
@@ -33,7 +30,7 @@ func Connect(ctx context.Context, c config.Postgres) (*sqlx.DB, error) {
 }
 
 // CreateTables creates postgres tables.
-func CreateTables(ctx context.Context, db *sqlx.DB) error {
+func CreateTables(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, tables); err != nil {
 		return errors.Wrap(err, "creating tables")
 	}
@@ -41,6 +38,10 @@ func CreateTables(ctx context.Context, db *sqlx.DB) error {
 }
 
 // ALTER TYPE invitations ADD VALUE 'selected';
+// TODO: implement events_roles_defaults and events_permissions_defaults tables
+// with pre-defined roles and permissions populated.
+// When checking for their details, check default tables if "name" or "key" is a default one
+// also do not let to overwrite them
 const tables = `
 CREATE TABLE IF NOT EXISTS events
 (
@@ -48,8 +49,7 @@ CREATE TABLE IF NOT EXISTS events
 	name text NOT NULL,
 	type integer NOT NULL,
 	public boolean NOT NULL,
-	virtual boolean NOT NULL,
-	ticket_cost integer NOT NULL,
+	ticket_cost integer DEFAULT 0,
 	slots integer NOT NULL,
 	start_time integer NOT NULL,
 	end_time integer NOT NULL,
@@ -128,10 +128,14 @@ CREATE TABLE IF NOT EXISTS events_users_roles
 CREATE TABLE IF NOT EXISTS events_locations
 (
     event_id UUID NOT NULL,
+	virtual bool NOT NULL,
 	country text,
 	state text,
+	zip_code text,
 	city text,
 	address text,
+	platform text,
+	url text,
     FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
 );
 
@@ -162,14 +166,22 @@ CREATE TABLE IF NOT EXISTS events_products
 
 CREATE TABLE IF NOT EXISTS events_reports
 (
-	event_id UUID NOT NULL,
-	user_id UUID NOT NULL,
+	reported_id UUID NOT NULL,
+	reporter_id UUID NOT NULL,
 	type text NOT NULL,
 	details text NOT NULL,
     created_at timestamp with time zone DEFAULT NOW(),
     FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-);`
+);
+
+CREATE TABLE IF NOT EXISTS events_zones
+(
+	event_id UUID NOT NULL,
+	name varchar(20) NOT NULL,
+	required_permission_keys text,
+    FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
+)`
 
 // CREATE INDEX ON events(created_at);
 // CREATE INDEX ON users(created_at);
