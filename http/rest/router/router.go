@@ -64,7 +64,7 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 
 	authMw := middleware.NewAuth(db, session, userService)
 	adminsOnly := authMw.AdminsOnly
-	requireAPIKey := authMw.RequireAPIKey
+	// requireAPIKey := authMw.RequireAPIKey
 	requireLogin := authMw.RequireLogin
 	// OwnUserOnly already checks if the user is logged in
 	ownUserOnly := authMw.OwnUserOnly
@@ -213,7 +213,7 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 		// /users/:id
 		id := us.group("/:id")
 		{
-			id.get("/", users.GetByID(), requireAPIKey)
+			id.get("/", users.GetByID())
 			id.post("/block", users.Block(), ownUserOnly)
 			id.get("/blocked", users.GetBlocked())
 			id.get("/blocked_by", users.GetBlockedBy())

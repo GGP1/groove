@@ -5,10 +5,10 @@ import (
 	"database/sql"
 
 	"github.com/GGP1/groove/internal/params"
+	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/storage/postgres"
 
 	"github.com/bradfitz/gomemcache/memcache"
-	"github.com/google/uuid"
 	"github.com/pkg/errors"
 )
 
@@ -38,7 +38,7 @@ func (s service) CreateProduct(ctx context.Context, sqlTx *sql.Tx, eventID strin
 	(id, event_id, stock, brand, type, description, discount, taxes, subtotal, total) 
 	VALUES 
 	($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
-	_, err := sqlTx.ExecContext(ctx, q, uuid.New(), product.EventID, product.Stock,
+	_, err := sqlTx.ExecContext(ctx, q, ulid.New(), product.EventID, product.Stock,
 		product.Brand, product.Type, product.Description, product.Discount, product.Taxes,
 		product.Subtotal, product.Total)
 	if err != nil {

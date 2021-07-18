@@ -7,10 +7,11 @@ import (
 	"os"
 	"testing"
 
+	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event/product"
 	"github.com/GGP1/groove/test"
+
 	"github.com/bradfitz/gomemcache/memcache"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -56,7 +57,7 @@ func TestMain(m *testing.M) {
 
 func TestCreateProduct(t *testing.T) {
 	ctx := context.Background()
-	eventID := uuid.NewString()
+	eventID := ulid.NewString()
 
 	err := createEvent(ctx, eventID, "create_product")
 	assert.NoError(t, err)

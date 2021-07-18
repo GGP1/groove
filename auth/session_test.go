@@ -10,14 +10,14 @@ import (
 
 	"github.com/GGP1/groove/internal/cookie"
 	"github.com/GGP1/groove/internal/crypt"
+	"github.com/GGP1/groove/internal/ulid"
 
-	"github.com/google/uuid"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestGetSession(t *testing.T) {
-	expectedID := uuid.NewString()
+	expectedID := ulid.NewString()
 	expectedSalt := []byte("0123456789012345")
 	expectedPremium := true
 	viper.Set("secrets.encryption", "l'[3 k2F]Q")
@@ -47,7 +47,7 @@ func TestGetSession(t *testing.T) {
 }
 
 func TestParseSessionData(t *testing.T) {
-	id := uuid.NewString()
+	id := ulid.NewString()
 	salt := make([]byte, saltLen)
 	_, err := rand.Read(salt)
 	assert.NoError(t, err)
@@ -59,7 +59,7 @@ func TestParseSessionData(t *testing.T) {
 }
 
 func TestUnparseSessionData(t *testing.T) {
-	id := uuid.NewString()
+	id := ulid.NewString()
 	salt := make([]byte, saltLen)
 	_, err := rand.Read(salt)
 	assert.NoError(t, err)
@@ -76,7 +76,7 @@ func TestUnparseSessionData(t *testing.T) {
 
 func BenchmarkGetSession(b *testing.B) {
 	ctx := context.Background()
-	id := uuid.NewString()
+	id := ulid.NewString()
 	salt := make([]byte, saltLen)
 	_, err := rand.Read(salt)
 	assert.NoError(b, err)

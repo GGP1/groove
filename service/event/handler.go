@@ -10,10 +10,10 @@ import (
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/response"
+	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event/role"
 
 	"github.com/bradfitz/gomemcache/memcache"
-	"github.com/google/uuid"
 	"github.com/julienschmidt/httprouter"
 	"github.com/pkg/errors"
 )
@@ -52,7 +52,7 @@ func (h *Handler) AddBanned() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -74,7 +74,7 @@ func (h *Handler) AddBanned() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := params.ValidateUUIDs(reqBody.UserID); err != nil {
+		if err := ulid.Validate(reqBody.UserID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -105,7 +105,7 @@ func (h *Handler) AddConfirmed() http.HandlerFunc {
 		defer r.Body.Close()
 
 		eventID := httprouter.ParamsFromContext(ctx).ByName("id")
-		if err := params.ValidateUUIDs(eventID, reqBody.UserID); err != nil {
+		if err := ulid.ValidateN(eventID, reqBody.UserID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -147,7 +147,7 @@ func (h *Handler) AddInvited() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -175,7 +175,7 @@ func (h *Handler) AddInvited() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := params.ValidateUUIDs(reqBody.UserID); err != nil {
+		if err := ulid.Validate(reqBody.UserID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -209,7 +209,7 @@ func (h *Handler) AddLike() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -266,7 +266,7 @@ func (h *Handler) Create() http.HandlerFunc {
 			return
 		}
 
-		eventID := uuid.NewString()
+		eventID := ulid.NewString()
 		event.HostID = session.ID
 		if err := h.service.Create(ctx, eventID, event); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
@@ -290,7 +290,7 @@ func (h *Handler) Delete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -320,7 +320,7 @@ func (h *Handler) GetBans() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -369,7 +369,7 @@ func (h *Handler) GetBansFollowing() http.HandlerFunc {
 		ctxParams := httprouter.ParamsFromContext(ctx)
 		eventID := ctxParams.ByName("id")
 		userID := ctxParams.ByName("user_id")
-		if err := params.ValidateUUIDs(eventID, userID); err != nil {
+		if err := ulid.ValidateN(eventID, userID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -398,7 +398,7 @@ func (h *Handler) GetByID() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -432,7 +432,7 @@ func (h *Handler) GetConfirmed() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -481,7 +481,7 @@ func (h *Handler) GetConfirmedFollowing() http.HandlerFunc {
 		routerParams := httprouter.ParamsFromContext(ctx)
 		eventID := routerParams.ByName("id")
 		userID := routerParams.ByName("user_id")
-		if err := params.ValidateUUIDs(eventID, userID); err != nil {
+		if err := ulid.ValidateN(eventID, userID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -510,7 +510,7 @@ func (h *Handler) GetHosts() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -556,7 +556,7 @@ func (h *Handler) GetInvited() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -605,7 +605,7 @@ func (h *Handler) GetInvitedFollowing() http.HandlerFunc {
 		routerParams := httprouter.ParamsFromContext(ctx)
 		eventID := routerParams.ByName("id")
 		userID := routerParams.ByName("user_id")
-		if err := params.ValidateUUIDs(eventID, userID); err != nil {
+		if err := ulid.ValidateN(eventID, userID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -634,7 +634,7 @@ func (h *Handler) GetLikes() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -683,7 +683,7 @@ func (h *Handler) GetLikesFollowing() http.HandlerFunc {
 		routerParams := httprouter.ParamsFromContext(ctx)
 		eventID := routerParams.ByName("id")
 		userID := routerParams.ByName("user_id")
-		if err := params.ValidateUUIDs(eventID, userID); err != nil {
+		if err := ulid.ValidateN(eventID, userID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -712,7 +712,7 @@ func (h *Handler) RemoveBanned() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -736,7 +736,7 @@ func (h *Handler) RemoveBanned() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := params.ValidateUUIDs(reqBody.UserID); err != nil {
+		if err := ulid.Validate(reqBody.UserID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -759,7 +759,7 @@ func (h *Handler) RemoveConfirmed() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -783,7 +783,7 @@ func (h *Handler) RemoveConfirmed() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := params.ValidateUUIDs(reqBody.UserID); err != nil {
+		if err := ulid.Validate(reqBody.UserID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -806,7 +806,7 @@ func (h *Handler) RemoveInvited() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -830,7 +830,7 @@ func (h *Handler) RemoveInvited() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := params.ValidateUUIDs(reqBody.UserID); err != nil {
+		if err := ulid.Validate(reqBody.UserID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -861,7 +861,7 @@ func (h *Handler) RemoveLike() http.HandlerFunc {
 		defer r.Body.Close()
 
 		eventID := httprouter.ParamsFromContext(ctx).ByName("id")
-		if err := params.ValidateUUIDs(eventID, reqBody.UserID); err != nil {
+		if err := ulid.ValidateN(eventID, reqBody.UserID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -900,7 +900,7 @@ func (h *Handler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return

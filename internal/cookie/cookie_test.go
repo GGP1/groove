@@ -120,7 +120,7 @@ func TestSet(t *testing.T) {
 
 	assert.Equal(t, c.Name, name)
 	assert.Equal(t, c.Path, path)
-	assert.Equal(t, c.MaxAge, 1290000)
+	assert.Equal(t, c.MaxAge, maxAge)
 	assert.Equal(t, c.HttpOnly, true)
 	assert.Equal(t, c.Secure, false)
 	assert.Equal(t, http.SameSiteLaxMode, c.SameSite)
@@ -141,7 +141,7 @@ func TestSetSecure(t *testing.T) {
 
 	assert.Equal(t, c.Name, "__Secure-"+name)
 	assert.Equal(t, c.Path, path)
-	assert.Equal(t, c.MaxAge, 1290000)
+	assert.Equal(t, c.MaxAge, maxAge*2)
 	assert.True(t, c.Secure)
 	assert.True(t, c.HttpOnly)
 	assert.Equal(t, http.SameSiteStrictMode, c.SameSite)

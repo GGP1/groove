@@ -5,7 +5,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/google/uuid"
+	"github.com/GGP1/groove/internal/ulid"
+
 	"github.com/julienschmidt/httprouter"
 	"github.com/stretchr/testify/assert"
 )
@@ -60,10 +61,10 @@ func TestParseQuery(t *testing.T) {
 		{
 			desc:     "Lookup ID",
 			obj:      User,
-			rawQuery: "lookup.id=1573b020-be65-4691-ab99-d744f8febbc4",
+			rawQuery: "lookup.id=01FATW8S0BMJ053XZ779Q025PC",
 			expected: Query{
 				Fields:   nil,
-				LookupID: "1573b020-be65-4691-ab99-d744f8febbc4",
+				LookupID: "01FATW8S0BMJ053XZ779Q025PC",
 			},
 		},
 		{
@@ -192,43 +193,6 @@ func TestSplit(t *testing.T) {
 	}
 }
 
-func TestUUID(t *testing.T) {
-	t.Run("Valid", func(t *testing.T) {
-		id := uuid.NewString()
-		assert.NoError(t, ValidateUUID(id))
-	})
-
-	t.Run("Invalid", func(t *testing.T) {
-		id := "asdfhasdfhqu8123hjdquh"
-		assert.Error(t, ValidateUUID(id), "Expected an error and got nil")
-	})
-}
-
-func TestUUIDFromCtx(t *testing.T) {
-	id := uuid.NewString()
-	params := httprouter.Params{
-		{Key: "id", Value: id},
-	}
-	ctx := context.WithValue(context.Background(), httprouter.ParamsKey, params)
-
-	got, err := UUIDFromCtx(ctx)
-	assert.NoError(t, err)
-
-	assert.Equal(t, id, got)
-}
-
-func TestUUIDs(t *testing.T) {
-	t.Run("Valid", func(t *testing.T) {
-		ids := []string{uuid.NewString(), uuid.NewString(), uuid.NewString()}
-		assert.NoError(t, ValidateUUIDs(ids...))
-	})
-
-	t.Run("Invalid", func(t *testing.T) {
-		ids := []string{uuid.NewString(), uuid.NewString(), "as6d45sa6dasda"}
-		assert.Error(t, ValidateUUIDs(ids...), "Expected an error and got nil")
-	})
-}
-
 func TestValidateEventFields(t *testing.T) {
 	t.Run("Valid", func(t *testing.T) {
 		fields := []string{"id", "name", "type", "public", "start_time", "end_time", "created_at", "updated_at"}
@@ -291,21 +255,14 @@ func BenchmarkParseQuery(b *testing.B) {
 	}
 }
 
-func BenchmarkUUID(b *testing.B) {
-	id := uuid.NewString()
-	for i := 0; i < b.N; i++ {
-		ValidateUUID(id)
-	}
-}
-
-func BenchmarkUUIDFromCtx(b *testing.B) {
-	id := uuid.NewString()
+func BenchmarkIDFromCtx(b *testing.B) {
+	id := ulid.NewString()
 	params := httprouter.Params{
 		{Key: "id", Value: id},
 	}
 	ctx := context.WithValue(context.Background(), httprouter.ParamsKey, params)
 
 	for i := 0; i < b.N; i++ {
-		UUIDFromCtx(ctx)
+		IDFromCtx(ctx)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/response"
+	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event/role"
 
 	"github.com/julienschmidt/httprouter"
@@ -30,7 +31,7 @@ func (h *Handler) ClonePermissions() http.HandlerFunc {
 		defer r.Body.Close()
 
 		importerEventID := httprouter.ParamsFromContext(ctx).ByName("id")
-		if err := params.ValidateUUIDs(importerEventID, req.ExporterEventID); err != nil {
+		if err := ulid.ValidateN(importerEventID, req.ExporterEventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -71,7 +72,7 @@ func (h *Handler) CloneRoles() http.HandlerFunc {
 		defer r.Body.Close()
 
 		importerEventID := httprouter.ParamsFromContext(ctx).ByName("id")
-		if err := params.ValidateUUIDs(importerEventID, req.ExporterEventID); err != nil {
+		if err := ulid.ValidateN(importerEventID, req.ExporterEventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -104,7 +105,7 @@ func (h *Handler) CreatePermission() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -149,7 +150,7 @@ func (h *Handler) CreateRole() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -196,7 +197,7 @@ func (h *Handler) GetPermissions() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -231,7 +232,7 @@ func (h *Handler) GetUserRole() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -252,7 +253,7 @@ func (h *Handler) GetUserRole() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := params.ValidateUUIDs(reqBody.UserID); err != nil {
+		if err := ulid.Validate(reqBody.UserID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -272,7 +273,7 @@ func (h *Handler) GetRoles() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -307,7 +308,7 @@ func (h *Handler) SetRoles() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return

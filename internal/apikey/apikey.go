@@ -6,7 +6,8 @@ import (
 	"sync"
 
 	"github.com/GGP1/groove/internal/log"
-	"github.com/GGP1/groove/internal/params"
+	"github.com/GGP1/groove/internal/ulid"
+
 	"github.com/dgrijalva/jwt-go"
 	"github.com/pkg/errors"
 	"github.com/spf13/viper"
@@ -29,7 +30,7 @@ const (
 	headerName  = "X-Api-Key"
 	prefix      = "gpTeHhB_"
 	saltLen     = 8
-	finalKeyLen = 180 // API key final length (prefix and salt included)
+	finalKeyLen = 167 // API key final length (prefix and salt included)
 )
 
 // Claims represents JWT claims.
@@ -40,7 +41,7 @@ type Claims struct {
 
 // Valid validates the correctness of the token and satisfies jwt.Claims interface.
 func (c Claims) Valid() error {
-	if params.ValidateUUID(c.Key) != nil || len(c.Salt) != saltLen {
+	if ulid.Validate(c.Key) != nil || len(c.Salt) != saltLen {
 		return ErrInvalidAPIKey
 	}
 	return nil
@@ -48,7 +49,7 @@ func (c Claims) Valid() error {
 
 // New returns a new API key.
 //
-// The id passed must be a uuid, not checked here to save resources.
+// The id passed must be a ULID, not checked here to save resources.
 func New(id string) (string, error) {
 	once.Do(func() {
 		secretKey = []byte(viper.GetString("secrets.apikeys"))

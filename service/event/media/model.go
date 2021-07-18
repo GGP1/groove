@@ -3,7 +3,7 @@ package media
 import (
 	"time"
 
-	"github.com/GGP1/groove/internal/params"
+	"github.com/GGP1/groove/internal/ulid"
 
 	"github.com/pkg/errors"
 )
@@ -18,7 +18,7 @@ type Media struct {
 
 // Validate ..
 func (m Media) Validate() error {
-	if err := params.ValidateUUID(m.EventID); err != nil {
+	if err := ulid.Validate(m.EventID); err != nil {
 		return errors.Wrap(err, "invalid event_id")
 	}
 	if m.URL == "" {

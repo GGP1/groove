@@ -9,12 +9,13 @@ import (
 	"time"
 
 	"github.com/GGP1/groove/internal/params"
+	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event"
 	"github.com/GGP1/groove/service/user"
 	"github.com/GGP1/groove/test"
+
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/dgraph-io/dgo/v210"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -71,8 +72,8 @@ func TestMain(m *testing.M) {
 
 func TestBlock(t *testing.T) {
 	ctx := context.Background()
-	userID := uuid.NewString()
-	blockedID := uuid.NewString()
+	userID := ulid.NewString()
+	blockedID := ulid.NewString()
 
 	err := test.CreateUser(ctx, db, dc, userID, "block1@email.com", "block1", "1")
 	assert.NoError(t, err)
@@ -107,7 +108,7 @@ func TestBlock(t *testing.T) {
 
 func TestCreate(t *testing.T) {
 	ctx := context.Background()
-	id := uuid.NewString()
+	id := ulid.NewString()
 	now := time.Now()
 	createUser := user.CreateUser{
 		Name:      "Create",
@@ -126,7 +127,7 @@ func TestCreate(t *testing.T) {
 
 func TestDelete(t *testing.T) {
 	ctx := context.Background()
-	id := uuid.NewString()
+	id := ulid.NewString()
 	err := test.CreateUser(ctx, db, dc, id, "delete@email.com", "delete", "1")
 	assert.NoError(t, err)
 
@@ -139,8 +140,8 @@ func TestDelete(t *testing.T) {
 
 func TestFollow(t *testing.T) {
 	ctx := context.Background()
-	userID := uuid.NewString()
-	followedID := uuid.NewString()
+	userID := ulid.NewString()
+	followedID := ulid.NewString()
 
 	err := test.CreateUser(ctx, db, dc, userID, "follow1@email.com", "follow1", "1")
 	assert.NoError(t, err)
@@ -177,7 +178,7 @@ func TestFollow(t *testing.T) {
 
 func TestGetBy(t *testing.T) {
 	ctx := context.Background()
-	id := uuid.NewString()
+	id := ulid.NewString()
 	username := "username"
 	email := "email"
 
@@ -201,8 +202,8 @@ func TestGetBy(t *testing.T) {
 
 func TestGetConfirmedEvents(t *testing.T) {
 	ctx := context.Background()
-	eventID := uuid.NewString()
-	userID := uuid.NewString()
+	eventID := ulid.NewString()
+	userID := ulid.NewString()
 
 	err := test.CreateEvent(ctx, db, dc, eventID, "TestGetConfirmedEvents")
 	assert.NoError(t, err)
@@ -220,8 +221,8 @@ func TestGetConfirmedEvents(t *testing.T) {
 
 func TestGetInvitedEvents(t *testing.T) {
 	ctx := context.Background()
-	eventID := uuid.NewString()
-	userID := uuid.NewString()
+	eventID := ulid.NewString()
+	userID := ulid.NewString()
 
 	err := test.CreateEvent(ctx, db, dc, eventID, "TestGetInvitedEvents")
 	assert.NoError(t, err)
@@ -239,8 +240,8 @@ func TestGetInvitedEvents(t *testing.T) {
 
 func TestGetHostedEvents(t *testing.T) {
 	ctx := context.Background()
-	eventID := uuid.NewString()
-	userID := uuid.NewString()
+	eventID := ulid.NewString()
+	userID := ulid.NewString()
 
 	err := test.CreateUser(ctx, db, dc, userID, "hosted@email.com", "hosted", "1")
 	assert.NoError(t, err)
@@ -266,8 +267,8 @@ func TestGetHostedEvents(t *testing.T) {
 
 func TestGetLikedEvents(t *testing.T) {
 	ctx := context.Background()
-	eventID := uuid.NewString()
-	userID := uuid.NewString()
+	eventID := ulid.NewString()
+	userID := ulid.NewString()
 
 	err := test.CreateEvent(ctx, db, dc, eventID, "TestGetLikedEvents")
 	assert.NoError(t, err)
@@ -285,8 +286,8 @@ func TestGetLikedEvents(t *testing.T) {
 
 func TestIsAdmin(t *testing.T) {
 	ctx := context.Background()
-	adminID := uuid.NewString()
-	nonAdminID := uuid.NewString()
+	adminID := ulid.NewString()
+	nonAdminID := ulid.NewString()
 
 	now := time.Now()
 	err := userSv.Create(ctx, adminID, user.CreateUser{
@@ -316,7 +317,7 @@ func TestIsAdmin(t *testing.T) {
 
 func TestPrivateProfile(t *testing.T) {
 	ctx := context.Background()
-	id := uuid.NewString()
+	id := ulid.NewString()
 
 	err := test.CreateUser(ctx, db, dc, id, "private@email.com", "private", "1")
 	assert.NoError(t, err)
@@ -340,7 +341,7 @@ func TestSearch(t *testing.T) {
 
 func TestUpdate(t *testing.T) {
 	ctx := context.Background()
-	id := uuid.NewString()
+	id := ulid.NewString()
 
 	err := test.CreateUser(ctx, db, dc, id, "update@email.com", "update", "1")
 	assert.NoError(t, err)

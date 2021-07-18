@@ -7,6 +7,7 @@ import (
 
 	"github.com/GGP1/groove/internal/bufferpool"
 	"github.com/GGP1/groove/internal/params"
+	"github.com/GGP1/groove/internal/ulid"
 
 	"github.com/dgraph-io/dgo/v210"
 	"github.com/dgraph-io/dgo/v210/protos/api"
@@ -51,7 +52,7 @@ func CreateNode(ctx context.Context, tx *dgo.Txn, dType dgraphType, id string) e
 	// 24 is the length of the literal strings
 	buf.Grow((len(createSubject) * 2) + len(predicate) + len(id) + len(object) + 24)
 
-	// _:1 <predicate> "uuid" .
+	// _:1 <predicate> "id" .
 	buf.WriteString(createSubject)
 	buf.WriteByte(' ')
 	buf.WriteByte('<')
@@ -207,50 +208,48 @@ func ParseCountWithMap(rdf []byte) (map[string]*uint64, error) {
 	return mp, nil
 }
 
-// ParseRDFUUIDs returns a slice of uuids parsed from a RDF reponse.
+// ParseRDFULIDs returns a slice of ULIDs parsed from a RDF reponse.
 //
 // One order of magnitude faster than using json.
-func ParseRDFUUIDs(rdf []byte) []string {
+func ParseRDFULIDs(rdf []byte) []string {
 	if rdf == nil || len(rdf) == 0 {
 		return nil
 	}
 	lines := strings.Split(string(rdf), "\n")
 
-	// Discard the first and the last line as they don't contain UUIDs
+	// Discard the first and the last line as they don't contain ULIDs
 	result := make([]string, 0, len(lines)-2)
 	for _, line := range lines[1 : len(lines)-1] {
 		idx := strings.IndexByte(line, '"') + 1
 		if idx == 0 {
 			continue
 		}
-		// uuids are 36 chars long
-		if len(line) > 35 {
-			result = append(result, line[idx:idx+36])
+		if len(line) >= ulid.EncodedSize {
+			result = append(result, line[idx:idx+ulid.EncodedSize])
 		}
 	}
 
 	return result
 }
 
-// ParseRDFUUIDsWithMap returns a map with uuids keys parsed from a RDF reponse.
+// ParseRDFULIDsWithMap returns a map with ULIDs keys parsed from a RDF reponse.
 //
 // One order of magnitude faster than using json.
-func ParseRDFUUIDsWithMap(rdf []byte) map[string]struct{} {
+func ParseRDFULIDsWithMap(rdf []byte) map[string]struct{} {
 	if rdf == nil || len(rdf) == 0 {
 		return nil
 	}
 	lines := strings.Split(string(rdf), "\n")
 
-	// Discard the first and the last line as they don't contain UUIDs
+	// Discard the first and the last line as they don't contain ULIDs
 	result := make(map[string]struct{}, len(lines)-2)
 	for _, line := range lines[1 : len(lines)-1] {
 		idx := strings.IndexByte(line, '"') + 1
 		if idx == 0 {
 			continue
 		}
-		// uuids are 36 chars long
-		if len(line) > 35 {
-			result[line[idx:idx+36]] = struct{}{}
+		if len(line) >= ulid.EncodedSize {
+			result[line[idx:idx+ulid.EncodedSize]] = struct{}{}
 		}
 	}
 
@@ -284,12 +283,12 @@ func ParseRDFWithMap(rdf []byte) (map[string][]string, error) {
 			continue
 		}
 
-		// Look for the uuid and add it to the slice
+		// Look for the ULID and add it to the slice
 		quoteIdx := strings.IndexByte(line, '"') + 1
 		if quoteIdx == 0 {
 			return nil, errors.Errorf("invalid rdf: %q", line)
 		}
-		mp[predicate] = append(mp[predicate], line[quoteIdx:quoteIdx+36])
+		mp[predicate] = append(mp[predicate], line[quoteIdx:quoteIdx+ulid.EncodedSize])
 	}
 
 	return mp, nil

@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/report"
 	"github.com/GGP1/groove/test"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -40,8 +40,8 @@ func TestMain(m *testing.M) {
 
 func TestReports(t *testing.T) {
 	ctx := context.Background()
-	eventID := uuid.NewString()
-	userID := uuid.NewString()
+	eventID := ulid.NewString()
+	userID := ulid.NewString()
 
 	err := createUser(ctx, userID, "report@email.com", "report")
 	assert.NoError(t, err)

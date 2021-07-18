@@ -14,7 +14,7 @@ func (h *Handler) CreateMedia() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -59,7 +59,7 @@ func (h *Handler) GetMedia() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -100,7 +100,7 @@ func (h *Handler) UpdateMedia() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return

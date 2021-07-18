@@ -7,7 +7,9 @@ import (
 
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/response"
+	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event/zone"
+
 	"github.com/julienschmidt/httprouter"
 )
 
@@ -16,7 +18,7 @@ func (h *Handler) CreateZone() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -61,7 +63,7 @@ func (h *Handler) GetZoneByName() http.Handler {
 		eventID := routerParams.ByName("id")
 		name := routerParams.ByName("name")
 
-		if err := params.ValidateUUID(eventID); err != nil {
+		if err := ulid.Validate(eventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -89,7 +91,7 @@ func (h *Handler) GetZones() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.UUIDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return

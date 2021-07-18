@@ -5,12 +5,12 @@ import (
 
 	"github.com/GGP1/groove/internal/email"
 
-	"github.com/google/uuid"
+	"github.com/oklog/ulid/v2"
 )
 
 // userSession is used when logging a user in.
 type userSession struct {
-	ID            uuid.UUID `json:"id,omitempty"`
+	ID            ulid.ULID `json:"id,omitempty"`
 	Email         string    `json:"email,omitempty"`
 	Password      string    `json:"password,omitempty"`
 	Premium       bool      `json:"premium,omitempty"`

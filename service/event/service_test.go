@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/GGP1/groove/internal/params"
+	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event"
 	"github.com/GGP1/groove/service/event/role"
 	"github.com/GGP1/groove/service/user"
@@ -16,7 +17,6 @@ import (
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/dgraph-io/dgo/v210"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -77,8 +77,8 @@ func TestMain(m *testing.M) {
 
 func TestBanned(t *testing.T) {
 	ctx := context.Background()
-	eventID := uuid.NewString()
-	userID := uuid.NewString()
+	eventID := ulid.NewString()
+	userID := ulid.NewString()
 
 	err := test.CreateEvent(ctx, db, dc, eventID, "banned")
 	assert.NoError(t, err)
@@ -103,8 +103,8 @@ func TestBanned(t *testing.T) {
 
 func TestConfirmed(t *testing.T) {
 	ctx := context.Background()
-	eventID := uuid.NewString()
-	userID := uuid.NewString()
+	eventID := ulid.NewString()
+	userID := ulid.NewString()
 
 	err := test.CreateEvent(ctx, db, dc, eventID, "confirmed")
 	assert.NoError(t, err)
@@ -129,8 +129,8 @@ func TestConfirmed(t *testing.T) {
 
 func TestInvited(t *testing.T) {
 	ctx := context.Background()
-	eventID := uuid.NewString()
-	userID := uuid.NewString()
+	eventID := ulid.NewString()
+	userID := ulid.NewString()
 
 	err := test.CreateEvent(ctx, db, dc, eventID, "invited")
 	assert.NoError(t, err)
@@ -155,8 +155,8 @@ func TestInvited(t *testing.T) {
 
 func TestLikedBy(t *testing.T) {
 	ctx := context.Background()
-	eventID := uuid.NewString()
-	userID := uuid.NewString()
+	eventID := ulid.NewString()
+	userID := ulid.NewString()
 
 	err := test.CreateEvent(ctx, db, dc, eventID, "liked_by")
 	assert.NoError(t, err)
@@ -181,8 +181,8 @@ func TestLikedBy(t *testing.T) {
 
 func TestCanInvite(t *testing.T) {
 	ctx := context.Background()
-	userID := uuid.NewString()
-	invitedID := uuid.NewString()
+	userID := ulid.NewString()
+	invitedID := ulid.NewString()
 
 	err := test.CreateUser(ctx, db, dc, userID, "can_invite@email.com", "can_invite", "1")
 	assert.NoError(t, err)
@@ -198,8 +198,8 @@ func TestCanInvite(t *testing.T) {
 
 func TestCreate(t *testing.T) {
 	ctx := context.Background()
-	eventID := uuid.NewString()
-	creatorID := uuid.NewString()
+	eventID := ulid.NewString()
+	creatorID := ulid.NewString()
 
 	err := test.CreateUser(ctx, db, dc, creatorID, "create@email.com", "create", "1")
 	assert.NoError(t, err)
@@ -225,7 +225,7 @@ func TestCreate(t *testing.T) {
 
 func TestDelete(t *testing.T) {
 	ctx := context.Background()
-	eventID := uuid.NewString()
+	eventID := ulid.NewString()
 
 	err := test.CreateEvent(ctx, db, dc, eventID, "delete")
 	assert.NoError(t, err)
@@ -239,7 +239,7 @@ func TestDelete(t *testing.T) {
 
 func TestGetByID(t *testing.T) {
 	ctx := context.Background()
-	eventID := uuid.NewString()
+	eventID := ulid.NewString()
 
 	name := "get_by_id"
 	err := test.CreateEvent(ctx, db, dc, eventID, name)
@@ -261,8 +261,8 @@ func TestGetConfirmedFollowing(t *testing.T) {
 
 func TestGetHosts(t *testing.T) {
 	ctx := context.Background()
-	eventID := uuid.NewString()
-	userID := uuid.NewString()
+	eventID := ulid.NewString()
+	userID := ulid.NewString()
 
 	email := "host@email.com"
 	err := test.CreateUser(ctx, db, dc, userID, email, "host", "1")
@@ -291,7 +291,7 @@ func TestGetLikedByFollowing(t *testing.T) {
 
 func TestIsPublic(t *testing.T) {
 	ctx := context.Background()
-	eventID := uuid.NewString()
+	eventID := ulid.NewString()
 
 	err := test.CreateEvent(ctx, db, dc, eventID, "reports")
 	assert.NoError(t, err)
@@ -313,7 +313,7 @@ func TestPgTx(t *testing.T) {
 
 func TestUpdate(t *testing.T) {
 	ctx := context.Background()
-	eventID := uuid.NewString()
+	eventID := ulid.NewString()
 
 	err := test.CreateEvent(ctx, db, dc, eventID, "update")
 	assert.NoError(t, err)

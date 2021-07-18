@@ -5,10 +5,10 @@ import (
 	"database/sql"
 
 	"github.com/GGP1/groove/internal/params"
+	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/storage/postgres"
 
 	"github.com/bradfitz/gomemcache/memcache"
-	"github.com/google/uuid"
 	"github.com/pkg/errors"
 )
 
@@ -35,7 +35,7 @@ func NewService(db *sql.DB, mc *memcache.Client) Service {
 // CreateMedia adds a photo or video to the event.
 func (s service) CreateMedia(ctx context.Context, sqlTx *sql.Tx, eventID string, media Media) error {
 	q := "INSERT INTO events_media (id, event_id, url) VALUES ($1, $2, $3)"
-	_, err := sqlTx.ExecContext(ctx, q, uuid.New(), media.EventID, media.URL)
+	_, err := sqlTx.ExecContext(ctx, q, ulid.New(), media.EventID, media.URL)
 	if err != nil {
 		return errors.Wrap(err, "creating media")
 	}

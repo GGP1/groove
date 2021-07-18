@@ -22,7 +22,7 @@ func Connect(ctx context.Context, c config.Postgres) (*sql.DB, error) {
 	}
 
 	if err := CreateTables(ctx, db); err != nil {
-		return nil, errors.Wrap(err, "creating tables")
+		return nil, err
 	}
 
 	log.Sugar().Infof("Connected to postgres on %s:%s", c.Host, c.Port)
@@ -45,7 +45,7 @@ func CreateTables(ctx context.Context, db *sql.DB) error {
 const tables = `
 CREATE TABLE IF NOT EXISTS events
 (
-	id UUID NOT NULL,
+	id varchar(26) NOT NULL,
 	name text NOT NULL,
 	type integer NOT NULL,
 	public boolean NOT NULL,
@@ -66,9 +66,11 @@ BEGIN
 END IF;
 END$$;
 
+CREATE UNIQUE INDEX ON events (id);
+
 CREATE TABLE IF NOT EXISTS users
 (
-    id UUID NOT NULL,
+    id varchar(26) NOT NULL,
 	name varchar NOT NULL,
     username text NOT NULL UNIQUE,
     email text NOT NULL UNIQUE,
@@ -86,11 +88,11 @@ CREATE TABLE IF NOT EXISTS users
     CONSTRAINT users_pkey PRIMARY KEY (id)
 );
 
-CREATE UNIQUE INDEX ON users (email, username);
+CREATE UNIQUE INDEX ON users (id, email, username);
 
 CREATE TABLE IF NOT EXISTS users_locations
 (
-	user_id UUID NOT NULL,
+	user_id varchar(26) NOT NULL,
 	country text,
 	state text,
 	city text,
@@ -99,7 +101,7 @@ CREATE TABLE IF NOT EXISTS users_locations
 
 CREATE TABLE IF NOT EXISTS events_permissions
 (
- 	event_id UUID NOT NULL,
+ 	event_id varchar(26) NOT NULL,
 	key varchar(20) NOT NULL,
  	name varchar(20) NOT NULL,
  	description varchar(50),
@@ -107,27 +109,33 @@ CREATE TABLE IF NOT EXISTS events_permissions
 	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
 );
 
+CREATE INDEX ON events_permissions (key);
+
 CREATE TABLE IF NOT EXISTS events_roles
 (
-	event_id UUID NOT NULL,
+	event_id varchar(26) NOT NULL,
 	name varchar(20) NOT NULL,
  	permissions_keys text NOT NULL,
     created_at timestamp with time zone DEFAULT NOW(),
 	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
 );
 
+CREATE INDEX ON events_permissions (name);
+
 CREATE TABLE IF NOT EXISTS events_users_roles
 (
-	event_id UUID NOT NULL,
-	user_id UUID NOT NULL,
+	event_id varchar(26) NOT NULL,
+	user_id varchar(26) NOT NULL,
  	role_name varchar(20) NOT NULL,
 	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,
  	FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );
 
+CREATE INDEX ON events_users_roles (role_name);
+
 CREATE TABLE IF NOT EXISTS events_locations
 (
-    event_id UUID NOT NULL,
+    event_id varchar(26) NOT NULL,
 	virtual bool NOT NULL,
 	country text,
 	state text,
@@ -141,17 +149,19 @@ CREATE TABLE IF NOT EXISTS events_locations
 
 CREATE TABLE IF NOT EXISTS events_media
 (
-    id UUID NOT NULL,
-    event_id UUID NOT NULL,
+    id varchar(26) NOT NULL,
+    event_id varchar(26) NOT NULL,
 	url text NOT NULL,
     created_at timestamp with time zone DEFAULT NOW(),
     FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
 );
 
+CREATE UNIQUE INDEX ON events_media (id);
+
 CREATE TABLE IF NOT EXISTS events_products
 (
-    id UUID NOT NULL,
-    event_id UUID NOT NULL,
+    id varchar(26) NOT NULL,
+    event_id varchar(26) NOT NULL,
     stock integer NOT NULL,
     brand text NOT NULL,
 	type text NOT NULL,
@@ -164,29 +174,24 @@ CREATE TABLE IF NOT EXISTS events_products
     FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
 );
 
+CREATE UNIQUE INDEX ON events_products (id);
+
 CREATE TABLE IF NOT EXISTS events_reports
 (
-	reported_id UUID NOT NULL,
-	reporter_id UUID NOT NULL,
+	reported_id varchar(26) NOT NULL,
+	reporter_id varchar(26) NOT NULL,
 	type text NOT NULL,
 	details text NOT NULL,
     created_at timestamp with time zone DEFAULT NOW(),
-    FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,
-    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+    FOREIGN KEY (reporter_id) REFERENCES users (id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS events_zones
 (
-	event_id UUID NOT NULL,
+	event_id varchar(26) NOT NULL,
 	name varchar(20) NOT NULL,
 	required_permission_keys text,
     FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
-)`
+);
 
-// CREATE INDEX ON events(created_at);
-// CREATE INDEX ON users(created_at);
-// CREATE INDEX ON events_media(created_at);
-// CREATE INDEX ON events_roles(created_at);
-// CREATE INDEX ON events_permissions(created_at);
-// CREATE INDEX ON events_products(created_at);
-// CREATE INDEX ON events_reports(created_at);
+CREATE INDEX ON events_zones (name);`

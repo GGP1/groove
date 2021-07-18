@@ -80,7 +80,7 @@ func (a Auth) OwnUserOnly(next http.Handler) http.Handler {
 			return
 		}
 
-		id, err := params.UUIDFromCtx(ctx)
+		id, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return

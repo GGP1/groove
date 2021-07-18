@@ -583,7 +583,7 @@ func (s *service) getEventsEdge(ctx context.Context, userID string, query query,
 		return nil, errors.Wrap(err, "dgraph: fetching events")
 	}
 
-	ids := dgraph.ParseRDFUUIDs(res.Rdf)
+	ids := dgraph.ParseRDFULIDs(res.Rdf)
 	if len(ids) == 0 {
 		return nil, nil
 	}
@@ -609,7 +609,7 @@ func (s *service) getUsersEdge(ctx context.Context, userID string, query query, 
 		return nil, errors.Wrap(err, "fetching users from dgraph")
 	}
 
-	usersIds := dgraph.ParseRDFUUIDs(res.Rdf)
+	usersIds := dgraph.ParseRDFULIDs(res.Rdf)
 	if len(usersIds) == 0 {
 		return nil, nil
 	}

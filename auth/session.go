@@ -6,7 +6,7 @@ import (
 
 	"github.com/GGP1/groove/internal/bufferpool"
 	"github.com/GGP1/groove/internal/cookie"
-	"github.com/GGP1/groove/internal/params"
+	"github.com/GGP1/groove/internal/ulid"
 
 	"github.com/pkg/errors"
 )
@@ -17,7 +17,7 @@ var (
 )
 
 const (
-	idLen   = 36 // UUID string length
+	idLen   = ulid.EncodedSize // ULID string length
 	saltLen = 16
 )
 
@@ -78,12 +78,12 @@ func parseSessionToken(id string, salt []byte, premium bool) string {
 }
 
 func unparseSessionToken(token string) (Session, error) {
-	// sessionID = uuid(36)+salt(saltLen)+premium(1)
+	// sessionID = ulid(26)+salt(saltLen)+premium(1)
 	if len(token) != idLen+saltLen+1 {
 		return Session{}, errCorruptedSession
 	}
 	id := token[:idLen]
-	if err := params.ValidateUUID(id); err != nil {
+	if err := ulid.Validate(id); err != nil {
 		return Session{}, errCorruptedSession
 	}
 	last := len(token) - 1

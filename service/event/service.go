@@ -142,7 +142,7 @@ func (s *service) CanInvite(ctx context.Context, tx *sql.Tx, userID, invitedID s
 			return false, err
 		}
 
-		ids := dgraph.ParseRDFUUIDs(res.Rdf)
+		ids := dgraph.ParseRDFULIDs(res.Rdf)
 		return len(ids) != 0, nil
 	case "nobody":
 		return false, nil
@@ -710,7 +710,7 @@ func (s *service) queryUsers(ctx context.Context, sqlTx *sql.Tx, query string, v
 		return nil, errors.Wrap(err, "dgraph: fetching users ids")
 	}
 
-	usersIds := dgraph.ParseRDFUUIDs(res.Rdf)
+	usersIds := dgraph.ParseRDFULIDs(res.Rdf)
 	if len(usersIds) == 0 {
 		return nil, nil
 	}

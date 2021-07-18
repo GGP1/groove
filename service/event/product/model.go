@@ -3,7 +3,7 @@ package product
 import (
 	"time"
 
-	"github.com/GGP1/groove/internal/params"
+	"github.com/GGP1/groove/internal/ulid"
 
 	"github.com/pkg/errors"
 )
@@ -27,7 +27,7 @@ type Product struct {
 
 // Validate ..
 func (p Product) Validate() error {
-	if err := params.ValidateUUID(p.EventID); err != nil {
+	if err := ulid.Validate(p.EventID); err != nil {
 		return errors.Wrap(err, "invalid event_id")
 	}
 	if p.Discount < 0 {

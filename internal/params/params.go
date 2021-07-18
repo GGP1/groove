@@ -2,16 +2,15 @@ package params
 
 import (
 	"context"
-	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
 
+	"github.com/GGP1/groove/internal/ulid"
+
 	"github.com/julienschmidt/httprouter"
 	"github.com/pkg/errors"
 )
-
-var errInvalidUUIDFormat = errors.New("invalid UUID format")
 
 const maxResults = 50
 
@@ -57,7 +56,7 @@ func ParseQuery(rawQuery string, obj obj) (Query, error) {
 	}
 
 	if lookupID := values.Get("lookup.id"); lookupID != "" {
-		if err := ValidateUUID(lookupID); err != nil {
+		if err := ulid.Validate(lookupID); err != nil {
 			return Query{}, err
 		}
 		// As the other fields won't be used, just return here
@@ -82,74 +81,13 @@ func ParseQuery(rawQuery string, obj obj) (Query, error) {
 	return params, nil
 }
 
-// UUIDFromCtx takes the id parameter from context and validates it.
-func UUIDFromCtx(ctx context.Context) (string, error) {
+// IDFromCtx takes the id parameter from context and validates it.
+func IDFromCtx(ctx context.Context) (string, error) {
 	id := httprouter.ParamsFromContext(ctx).ByName("id")
-	if err := ValidateUUID(id); err != nil {
+	if err := ulid.Validate(id); err != nil {
 		return "", err
 	}
 	return id, nil
-}
-
-// ValidateUUID validates that the passed id is a valid UUIDv4 according to RFC4122.
-//
-// Useful to avoid making a database query with an invalid ValidateUUID.
-func ValidateUUID(id string) error {
-	switch len(id) {
-	// Standard: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-	case 36:
-
-	// urn:uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-	case 45:
-		if strings.ToLower(id[:9]) != "urn:uuid:" {
-			return fmt.Errorf("invalid urn prefix: %q", id[:9])
-		}
-		id = id[9:]
-
-		// Microsoft: {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}
-	case 38:
-		if id[0] != '{' && id[37] != '}' {
-			return errInvalidUUIDFormat
-		}
-		id = id[1:37]
-
-		// Raw hex: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-	case 32:
-		for i := 0; i < 16; i++ {
-			if ok := validBytes(id[i*2], id[i*2+1]); !ok {
-				return errInvalidUUIDFormat
-			}
-		}
-		return nil
-	default:
-		return errors.Errorf("invalid UUID length: %d", len(id))
-	}
-	// id is now at least 36 bytes long
-	// it must be of the form  xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-	if id[8] != '-' || id[13] != '-' || id[18] != '-' || id[23] != '-' {
-		return errInvalidUUIDFormat
-	}
-	for _, x := range [16]int{
-		0, 2, 4, 6,
-		9, 11,
-		14, 16,
-		19, 21,
-		24, 26, 28, 30, 32, 34} {
-		if ok := validBytes(id[x], id[x+1]); !ok {
-			return errInvalidUUIDFormat
-		}
-	}
-	return nil
-}
-
-// ValidateUUIDs takes multiple ids and validates them all.
-func ValidateUUIDs(ids ...string) error {
-	for _, id := range ids {
-		if err := ValidateUUID(id); err != nil {
-			return errors.Wrapf(err, "%q", id)
-		}
-	}
-	return nil
 }
 
 func parseFields(obj obj, values url.Values) ([]string, error) {
@@ -303,31 +241,4 @@ func parseInt(value, def string, max int) (string, error) {
 		}
 		return value, nil
 	}
-}
-
-// UUID utils
-
-// validBytes makes sure the bytes provided are valid.
-func validBytes(x1, x2 byte) bool {
-	return xvalues[x1] != 255 && xvalues[x2] != 255
-}
-
-// xvalues returns the value of a byte as a hexadecimal digit or 255.
-var xvalues = [256]byte{
-	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 255, 255, 255, 255, 255, 255,
-	255, 10, 11, 12, 13, 14, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-	255, 10, 11, 12, 13, 14, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
 }

@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event/role"
 	"github.com/GGP1/groove/test"
 
 	"github.com/bradfitz/gomemcache/memcache"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -58,7 +58,7 @@ func TestMain(m *testing.M) {
 
 func TestCreatePermission(t *testing.T) {
 	ctx := context.Background()
-	eventID := uuid.NewString()
+	eventID := ulid.NewString()
 
 	err := createEvent(ctx, eventID, "create_permission")
 	assert.NoError(t, err)
@@ -74,7 +74,7 @@ func TestCreatePermission(t *testing.T) {
 
 func TestGetPermissions(t *testing.T) {
 	ctx := context.Background()
-	eventID := uuid.NewString()
+	eventID := ulid.NewString()
 
 	err := createEvent(ctx, eventID, "permissions")
 	assert.NoError(t, err)
@@ -100,8 +100,8 @@ func TestGetPermissions(t *testing.T) {
 
 func TestRoles(t *testing.T) {
 	ctx := context.Background()
-	eventID := uuid.NewString()
-	userID := uuid.NewString()
+	eventID := ulid.NewString()
+	userID := ulid.NewString()
 
 	email := "role@email.com"
 	err := createUser(ctx, userID, email, "role")

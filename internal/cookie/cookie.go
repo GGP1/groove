@@ -10,8 +10,11 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Session is the name of the cookie used to store session information.
-const Session = "SID"
+const (
+	// Session is the name of the cookie used to store session information.
+	Session = "SID"
+	maxAge  = 86400 * 15
+)
 
 // Considerations before choosing between standard (Set) and secure (SetSecure) cookies.
 // https://tools.ietf.org/html/draft-ietf-httpbis-cookie-same-site-00#section-5.2
@@ -79,7 +82,7 @@ func Set(w http.ResponseWriter, name, value, path string) error {
 		Secure:   false, // Only https (set to true when in production)
 		HttpOnly: true,  // True means no scripts, http requests only. It does not refer to http(s)
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   86400 * 15,
+		MaxAge:   maxAge,
 	})
 
 	return nil
@@ -99,7 +102,7 @@ func SetSecure(w http.ResponseWriter, name, value, path string) error {
 		Secure:   true,
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
-		MaxAge:   86400 * 30,
+		MaxAge:   maxAge * 2,
 	})
 
 	return nil

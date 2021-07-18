@@ -46,20 +46,20 @@ func TestParseCountWithMap(t *testing.T) {
 }
 
 func TestParseRDF(t *testing.T) {
-	expected := []string{"8d371ac6-350b-4d63-b43f-57a42042f817", "721bb10c-123c-40f9-af53-6631f45a1aa4"}
+	expected := []string{"01FATYNXRDPTPSJNEJ0DQ5KBAB", "01FATYMXV9M5K093CK5NX0Y4K9"}
 	rdf := []byte(`<0x2> <~invited> <0x1> .
-<0x1> <event_id> "8d371ac6-350b-4d63-b43f-57a42042f817" .
-<0x1> <event_id> "721bb10c-123c-40f9-af53-6631f45a1aa4" .
+<0x1> <event_id> "01FATYNXRDPTPSJNEJ0DQ5KBAB" .
+<0x1> <event_id> "01FATYMXV9M5K093CK5NX0Y4K9" .
 `)
-	got := ParseRDFUUIDs(rdf)
+	got := ParseRDFULIDs(rdf)
 	assert.Equal(t, expected, got)
 }
 
 func TestParseRDFWithMap(t *testing.T) {
-	expected := []string{"8d371ac6-350b-4d63-b43f-57a42042f817", "721bb10c-123c-40f9-af53-6631f45a1aa4"}
+	expected := []string{"01FATYNXRDPTPSJNEJ0DQ5KBAB", "01FATYMXV9M5K093CK5NX0Y4K9"}
 	rdf := []byte(`<0x2> <invited> <0x1> .
-<0x1> <event_id> "8d371ac6-350b-4d63-b43f-57a42042f817" .
-<0x1> <event_id> "721bb10c-123c-40f9-af53-6631f45a1aa4" .
+<0x1> <event_id> "01FATYNXRDPTPSJNEJ0DQ5KBAB" .
+<0x1> <event_id> "01FATYMXV9M5K093CK5NX0Y4K9" .
 `)
 	got, err := ParseRDFWithMap(rdf)
 	assert.NoError(t, err)
@@ -82,11 +82,11 @@ func TestTriple(t *testing.T) {
 
 func BenchmarkParseRDFResponse(b *testing.B) {
 	rdf := []byte(`<0x2> <~invited> <0x1> .
-<0x1> <event_id> "8d371ac6-350b-4d63-b43f-57a42042f817" .
-<0x1> <event_id> "721bb10c-123c-40f9-af53-6631f45a1aa4" .
+<0x1> <event_id> "01FATYNXRDPTPSJNEJ0DQ5KBAB" .
+<0x1> <event_id> "01FATYMXV9M5K093CK5NX0Y4K9" .
 `)
 	for i := 0; i < b.N; i++ {
-		_ = ParseRDFUUIDs(rdf)
+		_ = ParseRDFULIDs(rdf)
 	}
 }
 
@@ -97,10 +97,10 @@ func BenchmarkParseJSON(b *testing.B) {
 			{
 				"~invited": [
 					{
-						"event_id": "8d371ac6-350b-4d63-b43f-57a42042f817"
+						"event_id": "01FATYNXRDPTPSJNEJ0DQ5KBAB"
 					},
 					{
-						"event_id": "721bb10c-123c-40f9-af53-6631f45a1aa4"
+						"event_id": "01FATYMXV9M5K093CK5NX0Y4K9"
 					}
 				]
 			}
@@ -120,8 +120,8 @@ func BenchmarkParseJSON(b *testing.B) {
 
 func BenchmarkParseRDFResponseWithMap(b *testing.B) {
 	rdf := []byte(`<0x2> <~invited> <0x1> .
-<0x1> <event_id> "8d371ac6-350b-4d63-b43f-57a42042f817" .
-<0x1> <event_id> "721bb10c-123c-40f9-af53-6631f45a1aa4" .
+<0x1> <event_id> "01FATYNXRDPTPSJNEJ0DQ5KBAB" .
+<0x1> <event_id> "01FATYMXV9M5K093CK5NX0Y4K9" .
 `)
 	for i := 0; i < b.N; i++ {
 		_, _ = ParseRDFWithMap(rdf)
