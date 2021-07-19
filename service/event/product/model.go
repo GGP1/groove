@@ -13,15 +13,15 @@ import (
 // Amounts to be provided in a currency’s smallest unit.
 type Product struct {
 	ID          string     `json:"id,omitempty"`
-	EventID     string     `json:"event_id" db:"event_id"`
-	Stock       uint       `json:"stock"`
-	Brand       string     `json:"brand"`
-	Type        string     `json:"type"`
-	Description string     `json:"description"`
-	Discount    int64      `json:"discount"`
-	Taxes       int64      `json:"taxes"`
-	Subtotal    int64      `json:"subtotal"`
-	Total       int64      `json:"total"`
+	EventID     string     `json:"event_id,omitempty" db:"event_id"`
+	Stock       uint64     `json:"stock,omitempty"`
+	Brand       string     `json:"brand,omitempty"`
+	Type        string     `json:"type,omitempty"`
+	Description string     `json:"description,omitempty"`
+	Discount    uint64     `json:"discount,omitempty"`
+	Taxes       uint64     `json:"taxes,omitempty"`
+	Subtotal    uint64     `json:"subtotal,omitempty"`
+	Total       uint64     `json:"total,omitempty"`
 	CreatedAt   *time.Time `json:"created_at,omitempty" db:"created_at"`
 }
 
@@ -37,6 +37,36 @@ func (p Product) Validate() error {
 		return errors.New("invalid taxes, minimum is 0")
 	}
 	if p.Total < 0 {
+		return errors.New("invalid total, minimum is 0")
+	}
+	return nil
+}
+
+// UpdateProduct is the structure used to update products.
+type UpdateProduct struct {
+	ID          string  `json:"id,omitempty"`
+	Stock       *uint64 `json:"stock,omitempty"`
+	Brand       *string `json:"brand,omitempty"`
+	Type        *string `json:"type,omitempty"`
+	Description *string `json:"description,omitempty"`
+	Discount    *uint64 `json:"discount,omitempty"`
+	Taxes       *uint64 `json:"taxes,omitempty"`
+	Subtotal    *uint64 `json:"subtotal,omitempty"`
+	Total       *uint64 `json:"total,omitempty"`
+}
+
+// Validate ..
+func (p UpdateProduct) Validate() error {
+	if p.ID == "" {
+		return errors.New("id required")
+	}
+	if p.Discount != nil && *p.Discount < 0 {
+		return errors.New("invalid discount, minimum is 0")
+	}
+	if p.Taxes != nil && *p.Taxes < 0 {
+		return errors.New("invalid taxes, minimum is 0")
+	}
+	if p.Total != nil && *p.Total < 0 {
 		return errors.New("invalid total, minimum is 0")
 	}
 	return nil

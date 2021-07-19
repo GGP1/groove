@@ -3,7 +3,9 @@ package product
 import (
 	"context"
 	"database/sql"
+	"strconv"
 
+	"github.com/GGP1/groove/internal/bufferpool"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/storage/postgres"
@@ -16,7 +18,7 @@ import (
 type Service interface {
 	CreateProduct(ctx context.Context, sqlTx *sql.Tx, eventID string, product Product) error
 	GetProducts(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]Product, error)
-	UpdateProduct(ctx context.Context, sqlTx *sql.Tx, eventID string, product Product) error
+	UpdateProduct(ctx context.Context, sqlTx *sql.Tx, eventID string, product UpdateProduct) error
 }
 
 type service struct {
@@ -65,18 +67,10 @@ func (s service) GetProducts(ctx context.Context, sqlTx *sql.Tx, eventID string,
 }
 
 // UpdateProduct updates an event product.
-func (s service) UpdateProduct(ctx context.Context, sqlTx *sql.Tx, eventID string, product Product) error {
-	q := `UPDATE events_products SET 
-	stock=$3 brand=$4 type=$5 description=$6 discount=$7 taxes=$8 subtotal=$9 total=$10 
-	WHERE id=$1 AND event_id=$2`
-	_, err := sqlTx.ExecContext(ctx, q, product.ID, eventID, product.Stock, product.Brand, product.Type,
-		product.Description, product.Discount, product.Taxes, product.Subtotal, product.Total)
-	if err != nil {
+func (s service) UpdateProduct(ctx context.Context, sqlTx *sql.Tx, eventID string, product UpdateProduct) error {
+	q := updateProductQuery(eventID, product)
+	if _, err := sqlTx.ExecContext(ctx, q); err != nil {
 		return errors.Wrap(err, "updating products")
-	}
-
-	if err := s.mc.Delete(eventID + "_products"); err != nil && err != memcache.ErrCacheMiss {
-		return errors.Wrap(err, "memcached: deleting products")
 	}
 
 	return nil
@@ -136,4 +130,60 @@ func productColumns(p *Product, columns []string) []interface{} {
 	}
 
 	return result
+}
+
+func updateProductQuery(eventID string, p UpdateProduct) string {
+	buf := bufferpool.Get()
+	buf.WriteString("UPDATE events_products SET")
+
+	if p.Brand != nil {
+		buf.WriteString(" brand='")
+		buf.WriteString(*p.Brand)
+		buf.WriteString("',")
+	}
+	if p.Type != nil {
+		buf.WriteString(" type='")
+		buf.WriteString(*p.Type)
+		buf.WriteString("',")
+	}
+	if p.Description != nil {
+		buf.WriteString(" description='")
+		buf.WriteString(*p.Description)
+		buf.WriteString("',")
+	}
+	if p.Stock != nil {
+		buf.WriteString(" stock=")
+		buf.WriteString(strconv.FormatUint(*p.Stock, 10))
+		buf.WriteByte(',')
+	}
+	if p.Discount != nil {
+		buf.WriteString(" discount=")
+		buf.WriteString(strconv.FormatUint(*p.Discount, 10))
+		buf.WriteByte(',')
+	}
+	if p.Taxes != nil {
+		buf.WriteString(" taxes=")
+		buf.WriteString(strconv.FormatUint(*p.Taxes, 10))
+		buf.WriteByte(',')
+	}
+	if p.Subtotal != nil {
+		buf.WriteString(" subtotal=")
+		buf.WriteString(strconv.FormatUint(*p.Subtotal, 10))
+		buf.WriteByte(',')
+	}
+	if p.Total != nil {
+		buf.WriteString(" total=")
+		buf.WriteString(strconv.FormatUint(*p.Total, 10))
+	}
+
+	buf.WriteString(" WHERE event_id='")
+	buf.WriteString(eventID)
+	buf.WriteString("' AND id='")
+	buf.WriteString(p.ID)
+	buf.WriteByte('\'')
+
+	q := buf.String()
+	bufferpool.Put(buf)
+
+	return q
 }

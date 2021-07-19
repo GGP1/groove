@@ -114,7 +114,8 @@ func (h *Handler) CreatePermission() http.Handler {
 		sqlTx := h.service.BeginSQLTx(ctx, false)
 		defer sqlTx.Rollback()
 
-		if err := h.requirePermissions(ctx, r, sqlTx, eventID, hostPermissions); err != nil {
+		permKeys := []string{permissions.CreatePermission}
+		if err := h.requirePermissions(ctx, r, sqlTx, eventID, permKeys); err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
 		}
@@ -126,6 +127,7 @@ func (h *Handler) CreatePermission() http.Handler {
 		}
 		defer r.Body.Close()
 
+		permission.Key = strings.ToLower(permission.Key)
 		if err := permission.Validate(); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -172,12 +174,12 @@ func (h *Handler) CreateRole() http.Handler {
 		}
 		defer r.Body.Close()
 
+		role.Name = strings.ToLower(role.Name)
 		if err := role.Validate(); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		role.Name = strings.ToLower(role.Name)
 		if err := h.service.CreateRole(ctx, sqlTx, eventID, role); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -344,5 +346,103 @@ func (h *Handler) SetRoles() http.HandlerFunc {
 		}
 
 		response.JSONMessage(w, http.StatusOK, eventID)
+	}
+}
+
+// UpdatePermission updates a permission.
+func (h *Handler) UpdatePermission() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		eventID, err := params.IDFromCtx(ctx)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		sqlTx := h.service.BeginSQLTx(ctx, false)
+		defer sqlTx.Rollback()
+
+		permKeys := []string{permissions.CreatePermission}
+		if err := h.requirePermissions(ctx, r, sqlTx, eventID, permKeys); err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		var permission role.UpdatePermission
+		if err := json.NewDecoder(r.Body).Decode(&permission); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		defer r.Body.Close()
+
+		if permission.Key != nil {
+			*permission.Key = strings.ToLower(*permission.Key)
+		}
+		if err := permission.Validate(); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		if err := h.service.UpdatePermission(ctx, sqlTx, eventID, permission); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		if err := sqlTx.Commit(); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		response.JSON(w, http.StatusOK, permission)
+	}
+}
+
+// UpdateRole updates a role.
+func (h *Handler) UpdateRole() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		eventID, err := params.IDFromCtx(ctx)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		sqlTx := h.service.BeginSQLTx(ctx, false)
+		defer sqlTx.Rollback()
+
+		permKeys := []string{permissions.CreateRole}
+		if err := h.requirePermissions(ctx, r, sqlTx, eventID, permKeys); err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		var role role.UpdateRole
+		if err := json.NewDecoder(r.Body).Decode(&role); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		defer r.Body.Close()
+
+		if role.Name != nil {
+			*role.Name = strings.ToLower(*role.Name)
+		}
+		if err := role.Validate(); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		if err := h.service.UpdateRole(ctx, sqlTx, eventID, role); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		if err := sqlTx.Commit(); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		response.JSON(w, http.StatusOK, role)
 	}
 }

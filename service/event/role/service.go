@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/GGP1/groove/internal/bufferpool"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/storage/postgres"
 
@@ -31,8 +32,8 @@ type Service interface {
 	GetUserRole(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) (Role, error)
 	IsHost(ctx context.Context, sqlTx *sql.Tx, userID string, eventIDs ...string) (bool, error)
 	SetRoles(ctx context.Context, sqlTx *sql.Tx, eventID, roleName string, userIDs ...string) error
-	UpdatePermission(ctx context.Context, sqlTx *sql.Tx, eventID string, permission Permission) error
-	UpdateRole(ctx context.Context, sqlTx *sql.Tx, eventID string, role Role) error
+	UpdatePermission(ctx context.Context, sqlTx *sql.Tx, eventID string, permission UpdatePermission) error
+	UpdateRole(ctx context.Context, sqlTx *sql.Tx, eventID string, role UpdateRole) error
 	UserHasRole(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) (bool, error)
 }
 
@@ -117,13 +118,16 @@ func (s service) CreateRole(ctx context.Context, sqlTx *sql.Tx, eventID string, 
 	exists := false
 
 	// Check for the existence of the keys used for the role
-	for pk := range role.PermissionKeys {
-		row := sqlTx.QueryRowContext(ctx, q1, eventID, pk)
+	for key := range role.PermissionKeys {
+		if permissions.ReservedKeys.Exists(key) {
+			continue
+		}
+		row := sqlTx.QueryRowContext(ctx, q1, eventID, key)
 		if err := row.Scan(&exists); err != nil {
 			return err
 		}
 		if !exists {
-			return errors.Errorf("permission with key %q does not exist", pk)
+			return errors.Errorf("permission with key %q does not exist", key)
 		}
 	}
 
@@ -172,6 +176,10 @@ func (s service) GetPermissions(ctx context.Context, sqlTx *sql.Tx, eventID stri
 
 // GetRole returns a role in a given event.
 func (s service) GetRole(ctx context.Context, sqlTx *sql.Tx, eventID, name string) (Role, error) {
+	if keys, ok := ReservedRoles.GetStringMapStruct(name); ok {
+		return Role{Name: name, PermissionKeys: keys}, nil
+	}
+
 	q := "SELECT permissions_keys FROM events_roles WHERE event_id=$1 AND name=$2"
 	permissionKeys, err := postgres.QueryString(ctx, sqlTx, q, eventID, name)
 	if err != nil {
@@ -221,6 +229,10 @@ func (s service) GetUserRole(ctx context.Context, sqlTx *sql.Tx, eventID, userID
 		return Role{}, errors.Errorf("user %q has no role in event %q", userID, eventID)
 	}
 
+	if keys, ok := ReservedRoles.GetStringMapStruct(roleName); ok {
+		return Role{Name: roleName, PermissionKeys: keys}, nil
+	}
+
 	role, err := s.GetRole(ctx, sqlTx, eventID, roleName)
 	if err != nil {
 		return Role{}, err
@@ -260,12 +272,63 @@ func (s service) SetRoles(ctx context.Context, sqlTx *sql.Tx, eventID, roleName 
 }
 
 // UpdatePemission ..
-func (s service) UpdatePermission(ctx context.Context, sqlTx *sql.Tx, eventID string, permission Permission) error {
+func (s service) UpdatePermission(ctx context.Context, sqlTx *sql.Tx, eventID string, permission UpdatePermission) error {
+	buf := bufferpool.Get()
+	buf.WriteString("UPDATE events_roles SET")
+
+	if permission.Name != nil {
+		buf.WriteString(" name='")
+		buf.WriteString(*permission.Name)
+		buf.WriteString("',")
+	}
+	if permission.Key != nil {
+		buf.WriteString(" key='")
+		buf.WriteString(*permission.Key)
+		buf.WriteString("',")
+	}
+	if permission.Description != nil {
+		buf.WriteString(" description='")
+		buf.WriteString(*permission.Description)
+		buf.WriteByte('\'')
+	}
+
+	buf.WriteString(" WHERE event_id='")
+	buf.WriteString(eventID)
+	buf.WriteByte('\'')
+
+	if _, err := sqlTx.ExecContext(ctx, buf.String()); err != nil {
+		return errors.Wrap(err, "updating role")
+	}
+
+	bufferpool.Put(buf)
 	return nil
 }
 
 // UpdateRole ..
-func (s service) UpdateRole(ctx context.Context, sqlTx *sql.Tx, eventID string, role Role) error {
+func (s service) UpdateRole(ctx context.Context, sqlTx *sql.Tx, eventID string, role UpdateRole) error {
+	buf := bufferpool.Get()
+	buf.WriteString("UPDATE events_roles SET")
+
+	if role.Name != nil {
+		buf.WriteString(" name='")
+		buf.WriteString(*role.Name)
+		buf.WriteString("',")
+	}
+	if role.PermissionKeys != nil {
+		buf.WriteString(" permission_keys='")
+		buf.WriteString(permissions.ParseKeys(*role.PermissionKeys))
+		buf.WriteByte('\'')
+	}
+
+	buf.WriteString(" WHERE event_id='")
+	buf.WriteString(eventID)
+	buf.WriteByte('\'')
+
+	if _, err := sqlTx.ExecContext(ctx, buf.String()); err != nil {
+		return errors.Wrap(err, "updating role")
+	}
+
+	bufferpool.Put(buf)
 	return nil
 }
 

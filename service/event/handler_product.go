@@ -117,12 +117,17 @@ func (h *Handler) UpdateProduct() http.HandlerFunc {
 			return
 		}
 
-		var product product.Product
+		var product product.UpdateProduct
 		if err := json.NewDecoder(r.Body).Decode(&product); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 		defer r.Body.Close()
+
+		if err := product.Validate(); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
 
 		if err := h.service.UpdateProduct(ctx, sqlTx, eventID, product); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)

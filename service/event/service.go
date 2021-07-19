@@ -680,21 +680,21 @@ func (s *service) UpdateMedia(ctx context.Context, sqlTx *sql.Tx, eventID string
 }
 
 // UpdatePermission ..
-func (s *service) UpdatePermission(ctx context.Context, sqlTx *sql.Tx, eventID string, permission role.Permission) error {
+func (s *service) UpdatePermission(ctx context.Context, sqlTx *sql.Tx, eventID string, permission role.UpdatePermission) error {
 	s.metrics.incMethodCalls("UpdatePermission")
 	return s.roleService.UpdatePermission(ctx, sqlTx, eventID, permission)
 }
 
-// UpdateRole ..
-func (s *service) UpdateRole(ctx context.Context, sqlTx *sql.Tx, eventID string, role role.Role) error {
-	s.metrics.incMethodCalls("UpdateRole")
-	return s.roleService.UpdateRole(ctx, sqlTx, eventID, role)
-}
-
 // UpdateProduct updates an event product.
-func (s *service) UpdateProduct(ctx context.Context, sqlTx *sql.Tx, eventID string, product product.Product) error {
+func (s *service) UpdateProduct(ctx context.Context, sqlTx *sql.Tx, eventID string, product product.UpdateProduct) error {
 	s.metrics.incMethodCalls("UpdateProduct")
 	return s.productService.UpdateProduct(ctx, sqlTx, eventID, product)
+}
+
+// UpdateRole ..
+func (s *service) UpdateRole(ctx context.Context, sqlTx *sql.Tx, eventID string, role role.UpdateRole) error {
+	s.metrics.incMethodCalls("UpdateRole")
+	return s.roleService.UpdateRole(ctx, sqlTx, eventID, role)
 }
 
 // UserHasRole returns if the user has a role inside the event or not.
