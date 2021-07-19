@@ -36,7 +36,7 @@ func (h *Handler) CreateZone() http.Handler {
 		sqlTx := h.service.BeginSQLTx(ctx, false)
 		defer sqlTx.Rollback()
 
-		if err := h.requirePermissions(ctx, r, sqlTx, eventID, hostPermissions); err != nil {
+		if err := h.requirePermissions(ctx, r, sqlTx, eventID, permissions.ModifyZones); err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
 		}
@@ -70,8 +70,7 @@ func (h *Handler) DeleteZone() http.HandlerFunc {
 		name := routerParams.ByName("name")
 
 		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
-			permKeys := []string{permissions.ModifyZones}
-			if err := h.requirePermissions(ctx, r, tx, eventID, permKeys); err != nil {
+			if err := h.requirePermissions(ctx, r, tx, eventID, permissions.ModifyZones); err != nil {
 				return http.StatusForbidden, err
 			}
 			if err := h.service.DeleteZone(ctx, tx, eventID, name); err != nil {

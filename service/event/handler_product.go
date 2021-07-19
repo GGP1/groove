@@ -28,7 +28,7 @@ func (h *Handler) CreateProduct() http.Handler {
 		sqlTx := h.service.BeginSQLTx(ctx, false)
 		defer sqlTx.Rollback()
 
-		if err := h.requirePermissions(ctx, r, sqlTx, eventID, hostPermissions); err != nil {
+		if err := h.requirePermissions(ctx, r, sqlTx, eventID, permissions.ModifyProducts); err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
 		}
@@ -71,10 +71,9 @@ func (h *Handler) DeleteProduct() http.HandlerFunc {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
-		permKeys := []string{permissions.ModifyProducts}
 
 		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
-			if err := h.requirePermissions(ctx, r, tx, eventID, permKeys); err != nil {
+			if err := h.requirePermissions(ctx, r, tx, eventID, permissions.ModifyProducts); err != nil {
 				return http.StatusForbidden, err
 			}
 			if err := h.service.DeleteProduct(ctx, tx, eventID, productID); err != nil {
@@ -149,7 +148,7 @@ func (h *Handler) UpdateProduct() http.HandlerFunc {
 		sqlTx := h.service.BeginSQLTx(ctx, false)
 		defer sqlTx.Rollback()
 
-		if err := h.requirePermissions(ctx, r, sqlTx, eventID, hostPermissions); err != nil {
+		if err := h.requirePermissions(ctx, r, sqlTx, eventID, permissions.ModifyProducts); err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
 		}

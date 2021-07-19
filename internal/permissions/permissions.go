@@ -11,32 +11,32 @@ import (
 
 // ReservedKeys is a read-only map containing all reserved permissions keys.
 var ReservedKeys = romap.New(map[string]interface{}{
-	All:              struct{}{},
-	Access:           struct{}{},
-	BanUsers:         struct{}{},
-	CreatePermission: struct{}{},
-	CreateRole:       struct{}{},
-	CreateZone:       struct{}{},
-	InviteUsers:      struct{}{},
-	SetUserRole:      struct{}{},
-	UpdateEvent:      struct{}{},
-	UpdateMedia:      struct{}{},
-	UpdateProduct:    struct{}{},
+	All:               struct{}{},
+	Access:            struct{}{},
+	BanUsers:          struct{}{},
+	ModifyMedia:       struct{}{},
+	ModifyPermissions: struct{}{},
+	ModifyProducts:    struct{}{},
+	ModifyRoles:       struct{}{},
+	ModifyZones:       struct{}{},
+	InviteUsers:       struct{}{},
+	SetUserRole:       struct{}{},
+	UpdateEvent:       struct{}{},
 })
 
 // Pre-defined permission key.
 const (
-	All              = "*"
-	Access           = "access"
-	BanUsers         = "ban_users"
-	CreatePermission = "create_permission"
-	CreateRole       = "create_role"
-	CreateZone       = "create_zone"
-	InviteUsers      = "invite_users"
-	SetUserRole      = "set_user_role"
-	UpdateEvent      = "update_event"
-	UpdateMedia      = "update_media"
-	UpdateProduct    = "update_product"
+	All               = "*"
+	Access            = "access"
+	BanUsers          = "ban_users"
+	InviteUsers       = "invite_users"
+	ModifyMedia       = "modify_media"
+	ModifyPermissions = "modify_permissions"
+	ModifyProducts    = "modify_products"
+	ModifyRoles       = "modify_roles"
+	ModifyZones       = "modify_zones"
+	SetUserRole       = "set_user_role"
+	UpdateEvent       = "update_event"
 
 	// Separator is used to parse and unparse keys.
 	Separator = "/"

@@ -18,10 +18,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-var (
-	errAccessDenied = errors.New("Access denied")
-	hostPermissions = []string{permissions.All}
-)
+var errAccessDenied = errors.New("Access denied")
 
 type userIDBody struct {
 	UserID string `json:"user_id,omitempty"`
@@ -60,7 +57,7 @@ func (h *Handler) AddBanned() http.HandlerFunc {
 
 		sqlTx := h.service.BeginSQLTx(ctx, true)
 
-		if err := h.requirePermissions(ctx, r, sqlTx, eventID, hostPermissions); err != nil {
+		if err := h.requirePermissions(ctx, r, sqlTx, eventID, permissions.BanUsers); err != nil {
 			sqlTx.Rollback()
 			response.Error(w, http.StatusForbidden, err)
 			return
@@ -162,7 +159,7 @@ func (h *Handler) AddInvited() http.HandlerFunc {
 		sqlTx := h.service.BeginSQLTx(ctx, true)
 		defer sqlTx.Rollback()
 
-		err = h.requirePermissions(ctx, r, sqlTx, eventID, []string{permissions.InviteUsers})
+		err = h.requirePermissions(ctx, r, sqlTx, eventID, permissions.InviteUsers)
 		if err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
@@ -298,7 +295,7 @@ func (h *Handler) Delete() http.HandlerFunc {
 
 		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
 			// TODO: require confirmation from all the hosts?
-			if err := h.requirePermissions(ctx, r, tx, eventID, hostPermissions); err != nil {
+			if err := h.requirePermissions(ctx, r, tx, eventID, permissions.All); err != nil {
 				return http.StatusForbidden, err
 			}
 			if err := h.service.Delete(ctx, tx, eventID); err != nil {
@@ -329,7 +326,7 @@ func (h *Handler) GetBans() http.HandlerFunc {
 		sqlTx := h.service.BeginSQLTx(ctx, true)
 		defer sqlTx.Rollback()
 
-		if err := h.privacyFilter(ctx, r, sqlTx, eventID); err != nil {
+		if err := h.requirePermissions(ctx, r, sqlTx, eventID, permissions.BanUsers); err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
 		}
@@ -717,7 +714,7 @@ func (h *Handler) RemoveBanned() http.HandlerFunc {
 		}
 
 		errStatus, err := h.service.SQLTx(ctx, true, func(tx *sql.Tx) (int, error) {
-			if err := h.requirePermissions(ctx, r, tx, eventID, hostPermissions); err != nil {
+			if err := h.requirePermissions(ctx, r, tx, eventID, permissions.BanUsers); err != nil {
 				return http.StatusForbidden, err
 			}
 			return 0, nil
@@ -764,7 +761,7 @@ func (h *Handler) RemoveConfirmed() http.HandlerFunc {
 		}
 
 		errStatus, err := h.service.SQLTx(ctx, true, func(tx *sql.Tx) (int, error) {
-			if err := h.requirePermissions(ctx, r, tx, eventID, hostPermissions); err != nil {
+			if err := h.requirePermissions(ctx, r, tx, eventID, permissions.All); err != nil {
 				return http.StatusForbidden, err
 			}
 			return 0, nil
@@ -811,7 +808,7 @@ func (h *Handler) RemoveInvited() http.HandlerFunc {
 		}
 
 		errStatus, err := h.service.SQLTx(ctx, true, func(tx *sql.Tx) (int, error) {
-			if err := h.requirePermissions(ctx, r, tx, eventID, hostPermissions); err != nil {
+			if err := h.requirePermissions(ctx, r, tx, eventID, permissions.All); err != nil {
 				return http.StatusForbidden, err
 			}
 			return 0, nil
@@ -922,7 +919,7 @@ func (h *Handler) Update() http.HandlerFunc {
 		sqlTx := h.service.BeginSQLTx(ctx, false)
 		defer sqlTx.Rollback()
 
-		if err := h.requirePermissions(ctx, r, sqlTx, eventID, hostPermissions); err != nil {
+		if err := h.requirePermissions(ctx, r, sqlTx, eventID, permissions.All); err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
 		}
@@ -979,7 +976,7 @@ func (h *Handler) privacyFilter(ctx context.Context, r *http.Request, tx *sql.Tx
 }
 
 // requirePermissions returns an error if the user hasn't the permissions required on the event passed.
-func (h *Handler) requirePermissions(ctx context.Context, r *http.Request, tx *sql.Tx, eventID string, permRequired []string) error {
+func (h *Handler) requirePermissions(ctx context.Context, r *http.Request, tx *sql.Tx, eventID string, permRequired ...string) error {
 	session, err := auth.GetSession(ctx, r)
 	if err != nil {
 		return err

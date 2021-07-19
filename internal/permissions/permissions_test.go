@@ -19,15 +19,15 @@ func TestRequire(t *testing.T) {
 		assert.NoError(t, err)
 
 		hostPerm := map[string]struct{}{All: {}}
-		err = Require(hostPerm, CreateRole, CreateZone)
+		err = Require(hostPerm, ModifyRoles, ModifyZones)
 		assert.NoError(t, err)
 	})
 
 	t.Run("Fail", func(t *testing.T) {
-		err := Require(userPermsKeys, UpdateMedia)
+		err := Require(userPermsKeys, ModifyMedia)
 		assert.Error(t, err)
 
-		err = Require(userPermsKeys, Access, BanUsers, CreatePermission)
+		err = Require(userPermsKeys, Access, BanUsers, ModifyPermissions)
 		assert.Error(t, err)
 	})
 }
@@ -50,46 +50,46 @@ func TestParseKeys(t *testing.T) {
 
 func TestUnparseKeys(t *testing.T) {
 	expected := map[string]struct{}{
-		BanUsers:         {},
-		CreatePermission: {},
-		CreateRole:       {},
-		InviteUsers:      {},
-		SetUserRole:      {},
-		UpdateEvent:      {},
-		UpdateMedia:      {},
-		UpdateProduct:    {},
+		BanUsers:          {},
+		ModifyPermissions: {},
+		ModifyRoles:       {},
+		InviteUsers:       {},
+		ModifyMedia:       {},
+		ModifyProducts:    {},
+		SetUserRole:       {},
+		UpdateEvent:       {},
 	}
 	permissionsKeys := fmt.Sprintf("%s/%s/%s/%s/%s/%s/%s/%s",
-		BanUsers, CreatePermission, CreateRole, InviteUsers,
-		SetUserRole, UpdateEvent, UpdateMedia, UpdateProduct)
+		BanUsers, ModifyPermissions, ModifyRoles, InviteUsers,
+		SetUserRole, UpdateEvent, ModifyMedia, ModifyProducts)
 	got := UnparseKeys(permissionsKeys)
 	assert.Equal(t, expected, got)
 }
 
 func BenchmarkRequire(b *testing.B) {
 	userPermsKeys := map[string]struct{}{
-		Access:           {},
-		BanUsers:         {},
-		CreatePermission: {},
-		CreateRole:       {},
-		CreateZone:       {},
-		InviteUsers:      {},
-		SetUserRole:      {},
-		UpdateEvent:      {},
-		UpdateMedia:      {},
-		UpdateProduct:    {},
+		Access:            {},
+		BanUsers:          {},
+		ModifyPermissions: {},
+		ModifyRoles:       {},
+		ModifyZones:       {},
+		InviteUsers:       {},
+		ModifyMedia:       {},
+		ModifyProducts:    {},
+		SetUserRole:       {},
+		UpdateEvent:       {},
 	}
 	required := []string{
 		Access,
 		BanUsers,
-		CreatePermission,
-		CreateRole,
-		CreateZone,
+		ModifyPermissions,
+		ModifyRoles,
+		ModifyZones,
 		InviteUsers,
+		ModifyMedia,
+		ModifyProducts,
 		SetUserRole,
 		UpdateEvent,
-		UpdateMedia,
-		UpdateProduct,
 	}
 	for i := 0; i < b.N; i++ {
 		_ = Require(userPermsKeys, required...)
@@ -98,14 +98,15 @@ func BenchmarkRequire(b *testing.B) {
 
 func BenchmarkParseKeys(b *testing.B) {
 	mp := map[string]struct{}{
-		BanUsers:         {},
-		CreatePermission: {},
-		CreateRole:       {},
-		InviteUsers:      {},
-		SetUserRole:      {},
-		UpdateEvent:      {},
-		UpdateMedia:      {},
-		UpdateProduct:    {},
+		BanUsers:          {},
+		InviteUsers:       {},
+		ModifyMedia:       {},
+		ModifyPermissions: {},
+		ModifyProducts:    {},
+		ModifyRoles:       {},
+		ModifyZones:       {},
+		SetUserRole:       {},
+		UpdateEvent:       {},
 	}
 	for i := 0; i < b.N; i++ {
 		_ = ParseKeys(mp)
@@ -114,7 +115,7 @@ func BenchmarkParseKeys(b *testing.B) {
 
 func BenchmarkUnparsePermissionsKeys(b *testing.B) {
 	permissionsKeys := fmt.Sprintf("%s/%s/%s/%s/%s/%s/%s/%s",
-		BanUsers, CreatePermission, CreateRole, InviteUsers, SetUserRole, UpdateEvent, UpdateMedia, UpdateProduct)
+		BanUsers, ModifyMedia, ModifyPermissions, ModifyProducts, ModifyRoles, InviteUsers, SetUserRole, UpdateEvent)
 	for i := 0; i < b.N; i++ {
 		_ = UnparseKeys(permissionsKeys)
 	}
