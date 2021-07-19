@@ -12,14 +12,20 @@ import (
 	"github.com/pkg/errors"
 )
 
-const maxResults = 50
-
-// Object types
+// Object type
 const (
 	User obj = iota
 	Event
 	Media
 	Product
+
+	// DefaultCursor is the one used in case it isn't provided by the client
+	DefaultCursor = "0"
+
+	// maxLimit is the maximum number of objects returned
+	maxLimit = 50
+	// defaultLimit is the number of objects returned in case none is specified
+	defaultLimit = "20"
 )
 
 type obj uint8
@@ -31,6 +37,15 @@ type Query struct {
 	Fields   []string
 	Limit    string
 	LookupID string
+}
+
+// IDFromCtx takes the id parameter from context and validates it.
+func IDFromCtx(ctx context.Context) (string, error) {
+	id := httprouter.ParamsFromContext(ctx).ByName("id")
+	if err := ulid.Validate(id); err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 // ParseQuery returns the url params received after validating them.
@@ -63,14 +78,13 @@ func ParseQuery(rawQuery string, obj obj) (Query, error) {
 		return Query{Fields: fields, LookupID: lookupID}, nil
 	}
 
-	// TODO: when receiving a negative cursor change orderasc to orderdesc in service funcs
-	cursor, err := parseInt(values.Get("cursor"), "0", 0)
-	if err != nil {
-		return Query{}, errors.Wrap(err, "cursor")
-	}
-	limit, err := parseInt(values.Get("limit"), "20", maxResults)
+	limit, err := parseLimit(values.Get("limit"))
 	if err != nil {
 		return Query{}, errors.Wrap(err, "limit")
+	}
+	cursor := values.Get("cursor")
+	if cursor == "" {
+		cursor = DefaultCursor
 	}
 
 	params := Query{
@@ -79,15 +93,6 @@ func ParseQuery(rawQuery string, obj obj) (Query, error) {
 		Fields: fields,
 	}
 	return params, nil
-}
-
-// IDFromCtx takes the id parameter from context and validates it.
-func IDFromCtx(ctx context.Context) (string, error) {
-	id := httprouter.ParamsFromContext(ctx).ByName("id")
-	if err := ulid.Validate(id); err != nil {
-		return "", err
-	}
-	return id, nil
 }
 
 func parseFields(obj obj, values url.Values) ([]string, error) {
@@ -125,6 +130,38 @@ func parseFields(obj obj, values url.Values) ([]string, error) {
 	return fields, nil
 }
 
+func parseBool(value string) (bool, error) {
+	switch value {
+	case "true", "True", "TRUE", "t", "T", "1":
+		return true, nil
+	case "", "false", "False", "FALSE", "f", "F", "0":
+		return false, nil
+	}
+	return false, errors.Errorf("invalid boolean (%q)", value)
+}
+
+// parseLimit parses an integer from a url value and validates it.
+//
+// The returned value is a string because it will be used in database queries only.
+func parseLimit(value string) (string, error) {
+	switch value {
+	case "":
+		return defaultLimit, nil
+	default:
+		i, err := strconv.Atoi(value)
+		if err != nil {
+			return "", errors.Wrap(err, "invalid number")
+		}
+		if i < 1 {
+			return defaultLimit, nil
+		}
+		if i > maxLimit {
+			return "", errors.Errorf("number provided (%d) exceeded maximum (%d)", i, maxLimit)
+		}
+		return value, nil
+	}
+}
+
 // validateEventFields validates the fields requested.
 func validateEventFields(fields []string) error {
 	if fields == nil {
@@ -134,7 +171,7 @@ func validateEventFields(fields []string) error {
 		switch f {
 		case "":
 			return errors.Errorf("invalid empty field at index %d", i)
-		case "id", "creator_id", "created_at", "updated_at", "name", "event_id",
+		case "id", "created_at", "updated_at", "name", "event_id",
 			"type", "public", "virtual", "ticket_cost", "slots", "attending",
 			"start_time", "end_time", "min_age":
 			continue
@@ -208,37 +245,4 @@ func split(s string) []string {
 		return nil
 	}
 	return strings.Split(s, ",")
-}
-
-func parseBool(str string) (bool, error) {
-	switch str {
-	case "true", "True", "TRUE", "t", "T", "1":
-		return true, nil
-	case "", "false", "False", "FALSE", "f", "F", "0":
-		return false, nil
-	}
-	return false, errors.Errorf("invalid boolean (%q)", str)
-}
-
-// parseInt parses an integer from a url value and validates it.
-//
-// Value and default are strings as both the received (params) and
-// used (dgraph query) values are also strings.
-func parseInt(value, def string, max int) (string, error) {
-	switch value {
-	case "":
-		return def, nil
-	default:
-		i, err := strconv.Atoi(value)
-		if err != nil {
-			return "", errors.Wrap(err, "invalid number")
-		}
-		if i < 0 {
-			return def, nil
-		}
-		if max > 0 && i > max {
-			return "", errors.Errorf("number provided (%d) exceeded maximum (%d)", i, max)
-		}
-		return value, nil
-	}
 }

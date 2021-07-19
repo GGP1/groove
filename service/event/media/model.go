@@ -3,8 +3,6 @@ package media
 import (
 	"time"
 
-	"github.com/GGP1/groove/internal/ulid"
-
 	"github.com/pkg/errors"
 )
 
@@ -16,12 +14,14 @@ type Media struct {
 	CreatedAt *time.Time `json:"created_at,omitempty" db:"created_at"`
 }
 
+// CreateMedia is the stucture used to create a media inside an event.
+type CreateMedia struct {
+	URL string `json:"url,omitempty"`
+}
+
 // Validate ..
-func (m Media) Validate() error {
-	if err := ulid.Validate(m.EventID); err != nil {
-		return errors.Wrap(err, "invalid event_id")
-	}
-	if m.URL == "" {
+func (cm CreateMedia) Validate() error {
+	if cm.URL == "" {
 		return errors.New("url required")
 	}
 	return nil

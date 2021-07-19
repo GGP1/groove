@@ -8,6 +8,7 @@ import (
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/internal/ulid"
+	"github.com/GGP1/groove/service/event"
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/julienschmidt/httprouter"
@@ -404,7 +405,19 @@ func (h *Handler) GetHostedEvents() http.HandlerFunc {
 			return
 		}
 
-		response.JSON(w, http.StatusOK, events)
+		var nextCursor string
+		if len(events) > 0 {
+			nextCursor = events[len(events)-1].ID
+		}
+
+		type resp struct {
+			NextCursor string        `json:"next_cursor,omitempty"`
+			Events     []event.Event `json:"events,omitempty"`
+		}
+		response.JSON(w, http.StatusOK, resp{
+			NextCursor: nextCursor,
+			Events:     events,
+		})
 	}
 }
 
@@ -478,7 +491,16 @@ func (h *Handler) Search() http.HandlerFunc {
 			return
 		}
 
-		response.JSON(w, http.StatusOK, users)
+		var nextCursor string
+		if len(users) > 0 {
+			nextCursor = users[len(users)-1].ID
+		}
+
+		type resp struct {
+			NextCursor string     `json:"next_cursor,omitempty"`
+			Users      []ListUser `json:"users,omitempty"`
+		}
+		response.JSON(w, http.StatusOK, resp{NextCursor: nextCursor, Users: users})
 	}
 }
 

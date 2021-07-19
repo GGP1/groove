@@ -6,16 +6,12 @@ import (
 	"database/sql"
 
 	"github.com/GGP1/groove/internal/bufferpool"
+	"github.com/GGP1/groove/internal/params"
 
 	"github.com/pkg/errors"
 )
 
 const (
-	eventDefaultFields   = "id, name, public, start_time, end_time, ticket_cost, min_age, slots"
-	mediaDefaultFields   = "id, event_id, url"
-	productDefaultFields = "id, event_id, stock, brand, type, subtotal, total"
-	userDefaultFields    = "id, name, username, email, created_at, updated_at"
-
 	// Events table
 	Events table = "events"
 	// Media table
@@ -24,9 +20,25 @@ const (
 	Products table = "events_products"
 	// Users table
 	Users table = "users"
+
+	eventDefaultFields   = "id, name, public, start_time, end_time, ticket_cost, min_age, slots"
+	mediaDefaultFields   = "id, event_id, url"
+	productDefaultFields = "id, event_id, stock, brand, type, subtotal, total"
+	userDefaultFields    = "id, name, username, email, created_at, updated_at"
 )
 
 type table string
+
+// AddPagination takes a query and adds pagination/lookup conditions to it.
+func AddPagination(query, paginationField string, params params.Query) string {
+	buf := bufferpool.Get()
+	buf.WriteString(query)
+	addPagination(buf, paginationField, params, true)
+	q := buf.String()
+	bufferpool.Put(buf)
+
+	return q
+}
 
 // BulkInsertRoles adds the values to roles' insert query.
 func BulkInsertRoles(query, eventID, roleName string, userIDs []string) string {
@@ -113,26 +125,32 @@ func ScanStringSlice(rows *sql.Rows) ([]string, error) {
 	return slice, nil
 }
 
-// SelectWhereID builds a postgres select from statement.
-//
-// 	SELECT fields FROM table WHERE idfield='id'
-func SelectWhereID(table table, fields []string, idField, id string) string {
+// FullTextSearch returns an SQL query implementing FTS.
+func FullTextSearch(table table, searchFields []string, query string, params params.Query) string {
 	buf := bufferpool.Get()
 
 	buf.WriteString("SELECT ")
-	writeFields(buf, table, fields)
+	writeFields(buf, table, params.Fields)
 	buf.WriteString(" FROM ")
 	buf.WriteString(string(table))
-	buf.WriteString(" WHERE ")
-	buf.WriteString(idField)
-	buf.WriteString("='")
-	buf.WriteString(id)
-	buf.WriteByte('\'')
 
-	query := buf.String()
+	buf.WriteString(" WHERE ")
+	buf.WriteString("to_tsvector(")
+	for i, sf := range searchFields {
+		if i != 0 {
+			buf.WriteString(" || ' ' || ")
+		}
+		buf.WriteString(sf)
+	}
+	buf.WriteString(") @@ plainto_tsquery('")
+	buf.WriteString(query)
+	buf.WriteString("')")
+	addPagination(buf, "id", params, true)
+
+	q := buf.String()
 	bufferpool.Put(buf)
 
-	return query
+	return q
 }
 
 // SelectInID builds a postgres select from in statement.
@@ -161,6 +179,59 @@ func SelectInID(table table, ids, fields []string) string {
 	bufferpool.Put(buf)
 
 	return query
+}
+
+// SelectWhereID builds a postgres select from statement.
+//
+// 	Standard: "SELECT params.Fields FROM table WHERE idField='id' ORDER BY paginationField DESC LIMIT params.Limit"
+//	LookupID: "SELECT params.Fields FROM table WHERE idField='id' AND paginationField='params.LookupID'"
+//	Cursor: "SELECT params.Fields FROM table WHERE idField='id' AND paginationField < 'params.Cursor' ORDER BY paginationField DESC LIMIT params.Limit"
+func SelectWhereID(table table, idField, id, paginationField string, params params.Query) string {
+	buf := bufferpool.Get()
+
+	buf.WriteString("SELECT ")
+	writeFields(buf, table, params.Fields)
+	buf.WriteString(" FROM ")
+	buf.WriteString(string(table))
+	buf.WriteString(" WHERE ")
+	buf.WriteString(idField)
+	buf.WriteString("='")
+	buf.WriteString(id)
+	buf.WriteByte('\'')
+	addPagination(buf, paginationField, params, false)
+
+	query := buf.String()
+	bufferpool.Put(buf)
+
+	return query
+}
+
+func addPagination(buf *bytes.Buffer, paginationField string, p params.Query, greater bool) {
+	if p.LookupID != "" {
+		buf.WriteString(" AND ")
+		buf.WriteString(paginationField)
+		buf.WriteString("='")
+		buf.WriteString(p.LookupID)
+		buf.WriteByte('\'')
+		return
+	}
+	if p.Cursor != params.DefaultCursor {
+		buf.WriteString(" AND ")
+		buf.WriteString(paginationField)
+		buf.WriteByte(' ')
+		if greater {
+			buf.WriteByte('>')
+		} else {
+			buf.WriteByte('<')
+		}
+		buf.WriteString(" '")
+		buf.WriteString(p.Cursor)
+		buf.WriteByte('\'')
+	}
+	buf.WriteString(" ORDER BY ")
+	buf.WriteString(paginationField)
+	buf.WriteString(" DESC LIMIT ")
+	buf.WriteString(p.Limit)
 }
 
 func writeFields(buf *bytes.Buffer, table table, fields []string) {

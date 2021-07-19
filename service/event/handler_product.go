@@ -65,12 +65,6 @@ func (h *Handler) GetProducts() http.HandlerFunc {
 			return
 		}
 
-		cacheKey := eventID + "_products"
-		if item, err := h.mc.Get(cacheKey); err == nil {
-			response.EncodedJSON(w, item.Value)
-			return
-		}
-
 		sqlTx := h.service.BeginSQLTx(ctx, true)
 		defer sqlTx.Rollback()
 
@@ -79,7 +73,7 @@ func (h *Handler) GetProducts() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.Media)
+		params, err := params.ParseQuery(r.URL.RawQuery, params.Product)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -91,7 +85,16 @@ func (h *Handler) GetProducts() http.HandlerFunc {
 			return
 		}
 
-		response.JSONAndCache(h.mc, w, cacheKey, products)
+		var nextCursor string
+		if len(products) > 0 {
+			nextCursor = products[len(products)-1].ID
+		}
+
+		type resp struct {
+			NextCursor string            `json:"next_cursor,omitempty"`
+			Products   []product.Product `json:"products,omitempty"`
+		}
+		response.JSON(w, http.StatusOK, resp{NextCursor: nextCursor, Products: products})
 	}
 }
 

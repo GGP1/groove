@@ -44,7 +44,7 @@ type Service interface {
 	GetLikedByFollowing(ctx context.Context, sqlTx *sql.Tx, eventID, userID string, params params.Query) ([]User, error)
 	IsPublic(ctx context.Context, sqlTx *sql.Tx, eventID string) (bool, error)
 	RemoveEdge(ctx context.Context, eventID string, predicate predicate, userID string) error
-	Search(ctx context.Context, query string) ([]Event, error)
+	Search(ctx context.Context, query string, params params.Query) ([]Event, error)
 	SQLTx(ctx context.Context, readOnly bool, f func(tx *sql.Tx) (int, error)) (int, error)
 	Update(ctx context.Context, sqlTx *sql.Tx, eventID string, event UpdateEvent) error
 
@@ -242,7 +242,7 @@ func (s *service) Create(ctx context.Context, eventID string, event CreateEvent)
 }
 
 // CreateMedia adds a photo or video to the event.
-func (s *service) CreateMedia(ctx context.Context, sqlTx *sql.Tx, eventID string, media media.Media) error {
+func (s *service) CreateMedia(ctx context.Context, sqlTx *sql.Tx, eventID string, media media.CreateMedia) error {
 	s.metrics.incMethodCalls("CreateMedia")
 	return s.mediaService.CreateMedia(ctx, sqlTx, eventID, media)
 }
@@ -427,24 +427,11 @@ func (s *service) GetConfirmedFollowing(ctx context.Context, sqlTx *sql.Tx, even
 // GetHosts returns event's hosts.
 func (s *service) GetHosts(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]User, error) {
 	s.metrics.incMethodCalls("GetHosts")
-
-	// TODO: add pagination
-	var (
-		rows *sql.Rows
-		err  error
-	)
-	if params.LookupID != "" {
-		q1 := "SELECT user_id FROM events_users_roles WHERE event_id=$1 AND role_name='host' AND user_id=$2"
-		rows, err = sqlTx.QueryContext(ctx, q1, eventID, params.LookupID)
-		if err != nil {
-			return nil, errors.Wrapf(err, "fetching user %q", params.LookupID)
-		}
-	} else {
-		q1 := "SELECT user_id FROM events_users_roles WHERE event_id=$1 AND role_name='host'"
-		rows, err = sqlTx.QueryContext(ctx, q1, eventID)
-		if err != nil {
-			return nil, errors.Wrap(err, "fetching users ids")
-		}
+	query := "SELECT user_id FROM events_users_roles WHERE event_id=$1 AND role_name='host'"
+	q := postgres.AddPagination(query, "user_id", params)
+	rows, err := sqlTx.QueryContext(ctx, q, eventID)
+	if err != nil {
+		return nil, errors.Wrap(err, "fetching users")
 	}
 
 	usersIds, err := postgres.ScanStringSlice(rows)
@@ -624,10 +611,23 @@ func (s *service) RemoveEdge(ctx context.Context, eventID string, predicate pred
 	return nil
 }
 
-// Search looks for events given the query passed.
-func (s *service) Search(ctx context.Context, query string) ([]Event, error) {
+// Search returns events matching the given query.
+func (s *service) Search(ctx context.Context, query string, params params.Query) ([]Event, error) {
 	s.metrics.incMethodCalls("Search")
-	return nil, nil
+
+	searchFields := []string{"id", "name"}
+	q := postgres.FullTextSearch(postgres.Users, searchFields, query, params)
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, errors.Wrap(err, "events searching")
+	}
+
+	events, err := scanEvents(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	return events, nil
 }
 
 // SetRoles assigns a role to n users inside an event.

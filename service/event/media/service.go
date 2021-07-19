@@ -14,7 +14,7 @@ import (
 
 // Service interface for the media service.
 type Service interface {
-	CreateMedia(ctx context.Context, sqlTx *sql.Tx, eventID string, media Media) error
+	CreateMedia(ctx context.Context, sqlTx *sql.Tx, eventID string, media CreateMedia) error
 	GetMedia(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]Media, error)
 	UpdateMedia(ctx context.Context, sqlTx *sql.Tx, eventID string, media Media) error
 }
@@ -32,10 +32,10 @@ func NewService(db *sql.DB, mc *memcache.Client) Service {
 	}
 }
 
-// CreateMedia adds a photo or video to the event.
-func (s service) CreateMedia(ctx context.Context, sqlTx *sql.Tx, eventID string, media Media) error {
+// CreateMedia adds an image, video or song to the event.
+func (s service) CreateMedia(ctx context.Context, sqlTx *sql.Tx, eventID string, media CreateMedia) error {
 	q := "INSERT INTO events_media (id, event_id, url) VALUES ($1, $2, $3)"
-	_, err := sqlTx.ExecContext(ctx, q, ulid.New(), media.EventID, media.URL)
+	_, err := sqlTx.ExecContext(ctx, q, ulid.NewString(), eventID, media.URL)
 	if err != nil {
 		return errors.Wrap(err, "creating media")
 	}
@@ -48,11 +48,7 @@ func (s service) CreateMedia(ctx context.Context, sqlTx *sql.Tx, eventID string,
 }
 
 func (s service) GetMedia(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]Media, error) {
-	// TODO: add pagination
-	q := postgres.SelectWhereID(postgres.Media, params.Fields, "event_id", eventID)
-	if params.LookupID != "" {
-		q += "AND id='" + params.LookupID + "'"
-	}
+	q := postgres.SelectWhereID(postgres.Media, "event_id", eventID, "id", params)
 	rows, err := sqlTx.QueryContext(ctx, q)
 	if err != nil {
 		return nil, err

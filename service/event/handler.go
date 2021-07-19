@@ -334,7 +334,7 @@ func (h *Handler) GetBans() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
+		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -446,7 +446,7 @@ func (h *Handler) GetConfirmed() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
+		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -524,20 +524,9 @@ func (h *Handler) GetHosts() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
+		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		if params.Count {
-			count, err := h.service.GetInvitedCount(ctx, eventID)
-			if err != nil {
-				response.Error(w, http.StatusInternalServerError, err)
-				return
-			}
-
-			response.JSONCount(w, http.StatusOK, count)
 			return
 		}
 
@@ -547,7 +536,16 @@ func (h *Handler) GetHosts() http.HandlerFunc {
 			return
 		}
 
-		response.JSON(w, http.StatusOK, hosts)
+		var nextCursor string
+		if len(hosts) > 0 {
+			nextCursor = hosts[len(hosts)-1].ID
+		}
+
+		type resp struct {
+			NextCursor string `json:"next_cursor,omitempty"`
+			Hosts      []User `json:"hosts,omitempty"`
+		}
+		response.JSON(w, http.StatusOK, resp{NextCursor: nextCursor, Hosts: hosts})
 	}
 }
 
@@ -570,7 +568,7 @@ func (h *Handler) GetInvited() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
+		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -648,7 +646,7 @@ func (h *Handler) GetLikes() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
+		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -885,13 +883,28 @@ func (h *Handler) Search() http.HandlerFunc {
 		ctx := r.Context()
 		query := httprouter.ParamsFromContext(ctx).ByName("query")
 
-		events, err := h.service.Search(ctx, query)
+		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		events, err := h.service.Search(ctx, query, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		response.JSON(w, http.StatusOK, events)
+		var nextCursor string
+		if len(events) > 0 {
+			nextCursor = events[len(events)-1].ID
+		}
+
+		type resp struct {
+			NextCursor string  `json:"next_cursor,omitempty"`
+			Events     []Event `json:"events,omitempty"`
+		}
+		response.JSON(w, http.StatusOK, resp{NextCursor: nextCursor, Events: events})
 	}
 }
 

@@ -11,6 +11,18 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestIDFromCtx(t *testing.T) {
+	id := ulid.NewString()
+	params := httprouter.Params{
+		{Key: "id", Value: id},
+	}
+	ctx := context.WithValue(context.Background(), httprouter.ParamsKey, params)
+
+	got, err := IDFromCtx(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, id, got)
+}
+
 func TestParseQuery(t *testing.T) {
 	cases := []struct {
 		desc     string
@@ -78,7 +90,7 @@ func TestParseQuery(t *testing.T) {
 			obj:      User,
 			expected: Query{
 				Count:  false,
-				Cursor: "0",
+				Cursor: "",
 				Limit:  "20",
 			},
 		},
@@ -144,25 +156,28 @@ func TestParseBool(t *testing.T) {
 	})
 }
 
-func TestParseInt(t *testing.T) {
+func TestParseLimit(t *testing.T) {
 	t.Run("Valid", func(t *testing.T) {
 		expected := "20"
-		got, err := parseInt("20", "12", 50)
+		got, err := parseLimit("20")
 		assert.NoError(t, err)
 		assert.Equal(t, expected, got)
 	})
 	t.Run("Default", func(t *testing.T) {
-		expected := "12"
-		got, err := parseInt("", "12", 50)
+		got, err := parseLimit("")
 		assert.NoError(t, err)
-		assert.Equal(t, expected, got)
+		assert.Equal(t, defaultLimit, got)
+
+		got2, err := parseLimit("-5")
+		assert.NoError(t, err)
+		assert.Equal(t, defaultLimit, got2)
 	})
 	t.Run("Invalid", func(t *testing.T) {
-		_, err := parseInt("abc", "12", 50)
+		_, err := parseLimit("abc")
 		assert.Error(t, err)
 	})
 	t.Run("Maximum exceeded", func(t *testing.T) {
-		_, err := parseInt("20", "12", 15)
+		_, err := parseLimit("70")
 		assert.Error(t, err)
 	})
 }
@@ -200,8 +215,18 @@ func TestValidateEventFields(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
+	t.Run("Nil", func(t *testing.T) {
+		err := validateEventFields(nil)
+		assert.NoError(t, err)
+	})
+
 	t.Run("Invalid", func(t *testing.T) {
 		err := validateEventFields([]string{"username"})
+		assert.Error(t, err, "Expected an error and got nil")
+	})
+
+	t.Run("Empty field", func(t *testing.T) {
+		err := validateEventFields([]string{"created_at", ""})
 		assert.Error(t, err, "Expected an error and got nil")
 	})
 }
@@ -213,8 +238,18 @@ func TestValidateMediaFields(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
+	t.Run("Nil", func(t *testing.T) {
+		err := validateMediaFields(nil)
+		assert.NoError(t, err)
+	})
+
 	t.Run("Invalid", func(t *testing.T) {
 		err := validateMediaFields([]string{"username"})
+		assert.Error(t, err, "Expected an error and got nil")
+	})
+
+	t.Run("Empty field", func(t *testing.T) {
+		err := validateMediaFields([]string{"created_at", ""})
 		assert.Error(t, err, "Expected an error and got nil")
 	})
 }
@@ -227,8 +262,18 @@ func TestValidateProductFields(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
+	t.Run("Nil", func(t *testing.T) {
+		err := validateProductFields(nil)
+		assert.NoError(t, err)
+	})
+
 	t.Run("Invalid", func(t *testing.T) {
 		err := validateProductFields([]string{"username"})
+		assert.Error(t, err, "Expected an error and got nil")
+	})
+
+	t.Run("Empty field", func(t *testing.T) {
+		err := validateProductFields([]string{"created_at", ""})
 		assert.Error(t, err, "Expected an error and got nil")
 	})
 }
@@ -242,8 +287,18 @@ func TestValidateUserFields(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
+	t.Run("Nil", func(t *testing.T) {
+		err := validateUserFields(nil)
+		assert.NoError(t, err)
+	})
+
 	t.Run("Invalid", func(t *testing.T) {
 		err := validateUserFields([]string{"type"})
+		assert.Error(t, err, "Expected an error and got nil")
+	})
+
+	t.Run("Empty field", func(t *testing.T) {
+		err := validateUserFields([]string{"created_at", ""})
 		assert.Error(t, err, "Expected an error and got nil")
 	})
 }

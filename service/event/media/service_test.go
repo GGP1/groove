@@ -61,9 +61,8 @@ func TestCreateMedia(t *testing.T) {
 	err := createEvent(ctx, eventID, "create_media")
 	assert.NoError(t, err)
 
-	media := media.Media{
-		EventID: eventID,
-		URL:     "create_media.com/images/a.jpg",
+	media := media.CreateMedia{
+		URL: "create_media.com/images/a.jpg",
 	}
 	err = mediaSv.CreateMedia(ctx, sqlTx, eventID, media)
 	assert.NoError(t, err)

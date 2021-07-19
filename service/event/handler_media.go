@@ -28,7 +28,7 @@ func (h *Handler) CreateMedia() http.Handler {
 			return
 		}
 
-		var media media.Media
+		var media media.CreateMedia
 		if err := json.NewDecoder(r.Body).Decode(&media); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -65,12 +65,6 @@ func (h *Handler) GetMedia() http.HandlerFunc {
 			return
 		}
 
-		cacheKey := eventID + "_media"
-		if item, err := h.mc.Get(cacheKey); err == nil {
-			response.EncodedJSON(w, item.Value)
-			return
-		}
-
 		sqlTx := h.service.BeginSQLTx(ctx, true)
 		defer sqlTx.Rollback()
 
@@ -85,13 +79,22 @@ func (h *Handler) GetMedia() http.HandlerFunc {
 			return
 		}
 
-		media, err := h.service.GetMedia(ctx, sqlTx, eventID, params)
+		mediaList, err := h.service.GetMedia(ctx, sqlTx, eventID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		response.JSONAndCache(h.mc, w, cacheKey, media)
+		var nextCursor string
+		if len(mediaList) > 0 {
+			nextCursor = mediaList[len(mediaList)-1].ID
+		}
+
+		type resp struct {
+			NextCursor string        `json:"next_cursor,omitempty"`
+			Media      []media.Media `json:"media,omitempty"`
+		}
+		response.JSON(w, http.StatusOK, resp{NextCursor: nextCursor, Media: mediaList})
 	}
 }
 

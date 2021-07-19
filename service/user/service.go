@@ -43,7 +43,7 @@ type Service interface {
 	GetLikedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
 	IsAdmin(ctx context.Context, tx *sql.Tx, userID string) (bool, error)
 	PrivateProfile(ctx context.Context, userID string) (bool, error)
-	Search(ctx context.Context, query string, params params.Query) ([]User, error)
+	Search(ctx context.Context, query string, params params.Query) ([]ListUser, error)
 	Unblock(ctx context.Context, userID, blockedID string) error
 	Unfollow(ctx context.Context, userID string, followedID string) error
 	Update(ctx context.Context, userID string, user UpdateUser) error
@@ -390,21 +390,11 @@ func (s *service) GetHostedEvents(ctx context.Context, userID string, params par
 	}
 	defer tx.Rollback()
 
-	// TODO: handle pagination
-	var rows *sql.Rows
-	if params.LookupID != "" {
-		// TODO: query directly to avoid doing two calls? No pagination needed here
-		q1 := "SELECT event_id FROM events_users_roles WHERE user_id=$1 AND role_name='host' AND event_id=$2"
-		rows, err = tx.QueryContext(ctx, q1, userID, params.LookupID)
-		if err != nil {
-			return nil, errors.Wrapf(err, "fetching event %q", params.LookupID)
-		}
-	} else {
-		q1 := "SELECT event_id FROM events_users_roles WHERE user_id=$1 AND role_name='host'"
-		rows, err = tx.QueryContext(ctx, q1, userID)
-		if err != nil {
-			return nil, errors.Wrap(err, "fetching event ids")
-		}
+	query := "SELECT event_id FROM events_users_roles WHERE user_id=$1 AND role_name='host'"
+	q := postgres.AddPagination(query, "event_id", params)
+	rows, err := tx.QueryContext(ctx, q, userID)
+	if err != nil {
+		return nil, errors.Wrap(err, "fetching events")
 	}
 
 	eventsIds, err := postgres.ScanStringSlice(rows)
@@ -481,33 +471,23 @@ func (s *service) PrivateProfile(ctx context.Context, userID string) (bool, erro
 	return isPrivate, nil
 }
 
-// Search looks for users matching a specified query.
-func (s *service) Search(ctx context.Context, query string, params params.Query) ([]User, error) {
+// Search returns users matching the given query.
+func (s *service) Search(ctx context.Context, query string, params params.Query) ([]ListUser, error) {
 	s.metrics.incMethodCalls("Search")
 
-	// TODO: improve search performance (LIMIT-OFFSET is really inefficient)
-	// buf := bytes.NewBufferString("SELECT ")
-	// for i, f := range params.Fields {
-	// 	buf.WriteString(f)
-	// 	if len(params.Fields) != 1 && i != len(params.Fields)-1 {
-	// 		buf.WriteString(", ")
-	// 	}
-	// }
-	// buf.WriteString(` FROM users
-	// WHERE
-	// to_tsvector(id || ' ' || name || ' ' || username || ' ' || email)
-	// @@ plainto_tsquery($1)
-	// ORDER BY id LIMIT `)
-	// buf.WriteString(params.Limit)
-	// buf.WriteString(" OFFSET ")
-	// buf.WriteString(params.Cursor)
+	searchFields := []string{"id", "name", "username", "email"}
+	q := postgres.FullTextSearch(postgres.Users, searchFields, query, params)
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, errors.Wrap(err, "users searching")
+	}
 
-	// var users []User
-	// if err := s.db.SelectContext(ctx, &users, buf.String(), query); err != nil {
-	// 	return nil, errors.Wrap(err, "querying users")
-	// }
+	users, err := scanUsers(rows)
+	if err != nil {
+		return nil, err
+	}
 
-	return nil, nil
+	return users, nil
 }
 
 // Unblock removes the block from one user to other.
