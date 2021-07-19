@@ -89,8 +89,10 @@ func JSONAndCache(mc *memcache.Client, w http.ResponseWriter, key string, v inte
 		return
 	}
 
-	if err := mc.Set(&memcache.Item{Key: key, Value: buf.Bytes()}); err != nil {
-		bufferpool.Put(buf)
+	value := buf.Bytes()
+	bufferpool.Put(buf)
+
+	if err := mc.Set(&memcache.Item{Key: key, Value: value}); err != nil {
 		Error(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -98,10 +100,9 @@ func JSONAndCache(mc *memcache.Client, w http.ResponseWriter, key string, v inte
 	w.Header()[contentType] = []string{"application/json; charset=UTF-8"}
 	w.WriteHeader(http.StatusOK)
 
-	if _, err := w.Write(buf.Bytes()); err != nil {
+	if _, err := w.Write(value); err != nil {
 		Error(w, http.StatusInternalServerError, err)
 	}
-	bufferpool.Put(buf)
 }
 
 // JSONCount sends a json encoded response with the status and a count.
