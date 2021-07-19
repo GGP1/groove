@@ -185,7 +185,6 @@ func TestGetBy(t *testing.T) {
 	err := test.CreateUser(ctx, db, dc, id, email, username, "1")
 	assert.NoError(t, err)
 
-	// TODO: scanning empty fields is not allowed, use sql.Null..?
 	eUser, err := userSv.GetByEmail(ctx, email)
 	assert.NoError(t, err)
 

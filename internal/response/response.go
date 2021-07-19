@@ -60,7 +60,6 @@ func Error(w http.ResponseWriter, status int, err error) {
 func JSON(w http.ResponseWriter, status int, v interface{}) {
 	buf := bufferpool.Get()
 
-	// TODO: test performance using stdlib and easyjson/iterator once services are used
 	if err := json.NewEncoder(buf).Encode(v); err != nil {
 		bufferpool.Put(buf)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

@@ -12,13 +12,8 @@ import (
 	"github.com/pkg/errors"
 )
 
-// TODO: create UpdatePermission and UpdateRole
-// Use users sets instead of cloning roles and permissions?
-
-// TODO: implement events_roles_defaults and events_permissions_defaults tables
-// with pre-defined roles and permissions populated.
-// When checking for their details, check default tables if "name" or "key" is a default one
-// also do not let to overwrite them
+// TODO: Use users sets instead of cloning roles and permissions?
+// Reference the cloned values instead of copying all the data?
 
 // Service interface for the roles service.
 type Service interface {

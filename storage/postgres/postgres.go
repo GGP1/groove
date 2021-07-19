@@ -38,10 +38,6 @@ func CreateTables(ctx context.Context, db *sql.DB) error {
 }
 
 // ALTER TYPE invitations ADD VALUE 'selected';
-// TODO: implement events_roles_defaults and events_permissions_defaults tables
-// with pre-defined roles and permissions populated.
-// When checking for their details, check default tables if "name" or "key" is a default one
-// also do not let to overwrite them
 const tables = `
 CREATE TABLE IF NOT EXISTS events
 (
