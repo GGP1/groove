@@ -1,12 +1,17 @@
 package event
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 
 	"github.com/GGP1/groove/internal/params"
+	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/response"
+	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event/media"
+
+	"github.com/julienschmidt/httprouter"
 )
 
 // CreateMedia creates a media inside an event.
@@ -52,6 +57,38 @@ func (h *Handler) CreateMedia() http.Handler {
 
 		response.JSON(w, http.StatusOK, media)
 	})
+}
+
+// DeleteMedia removes a media from an event.
+func (h *Handler) DeleteMedia() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		routerParams := httprouter.ParamsFromContext(ctx)
+		eventID := routerParams.ByName("id")
+		mediaID := routerParams.ByName("media_id")
+		if err := ulid.ValidateN(eventID, mediaID); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		permKeys := []string{permissions.ModifyMedia}
+
+		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
+			if err := h.requirePermissions(ctx, r, tx, eventID, permKeys); err != nil {
+				return http.StatusForbidden, err
+			}
+			if err := h.service.DeleteMedia(ctx, tx, eventID, mediaID); err != nil {
+				return http.StatusInternalServerError, err
+			}
+			return 0, nil
+		})
+		if err != nil {
+			response.Error(w, errStatus, err)
+			return
+		}
+
+		response.JSONMessage(w, http.StatusOK, eventID)
+	}
 }
 
 // GetMedia gets the media of an event.

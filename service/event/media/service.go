@@ -15,6 +15,7 @@ import (
 // Service interface for the media service.
 type Service interface {
 	CreateMedia(ctx context.Context, sqlTx *sql.Tx, eventID string, media CreateMedia) error
+	DeleteMedia(ctx context.Context, sqlTx *sql.Tx, eventID, mediaID string) error
 	GetMedia(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]Media, error)
 	UpdateMedia(ctx context.Context, sqlTx *sql.Tx, eventID string, media Media) error
 }
@@ -40,6 +41,15 @@ func (s service) CreateMedia(ctx context.Context, sqlTx *sql.Tx, eventID string,
 		return errors.Wrap(err, "creating media")
 	}
 
+	return nil
+}
+
+// DeleteMedia removes a media from an event.
+func (s service) DeleteMedia(ctx context.Context, sqlTx *sql.Tx, eventID, mediaID string) error {
+	q := "DELETE FROM events_media WHERE event_id=$1 AND id=$2"
+	if _, err := sqlTx.ExecContext(ctx, q, eventID, mediaID); err != nil {
+		return errors.Wrap(err, "deleting media")
+	}
 	return nil
 }
 

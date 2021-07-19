@@ -21,6 +21,8 @@ type Service interface {
 	CloneRoles(ctx context.Context, sqlTx *sql.Tx, exporterEventID, importerEventID string) error
 	CreatePermission(ctx context.Context, sqlTx *sql.Tx, eventID string, permission Permission) error
 	CreateRole(ctx context.Context, sqlTx *sql.Tx, eventID string, role Role) error
+	DeletePermission(ctx context.Context, sqlTx *sql.Tx, eventID, key string) error
+	DeleteRole(ctx context.Context, sqlTx *sql.Tx, eventID, name string) error
 	GetPermissions(ctx context.Context, sqlTx *sql.Tx, eventID string) ([]Permission, error)
 	GetRole(ctx context.Context, sqlTx *sql.Tx, eventID, name string) (Role, error)
 	GetRoles(ctx context.Context, sqlTx *sql.Tx, eventID string) ([]Role, error)
@@ -136,6 +138,24 @@ func (s service) CreateRole(ctx context.Context, sqlTx *sql.Tx, eventID string, 
 		return errors.Wrap(err, "memcached: deleting event")
 	}
 
+	return nil
+}
+
+// DeletePermission removes a permission from the event.
+func (s service) DeletePermission(ctx context.Context, sqlTx *sql.Tx, eventID, key string) error {
+	q := "DELETE FROM events_permissions WHERE event_id=$1 AND key=$2"
+	if _, err := sqlTx.ExecContext(ctx, q, eventID, key); err != nil {
+		return errors.Wrap(err, "deleting permission")
+	}
+	return nil
+}
+
+// DeleteRole removes a role from the event.
+func (s service) DeleteRole(ctx context.Context, sqlTx *sql.Tx, eventID, name string) error {
+	q := "DELETE FROM events_roles WHERE event_id=$1 AND name=$2"
+	if _, err := sqlTx.ExecContext(ctx, q, eventID, name); err != nil {
+		return errors.Wrap(err, "deleting role")
+	}
 	return nil
 }
 

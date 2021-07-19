@@ -13,6 +13,7 @@ import (
 // Service is the interface containing all the method for event zones.
 type Service interface {
 	CreateZone(ctx context.Context, sqlTx *sql.Tx, eventID string, zone Zone) error
+	DeleteZone(ctx context.Context, sqlTx *sql.Tx, eventID, name string) error
 	GetZoneByName(ctx context.Context, sqlTx *sql.Tx, eventID, name string) (Zone, error)
 	GetZones(ctx context.Context, sqlTx *sql.Tx, eventID string) ([]Zone, error)
 }
@@ -53,6 +54,15 @@ func (s service) CreateZone(ctx context.Context, sqlTx *sql.Tx, eventID string, 
 		return errors.Wrap(err, "memcached: deleting event")
 	}
 
+	return nil
+}
+
+// DeleteZone removes a zone from the event.
+func (s service) DeleteZone(ctx context.Context, sqlTx *sql.Tx, eventID, name string) error {
+	q := "DELETE FROM events_zones WHERE event_id=$1 AND name=$2"
+	if _, err := sqlTx.ExecContext(ctx, q, eventID, name); err != nil {
+		return errors.Wrap(err, "deleting zone")
+	}
 	return nil
 }
 

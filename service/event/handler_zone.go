@@ -1,11 +1,13 @@
 package event
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strings"
 
 	"github.com/GGP1/groove/internal/params"
+	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event/zone"
@@ -13,7 +15,7 @@ import (
 	"github.com/julienschmidt/httprouter"
 )
 
-// CreateZone ..
+// CreateZone creates a new zone inside an event.
 func (h *Handler) CreateZone() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -52,6 +54,38 @@ func (h *Handler) CreateZone() http.Handler {
 
 		response.JSON(w, http.StatusOK, zone)
 	})
+}
+
+// DeleteZone removes a zone from an event.
+func (h *Handler) DeleteZone() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		routerParams := httprouter.ParamsFromContext(ctx)
+		eventID := routerParams.ByName("id")
+		if err := ulid.Validate(eventID); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		name := routerParams.ByName("name")
+
+		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
+			permKeys := []string{permissions.ModifyZones}
+			if err := h.requirePermissions(ctx, r, tx, eventID, permKeys); err != nil {
+				return http.StatusForbidden, err
+			}
+			if err := h.service.DeleteZone(ctx, tx, eventID, name); err != nil {
+				return http.StatusInternalServerError, err
+			}
+			return 0, nil
+		})
+		if err != nil {
+			response.Error(w, errStatus, err)
+			return
+		}
+
+		response.JSONMessage(w, http.StatusOK, eventID)
+	}
 }
 
 // GetZoneByName retrieves a zone in an event with the given name.

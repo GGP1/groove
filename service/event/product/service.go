@@ -17,6 +17,7 @@ import (
 // Service interface for the products service.
 type Service interface {
 	CreateProduct(ctx context.Context, sqlTx *sql.Tx, eventID string, product Product) error
+	DeleteProduct(ctx context.Context, sqlTx *sql.Tx, eventID, productID string) error
 	GetProducts(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]Product, error)
 	UpdateProduct(ctx context.Context, sqlTx *sql.Tx, eventID string, product UpdateProduct) error
 }
@@ -47,6 +48,15 @@ func (s service) CreateProduct(ctx context.Context, sqlTx *sql.Tx, eventID strin
 		return errors.Wrap(err, "creating product")
 	}
 
+	return nil
+}
+
+// DeleteProduct removes a product from an event.
+func (s service) DeleteProduct(ctx context.Context, sqlTx *sql.Tx, eventID, productID string) error {
+	q := "DELETE FROM events_products WHERE event_id=$1 AND id=$2"
+	if _, err := sqlTx.ExecContext(ctx, q, eventID, productID); err != nil {
+		return errors.Wrap(err, "deleting product")
+	}
 	return nil
 }
 

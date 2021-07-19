@@ -36,11 +36,12 @@ func (h *Handler) ClonePermissions() http.HandlerFunc {
 			return
 		}
 
+		permKeys := []string{permissions.ModifyPermissions}
 		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
-			if err := h.requirePermissions(ctx, r, tx, req.ExporterEventID, hostPermissions); err != nil {
+			if err := h.requirePermissions(ctx, r, tx, req.ExporterEventID, permKeys); err != nil {
 				return http.StatusForbidden, err
 			}
-			if err := h.requirePermissions(ctx, r, tx, importerEventID, hostPermissions); err != nil {
+			if err := h.requirePermissions(ctx, r, tx, importerEventID, permKeys); err != nil {
 				return http.StatusForbidden, err
 			}
 			if err := h.service.ClonePermissions(ctx, tx, req.ExporterEventID, importerEventID); err != nil {
@@ -114,7 +115,7 @@ func (h *Handler) CreatePermission() http.Handler {
 		sqlTx := h.service.BeginSQLTx(ctx, false)
 		defer sqlTx.Rollback()
 
-		permKeys := []string{permissions.CreatePermission}
+		permKeys := []string{permissions.ModifyPermissions}
 		if err := h.requirePermissions(ctx, r, sqlTx, eventID, permKeys); err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
@@ -161,7 +162,7 @@ func (h *Handler) CreateRole() http.Handler {
 		sqlTx := h.service.BeginSQLTx(ctx, false)
 		defer sqlTx.Rollback()
 
-		permKeys := []string{permissions.CreateRole}
+		permKeys := []string{permissions.ModifyRoles}
 		if err := h.requirePermissions(ctx, r, sqlTx, eventID, permKeys); err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
@@ -192,6 +193,70 @@ func (h *Handler) CreateRole() http.Handler {
 
 		response.JSON(w, http.StatusOK, role)
 	})
+}
+
+// DeletePermission removes a permission from an event.
+func (h *Handler) DeletePermission() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		routerParams := httprouter.ParamsFromContext(ctx)
+		eventID := routerParams.ByName("id")
+		if err := ulid.Validate(eventID); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		key := routerParams.ByName("key")
+		permKeys := []string{permissions.ModifyPermissions}
+
+		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
+			if err := h.requirePermissions(ctx, r, tx, eventID, permKeys); err != nil {
+				return http.StatusForbidden, err
+			}
+			if err := h.service.DeletePermission(ctx, tx, eventID, key); err != nil {
+				return http.StatusInternalServerError, err
+			}
+			return 0, nil
+		})
+		if err != nil {
+			response.Error(w, errStatus, err)
+			return
+		}
+
+		response.JSONMessage(w, http.StatusOK, eventID)
+	}
+}
+
+// DeleteRole removes a role from an event.
+func (h *Handler) DeleteRole() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		routerParams := httprouter.ParamsFromContext(ctx)
+		eventID := routerParams.ByName("id")
+		if err := ulid.Validate(eventID); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		roleName := routerParams.ByName("name")
+		permKeys := []string{permissions.ModifyRoles}
+
+		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
+			if err := h.requirePermissions(ctx, r, tx, eventID, permKeys); err != nil {
+				return http.StatusForbidden, err
+			}
+			if err := h.service.DeleteRole(ctx, tx, eventID, roleName); err != nil {
+				return http.StatusInternalServerError, err
+			}
+			return 0, nil
+		})
+		if err != nil {
+			response.Error(w, errStatus, err)
+			return
+		}
+
+		response.JSONMessage(w, http.StatusOK, eventID)
+	}
 }
 
 // GetPermissions retrives all event's permissions.
@@ -363,7 +428,7 @@ func (h *Handler) UpdatePermission() http.HandlerFunc {
 		sqlTx := h.service.BeginSQLTx(ctx, false)
 		defer sqlTx.Rollback()
 
-		permKeys := []string{permissions.CreatePermission}
+		permKeys := []string{permissions.ModifyPermissions}
 		if err := h.requirePermissions(ctx, r, sqlTx, eventID, permKeys); err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
@@ -412,7 +477,7 @@ func (h *Handler) UpdateRole() http.HandlerFunc {
 		sqlTx := h.service.BeginSQLTx(ctx, false)
 		defer sqlTx.Rollback()
 
-		permKeys := []string{permissions.CreateRole}
+		permKeys := []string{permissions.ModifyRoles}
 		if err := h.requirePermissions(ctx, r, sqlTx, eventID, permKeys); err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return

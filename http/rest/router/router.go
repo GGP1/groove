@@ -142,23 +142,6 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 				invited.get("/following/:user_id", events.GetInvitedFollowing())
 				invited.post("/remove", events.RemoveInvited())
 			}
-
-			// /events/:id/media
-			media := id.group("/media")
-			{
-				media.get("/", events.GetMedia())
-				media.post("/create", events.CreateMedia(), requireLogin)
-				media.put("/update", events.UpdateMedia(), requireLogin)
-			}
-
-			// /events/:id/products
-			products := id.group("/products")
-			{
-				products.get("/", events.GetProducts())
-				products.post("/create", events.CreateProduct(), requireLogin)
-				products.put("/update", events.UpdateProduct(), requireLogin)
-			}
-
 			// /events/:id/likes
 			likes := id.group("/likes")
 			{
@@ -169,6 +152,14 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 				likes.post("/remove", events.RemoveLike())
 			}
 
+			// /events/:id/media
+			media := id.group("/media")
+			{
+				media.get("/", events.GetMedia())
+				media.post("/create", events.CreateMedia(), requireLogin)
+				media.put("/update", events.UpdateMedia(), requireLogin)
+			}
+
 			// /events/:id/permissions
 			permissions := id.group("/permissions")
 			{
@@ -176,6 +167,17 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 				permissions.get("/", events.GetPermissions())
 				permissions.post("/clone", events.ClonePermissions())
 				permissions.post("/create", events.CreatePermission())
+				permissions.delete("/delete/:key", events.DeletePermission())
+				permissions.put("/update", events.UpdatePermission())
+			}
+
+			// /events/:id/products
+			products := id.group("/products")
+			{
+				products.get("/", events.GetProducts())
+				products.delete("/delete/:product_id", events.DeleteProduct())
+				products.post("/create", events.CreateProduct(), requireLogin)
+				products.put("/update", events.UpdateProduct(), requireLogin)
 			}
 
 			// /events/:id/roles
@@ -185,8 +187,10 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 				roles.get("/", events.GetRoles())
 				roles.post("/clone", events.CloneRoles())
 				roles.post("/create", events.CreateRole())
+				roles.delete("/delete/:name", events.DeleteRole())
 				roles.post("/set", events.SetRoles())
 				roles.post("/user", events.GetUserRole())
+				roles.put("/update", events.UpdateRole())
 			}
 
 			// /events/:id/zones
@@ -195,6 +199,7 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 				zones.use(requireLogin)
 				zones.get("/", events.GetZones())
 				zones.post("/create", events.CreateZone())
+				zones.delete("/delete/:name", events.DeleteZone())
 				zones.get("/name/:name", events.GetZoneByName())
 			}
 		}
