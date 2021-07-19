@@ -4,12 +4,25 @@ import (
 	"strings"
 
 	"github.com/GGP1/groove/internal/bufferpool"
+	"github.com/GGP1/groove/internal/romap"
 
 	"github.com/pkg/errors"
 )
 
-// Separator is used to parse and unparse keys.
-const Separator = "/"
+// ReservedKeys is a read-only map containing all reserved permissions keys.
+var ReservedKeys = romap.New(map[string]interface{}{
+	All:              struct{}{},
+	Access:           struct{}{},
+	BanUsers:         struct{}{},
+	CreatePermission: struct{}{},
+	CreateRole:       struct{}{},
+	CreateZone:       struct{}{},
+	InviteUsers:      struct{}{},
+	SetUserRole:      struct{}{},
+	UpdateEvent:      struct{}{},
+	UpdateMedia:      struct{}{},
+	UpdateProduct:    struct{}{},
+})
 
 // Pre-defined permission key.
 const (
@@ -24,6 +37,9 @@ const (
 	UpdateEvent      = "update_event"
 	UpdateMedia      = "update_media"
 	UpdateProduct    = "update_product"
+
+	// Separator is used to parse and unparse keys.
+	Separator = "/"
 )
 
 // Require makes sure the user has all the permissions required.
