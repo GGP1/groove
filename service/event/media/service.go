@@ -40,10 +40,6 @@ func (s service) CreateMedia(ctx context.Context, sqlTx *sql.Tx, eventID string,
 		return errors.Wrap(err, "creating media")
 	}
 
-	if err := s.mc.Delete(eventID + "_media"); err != nil && err != memcache.ErrCacheMiss {
-		return errors.Wrap(err, "memcached: deleting media")
-	}
-
 	return nil
 }
 
@@ -68,10 +64,6 @@ func (s service) UpdateMedia(ctx context.Context, sqlTx *sql.Tx, eventID string,
 	_, err := sqlTx.ExecContext(ctx, q, media.ID, eventID, media.URL)
 	if err != nil {
 		return errors.Wrap(err, "updating media")
-	}
-
-	if err := s.mc.Delete(eventID + "_media"); err != nil && err != memcache.ErrCacheMiss {
-		return errors.Wrap(err, "memcached: deleting media")
 	}
 
 	return nil
