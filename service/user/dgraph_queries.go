@@ -190,25 +190,36 @@ var getQuery = map[query]string{
 // Blocked queries are not implemented as they information is irrelevant for the user that blocked them.
 const (
 	_ mixedQuery = iota
-	// get users followed by user that follow target
+	// get users following user that follow target
 	followersFollowing
-	// get users that follow both target and user
+	followersFollowingLookup
+	// get users followed by user that follow target
 	followingFollowing
-	// get users followed by user that are followed by target
+	followingFollowingLookup
+	// get users followed by both user and target
 	followingFollowers
+	followingFollowersLookup
 )
 
 // mixedQuery looks for matches in two predicates (one from a user and one from an event) instead of one.
 type mixedQuery uint8
 
 // getMixedQuery is a list with queries that check two predicates.
-// TODO: add lookup queries?
 var getMixedQuery = map[mixedQuery]string{
 	followersFollowing: `query q($user_id: string, $target_user_id: string) {
 		target as var(func: eq(user_id, $target_user_id))
 		
 		q(func: eq(user_id, $user_id)) {
 			~following @filter(uid_in(following, uid(target))) (orderasc: user_id) (first: $limit, offset: $cursor) {
+				user_id
+			}
+		}
+	}`,
+	followersFollowingLookup: `query q($user_id: string, $target_user_id: string, $lookup_id: string) {
+		target as var(func: eq(user_id, $target_user_id))
+		
+		q(func: eq(user_id, $user_id)) {
+			~following @filter(uid_in(following, uid(target)) AND (eq(user_id, $lookup_id))) {
 				user_id
 			}
 		}
@@ -222,11 +233,29 @@ var getMixedQuery = map[mixedQuery]string{
 			}
 		}
 	}`,
+	followingFollowingLookup: `query q($user_id: string, $target_user_id: string, $lookup_id: string) {
+		target as var(func: eq(user_id, $target_user_id))
+
+		q(func: eq(user_id, $user_id)) {
+			following @filter(uid_in(following, uid(target)) AND (eq(user_id, $lookup_id))) {
+				user_id
+			}
+		}
+	}`,
 	followingFollowers: `query q($user_id: string, $target_user_id: string) {
 		target as var(func: eq(user_id, $target_user_id))
 		
 		q(func: eq(user_id, $user_id)) {
 			following @filter(uid_in(~following, uid(target))) (orderasc: user_id) (first: $limit, offset: $cursor) {
+				user_id
+			}
+		}
+	}`,
+	followingFollowersLookup: `query q($user_id: string, $target_user_id: string, $lookup_id: string) {
+		target as var(func: eq(user_id, $target_user_id))
+		
+		q(func: eq(user_id, $user_id)) {
+			following @filter(uid_in(~following, uid(target)) AND (eq(user_id, $lookup_id))) {
 				user_id
 			}
 		}
