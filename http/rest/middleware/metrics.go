@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"log"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +14,7 @@ import (
 
 // MetricsHandler implements a scrapper middleware.
 type MetricsHandler struct {
+	serverIP        string
 	requestInFlight *prometheus.GaugeVec
 	requestCount    *prometheus.CounterVec
 	requestDuration *prometheus.HistogramVec
@@ -23,12 +26,12 @@ type MetricsHandler struct {
 func NewMetrics() MetricsHandler {
 	const ns, sub = "groove", "http"
 
-	// TODO: add server name/ip to labels
-	basicLabels := []string{"path"}
+	basicLabels := []string{"server_ip"}
 	httpLabels := []string{"path", "method", "code"}
 	sizeBuckets := prometheus.ExponentialBuckets(256, 4, 8)
 
 	return MetricsHandler{
+		serverIP: getOutboundIP(),
 		requestInFlight: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: ns,
 			Subsystem: sub,
@@ -69,19 +72,18 @@ func NewMetrics() MetricsHandler {
 func (m MetricsHandler) Scrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		path := cleanPath(r.URL.Path)
-		labels := prometheus.Labels{"path": path}
-		httpLabels := prometheus.Labels{"path": path, "method": r.Method, "code": ""}
+		basicLabels := prometheus.Labels{"server_ip": m.serverIP}
+		httpLabels := prometheus.Labels{"path": cleanPath(r.URL.Path), "method": r.Method, "code": ""}
 
-		m.requestCount.With(labels).Inc()
-		inFlight := m.requestInFlight.With(labels)
+		m.requestCount.With(basicLabels).Inc()
+		inFlight := m.requestInFlight.With(basicLabels)
 		inFlight.Inc()
 
 		interceptor := newInterceptor(w)
 		next.ServeHTTP(interceptor, r)
 
-		httpLabels["code"] = sanitizeCode(interceptor.statusCode)
 		m.requestDuration.With(httpLabels).Observe(time.Since(start).Seconds())
+		httpLabels["code"] = sanitizeCode(interceptor.statusCode)
 		m.requestSize.With(httpLabels).Observe(float64(approxReqSize(r)))
 		m.responseSize.With(httpLabels).Observe(float64(interceptor.size))
 		inFlight.Dec()
@@ -101,18 +103,18 @@ func newInterceptor(w http.ResponseWriter) *interceptor {
 
 // WriteHeader intercepts write header input (status code) and store it in our
 // interceptor struct to use it later.
-func (h *interceptor) WriteHeader(code int) {
-	h.statusCode = code
-	h.ResponseWriter.WriteHeader(code)
+func (i *interceptor) WriteHeader(code int) {
+	i.statusCode = code
+	i.ResponseWriter.WriteHeader(code)
 }
 
 // Write execute the underlying response writer Write and registers the number of bytes written.
-func (h *interceptor) Write(b []byte) (int, error) {
-	n, err := h.ResponseWriter.Write(b)
+func (i *interceptor) Write(b []byte) (int, error) {
+	n, err := i.ResponseWriter.Write(b)
 	if err != nil {
 		return 0, err
 	}
-	h.size = n
+	i.size = n
 	return n, nil
 }
 
@@ -142,14 +144,27 @@ func approxReqSize(r *http.Request) int {
 
 // cleanPath removes the last element from a url path if it's not the only one.
 func cleanPath(path string) string {
-	if path[len(path)-1:] == "/" {
-		path = path[:len(path)-1]
+	last := len(path) - 1
+	if path[last:] == "/" {
+		path = path[:last]
 	}
 	lastIdx := strings.LastIndex(path, "/")
 	if lastIdx < 1 {
 		return path
 	}
 	return path[:lastIdx]
+}
+
+// getOutboundIP returns the preferred outbound ip of the current machine.
+func getOutboundIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		log.Fatal(err)
+	}
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	conn.Close()
+
+	return localAddr.IP.String()
 }
 
 func sanitizeCode(code int) string {
