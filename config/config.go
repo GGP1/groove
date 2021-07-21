@@ -186,15 +186,6 @@ func defaultConfig() (string, error) {
 	return configPath, nil
 }
 
-func loadTLS(certfile, keyfile string) (*tls.Config, error) {
-	cert, err := tls.LoadX509KeyPair(certfile, keyfile)
-	if err != nil {
-		return nil, errors.Wrap(err, "loading x509 key pair")
-	}
-
-	return &tls.Config{Certificates: []tls.Certificate{cert}}, nil
-}
-
 var (
 	defaults = map[string]interface{}{
 		"admins":      map[string]interface{}{},
@@ -207,8 +198,7 @@ var (
 			"outfiles": []string{},
 		},
 		"memcached": map[string]interface{}{
-			"host": "localhost",
-			"port": 11211,
+			"servers": []string{"localhost:11211"},
 		},
 		"postgres": map[string]interface{}{
 			"host":        "postgres",
