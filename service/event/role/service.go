@@ -114,12 +114,17 @@ func (s service) CreateRole(ctx context.Context, sqlTx *sql.Tx, eventID string, 
 	q1 := "SELECT EXISTS(SELECT 1 FROM events_permissions WHERE event_id=$1 AND key=$2)"
 	exists := false
 
+	stmt, err := sqlTx.PrepareContext(ctx, q1)
+	if err != nil {
+		return errors.Wrap(err, "preparing statement")
+	}
+
 	// Check for the existence of the keys used for the role
 	for key := range role.PermissionKeys {
 		if permissions.ReservedKeys.Exists(key) {
 			continue
 		}
-		row := sqlTx.QueryRowContext(ctx, q1, eventID, key)
+		row := stmt.QueryRowContext(ctx, eventID, key)
 		if err := row.Scan(&exists); err != nil {
 			return err
 		}
@@ -261,8 +266,13 @@ func (s service) IsHost(ctx context.Context, sqlTx *sql.Tx, userID string, event
 	q := "SELECT EXISTS(SELECT 1 FROM events_users_roles WHERE event_id=$1 AND user_id=$2 AND role_name='host')"
 	var isHost bool
 
+	stmt, err := sqlTx.PrepareContext(ctx, q)
+	if err != nil {
+		return false, errors.Wrap(err, "prepraring statement")
+	}
+
 	for _, eventID := range eventIDs {
-		row := sqlTx.QueryRowContext(ctx, q, eventID, userID)
+		row := stmt.QueryRowContext(ctx, eventID, userID)
 		if err := row.Scan(&isHost); err != nil {
 			return false, err
 		}
