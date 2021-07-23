@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS events_roles
 (
 	event_id varchar(26) NOT NULL,
 	name varchar(20) NOT NULL,
- 	permissions_keys text NOT NULL,
+ 	permission_keys text[] NOT NULL,
     created_at timestamp with time zone DEFAULT NOW(),
 	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
 );
@@ -186,7 +186,7 @@ CREATE TABLE IF NOT EXISTS events_zones
 (
 	event_id varchar(26) NOT NULL,
 	name varchar(20) NOT NULL,
-	required_permission_keys text,
+	required_permission_keys text[],
     FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
 );
 

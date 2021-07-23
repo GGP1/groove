@@ -120,7 +120,7 @@ func (s service) CreateRole(ctx context.Context, sqlTx *sql.Tx, eventID string, 
 	}
 
 	// Check for the existence of the keys used for the role
-	for key := range role.PermissionKeys {
+	for _, key := range role.PermissionKeys {
 		if permissions.ReservedKeys.Exists(key) {
 			continue
 		}
@@ -133,9 +133,8 @@ func (s service) CreateRole(ctx context.Context, sqlTx *sql.Tx, eventID string, 
 		}
 	}
 
-	parsedKeys := permissions.ParseKeys(role.PermissionKeys)
-	q2 := "INSERT INTO events_roles (event_id, name, permissions_keys) VALUES ($1, $2, $3)"
-	if _, err := sqlTx.ExecContext(ctx, q2, eventID, role.Name, parsedKeys); err != nil {
+	q2 := "INSERT INTO events_roles (event_id, name, permission_keys) VALUES ($1, $2, $3)"
+	if _, err := sqlTx.ExecContext(ctx, q2, eventID, role.Name, role.PermissionKeys); err != nil {
 		return errors.Wrap(err, "creating role")
 	}
 
@@ -196,49 +195,46 @@ func (s service) GetPermissions(ctx context.Context, sqlTx *sql.Tx, eventID stri
 
 // GetRole returns a role in a given event.
 func (s service) GetRole(ctx context.Context, sqlTx *sql.Tx, eventID, name string) (Role, error) {
-	if keys, ok := ReservedRoles.GetStringMapStruct(name); ok {
+	if keys, ok := ReservedRoles.GetStringSlice(name); ok {
 		return Role{Name: name, PermissionKeys: keys}, nil
 	}
 
-	q := "SELECT permissions_keys FROM events_roles WHERE event_id=$1 AND name=$2"
-	permissionKeys, err := postgres.QueryString(ctx, sqlTx, q, eventID, name)
-	if err != nil {
-		return Role{}, errors.Wrap(err, "fetching permissions_keys")
+	q := "SELECT permission_keys FROM events_roles WHERE event_id=$1 AND name=$2"
+	row := sqlTx.QueryRowContext(ctx, q, eventID, name)
+
+	role := Role{Name: name}
+	if err := row.Scan(&role.PermissionKeys); err != nil {
+		return Role{}, errors.Wrap(err, "scanning permission keys")
 	}
 
-	role := Role{
-		Name:           name,
-		PermissionKeys: permissions.UnparseKeys(permissionKeys),
-	}
 	return role, nil
 }
 
 // GetRoles returns all event's roles.
 func (s service) GetRoles(ctx context.Context, sqlTx *sql.Tx, eventID string) ([]Role, error) {
-	q := "SELECT name, permissions_keys FROM events_roles WHERE event_id=$1"
+	q := "SELECT name, permission_keys FROM events_roles WHERE event_id=$1"
 	rows, err := sqlTx.QueryContext(ctx, q, eventID)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching roles")
 	}
 
 	var (
-		parsedRoles          []Role
-		name, permissionKeys string
+		role  Role
+		roles []Role
 	)
 	for rows.Next() {
-		if err := rows.Scan(&name, &permissionKeys); err != nil {
+		if err := rows.Scan(&role.Name, &role.PermissionKeys); err != nil {
 			return nil, errors.Wrap(err, "scanning fields")
 		}
 
-		role := Role{Name: name, PermissionKeys: permissions.UnparseKeys(permissionKeys)}
-		parsedRoles = append(parsedRoles, role)
+		roles = append(roles, role)
 	}
 
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
-	return parsedRoles, nil
+	return roles, nil
 }
 
 // GetUserRole returns user's role inside the event.
@@ -249,7 +245,7 @@ func (s service) GetUserRole(ctx context.Context, sqlTx *sql.Tx, eventID, userID
 		return Role{}, errors.Errorf("user %q has no role in event %q", userID, eventID)
 	}
 
-	if keys, ok := ReservedRoles.GetStringMapStruct(roleName); ok {
+	if keys, ok := ReservedRoles.GetStringSlice(roleName); ok {
 		return Role{Name: roleName, PermissionKeys: keys}, nil
 	}
 
@@ -339,10 +335,20 @@ func (s service) UpdateRole(ctx context.Context, sqlTx *sql.Tx, eventID string, 
 		buf.WriteString(*role.Name)
 		buf.WriteString("',")
 	}
+	// TODO: let user append a key to the slice -> permission_keys = array_append(permission_keys,'new item')
+	// or -> permission_keys = permission_keys || 'new item'
 	if role.PermissionKeys != nil {
 		buf.WriteString(" permission_keys='")
-		buf.WriteString(permissions.ParseKeys(*role.PermissionKeys))
-		buf.WriteByte('\'')
+		buf.WriteString("'{")
+		for i, key := range *role.PermissionKeys {
+			if i != 0 {
+				buf.WriteByte(',')
+			}
+			buf.WriteByte('"')
+			buf.WriteString(key)
+			buf.WriteByte('"')
+		}
+		buf.WriteString("}'")
 	}
 
 	buf.WriteString(" WHERE event_id='")

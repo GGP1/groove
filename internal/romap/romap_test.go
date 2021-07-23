@@ -10,9 +10,7 @@ import (
 
 func TestRomap(t *testing.T) {
 	key := "test"
-	value := map[string]struct{}{
-		"cheers": {},
-	}
+	value := []string{"cheers"}
 	panicKey := "panic"
 	mp := map[string]interface{}{
 		key:      value,
@@ -35,14 +33,14 @@ func TestRomap(t *testing.T) {
 		assert.True(t, ok)
 		assert.Equal(t, value, got)
 	})
-	t.Run("GetStringMapStruct", func(t *testing.T) {
-		strStructMp, ok2 := roMap.GetStringMapStruct(key)
+	t.Run("GetStringSlice", func(t *testing.T) {
+		strStructMp, ok2 := roMap.GetStringSlice(key)
 		assert.True(t, ok2)
 		assert.Equal(t, value, strStructMp)
 	})
 	t.Run("Panic", func(t *testing.T) {
 		assert.Panics(t, func() {
-			roMap.GetStringMapStruct(panicKey)
+			roMap.GetStringSlice(panicKey)
 		})
 	})
 }

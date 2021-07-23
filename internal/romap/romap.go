@@ -33,13 +33,12 @@ func (r ReadOnlyMap) Get(key string) (interface{}, bool) {
 	return v, ok
 }
 
-// GetStringMapStruct is like Get but it casts the value to a map[string]struct{}.
+// GetStringSlice is like Get but it casts the value to a []string.
 //
-// This should be used for the reserved roles map only.
 // Panic is not avoided on purpose.
-func (r ReadOnlyMap) GetStringMapStruct(key string) (map[string]struct{}, bool) {
+func (r ReadOnlyMap) GetStringSlice(key string) ([]string, bool) {
 	v, ok := r.Get(key)
-	return v.(map[string]struct{}), ok
+	return v.([]string), ok
 }
 
 // Keys returns a slice with all the map's keys.

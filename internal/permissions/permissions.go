@@ -1,9 +1,6 @@
 package permissions
 
 import (
-	"strings"
-
-	"github.com/GGP1/groove/internal/bufferpool"
 	"github.com/GGP1/groove/internal/romap"
 
 	"github.com/pkg/errors"
@@ -37,9 +34,6 @@ const (
 	ModifyZones       = "modify_zones"
 	SetUserRole       = "set_user_role"
 	UpdateEvent       = "update_event"
-
-	// Separator is used to parse and unparse keys.
-	Separator = "/"
 )
 
 // Require makes sure the user has all the permissions required.
@@ -59,40 +53,4 @@ func Require(userPermKeys map[string]struct{}, required ...string) error {
 	}
 
 	return nil
-}
-
-// ParseKeys parses the permissions keys to a string.
-func ParseKeys(permissions map[string]struct{}) string {
-	buf := bufferpool.Get()
-
-	for p := range permissions {
-		buf.WriteString(p)
-		buf.WriteString(Separator)
-	}
-	parsed := buf.String()
-	bufferpool.Put(buf)
-
-	return parsed[:len(parsed)-1]
-}
-
-// UnparseKeys takes a string with parsed permissions keys and returns a map.
-//
-// If the string is empty it returns an empty map.
-func UnparseKeys(s string) map[string]struct{} {
-	n := strings.Count(s, Separator) + 1
-	mp := make(map[string]struct{}, n)
-	n--
-	i := 0
-	for i < n {
-		idx := strings.Index(s, Separator)
-		if idx < 0 {
-			break
-		}
-		mp[s[:idx]] = struct{}{}
-		s = s[idx+len(Separator):]
-		i++
-	}
-	mp[s] = struct{}{}
-
-	return mp
 }

@@ -3,9 +3,9 @@ package zone
 import (
 	"context"
 	"database/sql"
-	"strings"
 
 	"github.com/GGP1/groove/storage/postgres"
+
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/pkg/errors"
 )
@@ -34,7 +34,6 @@ func NewService(db *sql.DB, mc *memcache.Client) Service {
 // CreateZone creates a zone inside an event.
 func (s service) CreateZone(ctx context.Context, sqlTx *sql.Tx, eventID string, zone Zone) error {
 	q1 := "SELECT EXISTS(SELECT 1 FROM events_zones WHERE event_id=$1 AND name=$2)"
-
 	exists, err := postgres.QueryBool(ctx, sqlTx, q1, eventID, zone.Name)
 	if err != nil {
 		return err
@@ -44,9 +43,7 @@ func (s service) CreateZone(ctx context.Context, sqlTx *sql.Tx, eventID string, 
 	}
 
 	q2 := "INSERT INTO events_zones (event_id, name, required_permission_keys) VALUES ($1, $2, $3)"
-	keys := strings.Join(zone.RequiredPermissionKeys, ",")
-
-	if _, err := sqlTx.ExecContext(ctx, q2, eventID, zone.Name, keys); err != nil {
+	if _, err := sqlTx.ExecContext(ctx, q2, eventID, zone.Name, zone.RequiredPermissionKeys); err != nil {
 		return errors.Wrap(err, "creating zone")
 	}
 
@@ -72,11 +69,9 @@ func (s service) GetZoneByName(ctx context.Context, sqlTx *sql.Tx, eventID, name
 	row := sqlTx.QueryRowContext(ctx, q, eventID, name)
 
 	var zone Zone
-	var requiredPermKeys string
-	if err := row.Scan(&zone.Name, &requiredPermKeys); err != nil {
+	if err := row.Scan(&zone.Name, &zone.RequiredPermissionKeys); err != nil {
 		return Zone{}, errors.Wrap(err, "scanning permission keys")
 	}
-	zone.RequiredPermissionKeys = strings.Split(requiredPermKeys, ",")
 
 	return zone, nil
 }
@@ -91,16 +86,13 @@ func (s service) GetZones(ctx context.Context, sqlTx *sql.Tx, eventID string) ([
 	}
 
 	var (
-		zone                   Zone
-		zones                  []Zone
-		requiredPermissionKeys sql.NullString
+		zone  Zone
+		zones []Zone
 	)
 	for rows.Next() {
-		if err := rows.Scan(&zone.Name, &requiredPermissionKeys); err != nil {
+		if err := rows.Scan(&zone.Name, &zone.RequiredPermissionKeys); err != nil {
 			return nil, errors.Wrap(err, "scanning zone")
 		}
-
-		zone.RequiredPermissionKeys = strings.Split(requiredPermissionKeys.String, ",")
 		zones = append(zones, zone)
 	}
 

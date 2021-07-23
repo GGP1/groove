@@ -1,28 +1,21 @@
 package role
 
 import (
-	"strings"
 	"time"
 
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/romap"
 
+	"github.com/lib/pq"
 	"github.com/pkg/errors"
 )
 
 // ReservedRoles is a read-only map that contains reserved roles
 // and its permission keys applying to all events.
 var ReservedRoles = romap.New(map[string]interface{}{
-	Host: map[string]struct{}{
-		permissions.All: {},
-	},
-	Attendant: map[string]struct{}{
-		permissions.Access: {},
-	},
-	Moderator: map[string]struct{}{
-		permissions.Access:   {},
-		permissions.BanUsers: {},
-	},
+	Host:      []string{permissions.All},
+	Attendant: []string{permissions.Access},
+	Moderator: []string{permissions.Access, permissions.BanUsers},
 })
 
 const (
@@ -36,8 +29,8 @@ const (
 
 // Role represents a set of permissions inside the event.
 type Role struct {
-	Name           string              `json:"name,omitempty"`
-	PermissionKeys map[string]struct{} `json:"permission_keys,omitempty"`
+	Name           string         `json:"name,omitempty"`
+	PermissionKeys pq.StringArray `json:"permission_keys,omitempty"`
 }
 
 // Validate returns an error if the role is invalid.
@@ -52,20 +45,15 @@ func (r Role) Validate() error {
 		return errors.New("reserved name")
 	}
 	if len(r.PermissionKeys) == 0 {
-		return errors.New("permissions_keys required")
-	}
-	for pk := range r.PermissionKeys {
-		if strings.Contains(pk, permissions.Separator) {
-			return errors.Errorf("permission key [%q] cannot contain character %q", pk, permissions.Separator)
-		}
+		return errors.New("permission_keys required")
 	}
 	return nil
 }
 
 // UpdateRole is the structure used to update roles.
 type UpdateRole struct {
-	Name           *string              `json:"name,omitempty"`
-	PermissionKeys *map[string]struct{} `json:"permission_keys,omitempty"`
+	Name           *string         `json:"name,omitempty"`
+	PermissionKeys *pq.StringArray `json:"permission_keys,omitempty"`
 }
 
 // Validate ..
@@ -83,12 +71,7 @@ func (r UpdateRole) Validate() error {
 	}
 	if r.PermissionKeys != nil {
 		if len(*r.PermissionKeys) == 0 {
-			return errors.New("permissions_keys required")
-		}
-		for pk := range *r.PermissionKeys {
-			if strings.Contains(pk, permissions.Separator) {
-				return errors.Errorf("permission key [%q] cannot contain character %q", pk, permissions.Separator)
-			}
+			return errors.New("permission_keys required")
 		}
 	}
 
@@ -113,9 +96,6 @@ func (p Permission) Validate() error {
 	}
 	if len(p.Key) > 20 {
 		return errors.New("invalid key length, maximum is 20")
-	}
-	if strings.Contains(p.Key, permissions.Separator) {
-		return errors.Errorf("permission key cannot contain character %q", permissions.Separator)
 	}
 	if p.Name == "" {
 		return errors.New("name required")
@@ -147,9 +127,6 @@ func (p UpdatePermission) Validate() error {
 		}
 		if len(*p.Key) > 20 {
 			return errors.New("invalid key length, maximum is 20")
-		}
-		if strings.Contains(*p.Key, permissions.Separator) {
-			return errors.Errorf("permission key cannot contain character %q", permissions.Separator)
 		}
 	}
 	if p.Name != nil {

@@ -1,11 +1,15 @@
 package zone
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/lib/pq"
+)
 
 // Zone represents a zone inside an event.
 type Zone struct {
-	Name                   string   `json:"name,omitempty"`
-	RequiredPermissionKeys []string `json:"required_permission_keys,omitempty" db:"required_permission_keys"`
+	Name                   string         `json:"name,omitempty"`
+	RequiredPermissionKeys pq.StringArray `json:"required_permission_keys,omitempty" db:"required_permission_keys"`
 }
 
 // Validate ..

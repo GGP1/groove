@@ -18,6 +18,7 @@ import (
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/dgraph-io/dgo/v210"
 	"github.com/dgraph-io/dgo/v210/protos/api"
+	"github.com/lib/pq"
 	"github.com/pkg/errors"
 )
 
@@ -181,11 +182,11 @@ func (s *service) Create(ctx context.Context, eventID string, event CreateEvent)
 
 	// Create host and attendant roles
 	q2 := `INSERT INTO events_roles 
-	(event_id, name, permissions_keys) 
+	(event_id, name, permission_keys) 
 	VALUES 
 	($1, $2, $3), ($1, $4, $5)`
-	_, err = sqlTx.ExecContext(ctx, q2, eventID, role.Host, permissions.All,
-		role.Attendant, permissions.Access)
+	_, err = sqlTx.ExecContext(ctx, q2, eventID, role.Host, pq.StringArray{permissions.All},
+		role.Attendant, pq.StringArray{permissions.Access})
 	if err != nil {
 		return errors.Wrap(err, "setting role")
 	}

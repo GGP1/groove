@@ -987,9 +987,18 @@ func (h *Handler) requirePermissions(ctx context.Context, r *http.Request, tx *s
 		return errors.Wrap(err, "requirePermissions")
 	}
 
-	if err := permissions.Require(role.PermissionKeys, permRequired...); err != nil {
+	userPermKeys := sliceToMap(role.PermissionKeys)
+	if err := permissions.Require(userPermKeys, permRequired...); err != nil {
 		return errAccessDenied
 	}
 
 	return nil
+}
+
+func sliceToMap(slice []string) map[string]struct{} {
+	mp := make(map[string]struct{}, len(slice))
+	for _, s := range slice {
+		mp[s] = struct{}{}
+	}
+	return mp
 }
