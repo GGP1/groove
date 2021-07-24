@@ -109,23 +109,6 @@ func (s *service) Create(ctx context.Context, userID string, user CreateUser) er
 	}
 	defer psqlTx.Rollback()
 
-	q1 := "SELECT EXISTS(SELECT 1 FROM users WHERE email=$1)"
-	emailExists, err := postgres.QueryBool(ctx, psqlTx, q1, user.Email)
-	if err != nil {
-		return errors.Wrap(err, "scanning email")
-	}
-	if emailExists {
-		return errors.New("email is already taken")
-	}
-	q2 := "SELECT EXISTS(SELECT 1 FROM users WHERE username=$1)"
-	usernameExists, err := postgres.QueryBool(ctx, psqlTx, q2, user.Username)
-	if err != nil {
-		return errors.Wrap(err, "scanning username")
-	}
-	if usernameExists {
-		return errors.New("username is already taken")
-	}
-
 	hash, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
 		log.DPanic("failed generating user's password hash", zap.Error(err))
