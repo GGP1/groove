@@ -37,11 +37,10 @@ func CreateTables(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-// ALTER TYPE invitations ADD VALUE 'selected';
 const tables = `
 CREATE TABLE IF NOT EXISTS events
 (
-	id varchar(26) NOT NULL,
+	id varchar(26),
 	name text NOT NULL,
 	type integer NOT NULL,
 	public boolean NOT NULL,
@@ -64,7 +63,7 @@ END$$;
 
 CREATE TABLE IF NOT EXISTS users
 (
-    id varchar(26) NOT NULL,
+    id varchar(26),
 	name varchar NOT NULL,
     username text NOT NULL UNIQUE,
     email text NOT NULL UNIQUE,
@@ -84,7 +83,7 @@ CREATE TABLE IF NOT EXISTS users
 
 CREATE TABLE IF NOT EXISTS users_locations
 (
-	user_id varchar(26) NOT NULL,
+	user_id varchar(26),
 	country text,
 	state text,
 	city text,
@@ -93,7 +92,7 @@ CREATE TABLE IF NOT EXISTS users_locations
 
 CREATE TABLE IF NOT EXISTS events_permissions
 (
- 	event_id varchar(26) NOT NULL,
+ 	event_id varchar(26),
 	key varchar(20) NOT NULL,
  	name varchar(20) NOT NULL,
  	description varchar(50),
@@ -106,7 +105,7 @@ CREATE INDEX ON events_permissions (key);
 
 CREATE TABLE IF NOT EXISTS events_roles
 (
-	event_id varchar(26) NOT NULL,
+	event_id varchar(26),
 	name varchar(20) NOT NULL,
  	permission_keys text[] NOT NULL,
     created_at timestamp with time zone DEFAULT NOW(),
@@ -118,7 +117,7 @@ CREATE INDEX ON events_permissions (name);
 
 CREATE TABLE IF NOT EXISTS events_users_roles
 (
-	event_id varchar(26) NOT NULL,
+	event_id varchar(26),
 	user_id varchar(26) NOT NULL,
  	role_name varchar(20) NOT NULL,
 	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,
@@ -129,7 +128,7 @@ CREATE INDEX ON events_users_roles (role_name);
 
 CREATE TABLE IF NOT EXISTS events_locations
 (
-    event_id varchar(26) NOT NULL,
+    event_id varchar(26),
 	virtual bool NOT NULL,
 	country text,
 	state text,
@@ -143,7 +142,7 @@ CREATE TABLE IF NOT EXISTS events_locations
 
 CREATE TABLE IF NOT EXISTS events_media
 (
-    id varchar(26) NOT NULL,
+    id varchar(26),
     event_id varchar(26) NOT NULL,
 	url text NOT NULL,
     created_at timestamp with time zone DEFAULT NOW(),
@@ -153,7 +152,7 @@ CREATE TABLE IF NOT EXISTS events_media
 
 CREATE TABLE IF NOT EXISTS events_products
 (
-    id varchar(26) NOT NULL,
+    id varchar(26),
     event_id varchar(26) NOT NULL,
     stock integer NOT NULL,
     brand text NOT NULL,
@@ -170,17 +169,19 @@ CREATE TABLE IF NOT EXISTS events_products
 
 CREATE TABLE IF NOT EXISTS events_reports
 (
+	id varchar(26),
 	reported_id varchar(26) NOT NULL,
 	reporter_id varchar(26) NOT NULL,
 	type text NOT NULL,
 	details text NOT NULL,
     created_at timestamp with time zone DEFAULT NOW(),
+	CONSTRAINT events_reports_pkey PRIMARY KEY (id),
     FOREIGN KEY (reporter_id) REFERENCES users (id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS events_zones
 (
-	event_id varchar(26) NOT NULL,
+	event_id varchar(26),
 	name varchar(20) NOT NULL,
 	required_permission_keys text[],
     FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,

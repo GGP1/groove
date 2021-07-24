@@ -33,6 +33,7 @@ func (h *Handler) CreateReport() http.HandlerFunc {
 			return
 		}
 
+		report.ID = ulid.NewString()
 		if err := h.service.CreateReport(ctx, report); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
