@@ -282,17 +282,8 @@ func (s service) IsHost(ctx context.Context, sqlTx *sql.Tx, userID string, event
 
 // SetRoles assigns a role to n users inside an event.
 func (s service) SetRoles(ctx context.Context, sqlTx *sql.Tx, eventID, roleName string, userIDs ...string) error {
-	q1 := "SELECT EXISTS(SELECT 1 FROM events_roles WHERE event_id=$1 AND name=$2)"
-	exists, err := postgres.QueryBool(ctx, sqlTx, q1, eventID, roleName)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		return errors.Errorf("%q role does not exists in the event %q", roleName, eventID)
-	}
-
-	q2 := "INSERT INTO events_users_roles (event_id, user_id, role_name) VALUES"
-	insert := postgres.BulkInsertRoles(q2, eventID, roleName, userIDs)
+	q := "INSERT INTO events_users_roles (event_id, user_id, role_name) VALUES"
+	insert := postgres.BulkInsertRoles(q, eventID, roleName, userIDs)
 
 	if _, err := sqlTx.ExecContext(ctx, insert); err != nil {
 		return errors.Wrap(err, "setting roles")

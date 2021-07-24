@@ -113,18 +113,16 @@ CREATE TABLE IF NOT EXISTS events_roles
 	UNIQUE(event_id, name)
 );
 
-CREATE INDEX ON events_permissions (name);
+CREATE INDEX ON events_roles (name);
 
 CREATE TABLE IF NOT EXISTS events_users_roles
 (
 	event_id varchar(26),
-	user_id varchar(26) NOT NULL,
- 	role_name varchar(20) NOT NULL,
-	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,
+	user_id varchar(26),
+ 	role_name varchar(20),
+	FOREIGN KEY (event_id, role_name) REFERENCES events_roles (event_id, name) ON DELETE CASCADE,
  	FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );
-
-CREATE INDEX ON events_users_roles (role_name);
 
 CREATE TABLE IF NOT EXISTS events_locations
 (
