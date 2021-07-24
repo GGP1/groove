@@ -33,7 +33,7 @@ type table string
 func AddPagination(query, paginationField string, params params.Query) string {
 	buf := bufferpool.Get()
 	buf.WriteString(query)
-	addPagination(buf, paginationField, params, true)
+	addPagination(buf, paginationField, params)
 	q := buf.String()
 	bufferpool.Put(buf)
 
@@ -145,7 +145,7 @@ func FullTextSearch(table table, searchFields []string, query string, params par
 	buf.WriteString(") @@ plainto_tsquery('")
 	buf.WriteString(query)
 	buf.WriteString("')")
-	addPagination(buf, "id", params, true)
+	addPagination(buf, "id", params)
 
 	q := buf.String()
 	bufferpool.Put(buf)
@@ -155,7 +155,7 @@ func FullTextSearch(table table, searchFields []string, query string, params par
 
 // SelectInID builds a postgres select from in statement.
 //
-// 	SELECT fields FROM table WHERE id IN ('id1', 'id2', ...)
+// 	SELECT fields FROM table WHERE id IN ('id1','id2',...) ORDER BY id DESC
 func SelectInID(table table, ids, fields []string) string {
 	buf := bufferpool.Get()
 
@@ -167,13 +167,14 @@ func SelectInID(table table, ids, fields []string) string {
 	for j, id := range ids {
 		if j != 0 {
 			buf.WriteByte(',')
-			buf.WriteByte(' ')
 		}
 		buf.WriteByte('\'')
 		buf.WriteString(id)
 		buf.WriteByte('\'')
 	}
-	buf.WriteByte(')')
+	// Order like pagination does just in case it was used in a query prior to this one, so the client
+	// receives the results in the order expected
+	buf.WriteString(") ORDER BY id DESC")
 
 	query := buf.String()
 	bufferpool.Put(buf)
@@ -198,7 +199,7 @@ func SelectWhereID(table table, idField, id, paginationField string, params para
 	buf.WriteString("='")
 	buf.WriteString(id)
 	buf.WriteByte('\'')
-	addPagination(buf, paginationField, params, false)
+	addPagination(buf, paginationField, params)
 
 	query := buf.String()
 	bufferpool.Put(buf)
@@ -206,7 +207,7 @@ func SelectWhereID(table table, idField, id, paginationField string, params para
 	return query
 }
 
-func addPagination(buf *bytes.Buffer, paginationField string, p params.Query, greater bool) {
+func addPagination(buf *bytes.Buffer, paginationField string, p params.Query) {
 	if p.LookupID != "" {
 		buf.WriteString(" AND ")
 		buf.WriteString(paginationField)
@@ -218,13 +219,7 @@ func addPagination(buf *bytes.Buffer, paginationField string, p params.Query, gr
 	if p.Cursor != params.DefaultCursor {
 		buf.WriteString(" AND ")
 		buf.WriteString(paginationField)
-		buf.WriteByte(' ')
-		if greater {
-			buf.WriteByte('>')
-		} else {
-			buf.WriteByte('<')
-		}
-		buf.WriteString(" '")
+		buf.WriteString(" < '")
 		buf.WriteString(p.Cursor)
 		buf.WriteByte('\'')
 	}
