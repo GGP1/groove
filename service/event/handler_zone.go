@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/GGP1/groove/auth"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/response"
@@ -14,6 +15,55 @@ import (
 
 	"github.com/julienschmidt/httprouter"
 )
+
+// AccessZone checks if the authenticated user is allowed to enter the zone or not.
+func (h *Handler) AccessZone() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		routerParams := httprouter.ParamsFromContext(ctx)
+		eventID := routerParams.ByName("id")
+		if err := ulid.Validate(eventID); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		name := strings.ToLower(routerParams.ByName("name"))
+
+		session, err := auth.GetSession(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		sqlTx := h.service.BeginSQLTx(ctx, true)
+		defer sqlTx.Rollback()
+
+		if err := h.privacyFilter(ctx, r, sqlTx, eventID); err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		role, err := h.service.GetUserRole(ctx, sqlTx, eventID, session.ID)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		zone, err := h.service.GetZoneByName(ctx, sqlTx, eventID, name)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		userPermissionKeys := sliceToMap(role.PermissionKeys)
+		if err := permissions.Require(userPermissionKeys, zone.RequiredPermissionKeys...); err != nil {
+			response.Error(w, http.StatusForbidden, errAccessDenied)
+			return
+		}
+
+		response.JSONMessage(w, http.StatusOK, "Access granted")
+	}
+}
 
 // CreateZone creates a new zone inside an event.
 func (h *Handler) CreateZone() http.Handler {
@@ -67,7 +117,7 @@ func (h *Handler) DeleteZone() http.HandlerFunc {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
-		name := routerParams.ByName("name")
+		name := strings.ToLower(routerParams.ByName("name"))
 
 		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
 			if err := h.requirePermissions(ctx, r, tx, eventID, permissions.ModifyZones); err != nil {
@@ -94,7 +144,7 @@ func (h *Handler) GetZoneByName() http.Handler {
 
 		routerParams := httprouter.ParamsFromContext(ctx)
 		eventID := routerParams.ByName("id")
-		name := routerParams.ByName("name")
+		name := strings.ToLower(routerParams.ByName("name"))
 
 		if err := ulid.Validate(eventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)

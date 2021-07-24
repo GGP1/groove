@@ -198,6 +198,7 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 			{
 				zones.use(requireLogin)
 				zones.get("/", events.GetZones())
+				zones.get("/access/:name", events.AccessZone())
 				zones.post("/create", events.CreateZone())
 				zones.delete("/delete/:name", events.DeleteZone())
 				zones.get("/name/:name", events.GetZoneByName())
