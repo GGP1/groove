@@ -38,6 +38,9 @@ func (r ReadOnlyMap) Get(key string) (interface{}, bool) {
 // Panic is not avoided on purpose.
 func (r ReadOnlyMap) GetStringSlice(key string) ([]string, bool) {
 	v, ok := r.Get(key)
+	if v == nil {
+		return nil, false
+	}
 	return v.([]string), ok
 }
 

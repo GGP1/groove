@@ -34,9 +34,15 @@ func TestRomap(t *testing.T) {
 		assert.Equal(t, value, got)
 	})
 	t.Run("GetStringSlice", func(t *testing.T) {
-		strStructMp, ok2 := roMap.GetStringSlice(key)
-		assert.True(t, ok2)
+		strStructMp, ok := roMap.GetStringSlice(key)
+		assert.True(t, ok)
 		assert.Equal(t, value, strStructMp)
+
+		t.Run("Nil", func(t *testing.T) {
+			nilValue, ok := roMap.GetStringSlice("non-existent")
+			assert.False(t, ok)
+			assert.Nil(t, nilValue)
+		})
 	})
 	t.Run("Panic", func(t *testing.T) {
 		assert.Panics(t, func() {
