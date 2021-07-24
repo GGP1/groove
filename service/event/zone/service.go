@@ -4,8 +4,6 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/GGP1/groove/storage/postgres"
-
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/pkg/errors"
 )
@@ -33,17 +31,8 @@ func NewService(db *sql.DB, mc *memcache.Client) Service {
 
 // CreateZone creates a zone inside an event.
 func (s service) CreateZone(ctx context.Context, sqlTx *sql.Tx, eventID string, zone Zone) error {
-	q1 := "SELECT EXISTS(SELECT 1 FROM events_zones WHERE event_id=$1 AND name=$2)"
-	exists, err := postgres.QueryBool(ctx, sqlTx, q1, eventID, zone.Name)
-	if err != nil {
-		return err
-	}
-	if exists {
-		return errors.Errorf("already exists a zone named %q", zone.Name)
-	}
-
-	q2 := "INSERT INTO events_zones (event_id, name, required_permission_keys) VALUES ($1, $2, $3)"
-	if _, err := sqlTx.ExecContext(ctx, q2, eventID, zone.Name, zone.RequiredPermissionKeys); err != nil {
+	q := "INSERT INTO events_zones (event_id, name, required_permission_keys) VALUES ($1, $2, $3)"
+	if _, err := sqlTx.ExecContext(ctx, q, eventID, zone.Name, zone.RequiredPermissionKeys); err != nil {
 		return errors.Wrap(err, "creating zone")
 	}
 
@@ -70,7 +59,7 @@ func (s service) GetZoneByName(ctx context.Context, sqlTx *sql.Tx, eventID, name
 
 	var zone Zone
 	if err := row.Scan(&zone.Name, &zone.RequiredPermissionKeys); err != nil {
-		return Zone{}, errors.Wrap(err, "scanning permission keys")
+		return Zone{}, errors.Wrap(err, "scanning zone required permission keys")
 	}
 
 	return zone, nil
