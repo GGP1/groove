@@ -62,8 +62,6 @@ BEGIN
 END IF;
 END$$;
 
-CREATE UNIQUE INDEX ON events (id);
-
 CREATE TABLE IF NOT EXISTS users
 (
     id varchar(26) NOT NULL,
@@ -84,8 +82,6 @@ CREATE TABLE IF NOT EXISTS users
     CONSTRAINT users_pkey PRIMARY KEY (id)
 );
 
-CREATE UNIQUE INDEX ON users (id, email, username);
-
 CREATE TABLE IF NOT EXISTS users_locations
 (
 	user_id varchar(26) NOT NULL,
@@ -102,7 +98,8 @@ CREATE TABLE IF NOT EXISTS events_permissions
  	name varchar(20) NOT NULL,
  	description varchar(50),
     created_at timestamp with time zone DEFAULT NOW(),
-	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
+	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,
+	UNIQUE(event_id, key)
 );
 
 CREATE INDEX ON events_permissions (key);
@@ -113,7 +110,8 @@ CREATE TABLE IF NOT EXISTS events_roles
 	name varchar(20) NOT NULL,
  	permission_keys text[] NOT NULL,
     created_at timestamp with time zone DEFAULT NOW(),
-	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
+	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,
+	UNIQUE(event_id, name)
 );
 
 CREATE INDEX ON events_permissions (name);
@@ -149,10 +147,9 @@ CREATE TABLE IF NOT EXISTS events_media
     event_id varchar(26) NOT NULL,
 	url text NOT NULL,
     created_at timestamp with time zone DEFAULT NOW(),
+	CONSTRAINT events_media_pkey PRIMARY KEY (id),
     FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
 );
-
-CREATE UNIQUE INDEX ON events_media (id);
 
 CREATE TABLE IF NOT EXISTS events_products
 (
@@ -167,10 +164,9 @@ CREATE TABLE IF NOT EXISTS events_products
     subtotal integer NOT NULL,
     total integer NOT NULL,
     created_at timestamp with time zone DEFAULT NOW(),
+	CONSTRAINT events_products_pkey PRIMARY KEY (id),
     FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
 );
-
-CREATE UNIQUE INDEX ON events_products (id);
 
 CREATE TABLE IF NOT EXISTS events_reports
 (
@@ -187,7 +183,8 @@ CREATE TABLE IF NOT EXISTS events_zones
 	event_id varchar(26) NOT NULL,
 	name varchar(20) NOT NULL,
 	required_permission_keys text[],
-    FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
+    FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,
+	UNIQUE(event_id, name)
 );
 
 CREATE INDEX ON events_zones (name);`
