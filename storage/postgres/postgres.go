@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS events_users_roles
 	event_id varchar(26),
 	user_id varchar(26),
  	role_name varchar(20),
-	FOREIGN KEY (event_id, role_name) REFERENCES events_roles (event_id, name) ON DELETE CASCADE,
+	FOREIGN KEY (event_id, role_name) REFERENCES events_roles (event_id, name) ON UPDATE CASCADE ON DELETE CASCADE,
  	FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );
 

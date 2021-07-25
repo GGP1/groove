@@ -27,8 +27,8 @@ type Service interface {
 	IsHost(ctx context.Context, sqlTx *sql.Tx, userID string, eventIDs ...string) (bool, error)
 	SetRoles(ctx context.Context, sqlTx *sql.Tx, eventID, roleName string, userIDs ...string) error
 	SetViewerRole(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) error
-	UpdatePermission(ctx context.Context, sqlTx *sql.Tx, eventID string, permission UpdatePermission) error
-	UpdateRole(ctx context.Context, sqlTx *sql.Tx, eventID string, role UpdateRole) error
+	UpdatePermission(ctx context.Context, sqlTx *sql.Tx, eventID, key string, permission UpdatePermission) error
+	UpdateRole(ctx context.Context, sqlTx *sql.Tx, eventID, name string, role UpdateRole) error
 	UserHasRole(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) (bool, error)
 }
 
@@ -325,18 +325,13 @@ func (s service) SetViewerRole(ctx context.Context, sqlTx *sql.Tx, eventID, user
 }
 
 // UpdatePemission sets new values for a permission.
-func (s service) UpdatePermission(ctx context.Context, sqlTx *sql.Tx, eventID string, permission UpdatePermission) error {
+func (s service) UpdatePermission(ctx context.Context, sqlTx *sql.Tx, eventID, key string, permission UpdatePermission) error {
 	buf := bufferpool.Get()
 	buf.WriteString("UPDATE events_roles SET")
 
 	if permission.Name != nil {
 		buf.WriteString(" name='")
 		buf.WriteString(*permission.Name)
-		buf.WriteString("',")
-	}
-	if permission.Key != nil {
-		buf.WriteString(" key='")
-		buf.WriteString(*permission.Key)
 		buf.WriteString("',")
 	}
 	if permission.Description != nil {
@@ -348,25 +343,23 @@ func (s service) UpdatePermission(ctx context.Context, sqlTx *sql.Tx, eventID st
 	buf.WriteString(" WHERE event_id='")
 	buf.WriteString(eventID)
 	buf.WriteByte('\'')
+	buf.WriteString("AND key='")
+	buf.WriteString(key)
+	buf.WriteByte('\'')
 
 	if _, err := sqlTx.ExecContext(ctx, buf.String()); err != nil {
-		return errors.Wrap(err, "updating role")
+		return errors.Wrap(err, "updating permission")
 	}
 
 	bufferpool.Put(buf)
 	return nil
 }
 
-// UpdateRole ..
-func (s service) UpdateRole(ctx context.Context, sqlTx *sql.Tx, eventID string, role UpdateRole) error {
+// UpdateRole sets new values for a role.
+func (s service) UpdateRole(ctx context.Context, sqlTx *sql.Tx, eventID, name string, role UpdateRole) error {
 	buf := bufferpool.Get()
 	buf.WriteString("UPDATE events_roles SET")
 
-	if role.Name != nil {
-		buf.WriteString(" name='")
-		buf.WriteString(*role.Name)
-		buf.WriteString("',")
-	}
 	if role.PermissionKeys != nil {
 		buf.WriteString(" permission_keys='")
 		buf.WriteString("'{")
@@ -383,6 +376,9 @@ func (s service) UpdateRole(ctx context.Context, sqlTx *sql.Tx, eventID string, 
 
 	buf.WriteString(" WHERE event_id='")
 	buf.WriteString(eventID)
+	buf.WriteByte('\'')
+	buf.WriteString("AND name='")
+	buf.WriteString(name)
 	buf.WriteByte('\'')
 
 	if _, err := sqlTx.ExecContext(ctx, buf.String()); err != nil {

@@ -55,29 +55,16 @@ func (r Role) Validate() error {
 
 // UpdateRole is the structure used to update roles.
 type UpdateRole struct {
-	Name           *string         `json:"name,omitempty"`
 	PermissionKeys *pq.StringArray `json:"permission_keys,omitempty"`
 }
 
-// Validate ..
+// Validate validates update roles fields.
 func (r UpdateRole) Validate() error {
-	if r.Name != nil {
-		if *r.Name == "" {
-			return errors.New("name required")
-		}
-		if len(*r.Name) > 20 {
-			return errors.New("invalid name length, maximum is 20")
-		}
-		if ReservedRoles.Exists(*r.Name) {
-			return errors.New("reserved name")
-		}
-	}
 	if r.PermissionKeys != nil {
 		if len(*r.PermissionKeys) == 0 {
 			return errors.New("permission_keys required")
 		}
 	}
-
 	return nil
 }
 
@@ -115,23 +102,11 @@ func (p Permission) Validate() error {
 // UpdatePermission is the structure used to update permissions.
 type UpdatePermission struct {
 	Name        *string `json:"name,omitempty"`
-	Key         *string `json:"key,omitempty"`
 	Description *string `json:"description,omitempty"`
 }
 
 // Validate ..
 func (p UpdatePermission) Validate() error {
-	if p.Key != nil {
-		if *p.Key == "" {
-			return errors.New("key required")
-		}
-		if permissions.ReservedKeys.Exists(*p.Key) {
-			return errors.New("reserved key")
-		}
-		if len(*p.Key) > 20 {
-			return errors.New("invalid key length, maximum is 20")
-		}
-	}
 	if p.Name != nil {
 		if *p.Name == "" {
 			return errors.New("name required")

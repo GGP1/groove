@@ -201,7 +201,7 @@ func (h *Handler) DeletePermission() http.HandlerFunc {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
-		key := routerParams.ByName("key")
+		key := strings.ToLower(routerParams.ByName("key"))
 
 		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
 			if err := h.requirePermissions(ctx, r, tx, eventID, permissions.ModifyPermissions); err != nil {
@@ -232,7 +232,7 @@ func (h *Handler) DeleteRole() http.HandlerFunc {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
-		roleName := routerParams.ByName("name")
+		roleName := strings.ToLower(routerParams.ByName("name"))
 
 		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
 			if err := h.requirePermissions(ctx, r, tx, eventID, permissions.ModifyRoles); err != nil {
@@ -412,11 +412,13 @@ func (h *Handler) UpdatePermission() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.IDFromCtx(ctx)
-		if err != nil {
+		routerParams := httprouter.ParamsFromContext(ctx)
+		eventID := routerParams.ByName("id")
+		if err := ulid.Validate(eventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
+		key := strings.ToLower(routerParams.ByName("key"))
 
 		sqlTx := h.service.BeginSQLTx(ctx, false)
 		defer sqlTx.Rollback()
@@ -433,15 +435,12 @@ func (h *Handler) UpdatePermission() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if permission.Key != nil {
-			*permission.Key = strings.ToLower(*permission.Key)
-		}
 		if err := permission.Validate(); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		if err := h.service.UpdatePermission(ctx, sqlTx, eventID, permission); err != nil {
+		if err := h.service.UpdatePermission(ctx, sqlTx, eventID, key, permission); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -460,11 +459,13 @@ func (h *Handler) UpdateRole() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, err := params.IDFromCtx(ctx)
-		if err != nil {
+		routerParams := httprouter.ParamsFromContext(ctx)
+		eventID := routerParams.ByName("id")
+		if err := ulid.Validate(eventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
+		name := strings.ToLower(routerParams.ByName("name"))
 
 		sqlTx := h.service.BeginSQLTx(ctx, false)
 		defer sqlTx.Rollback()
@@ -481,15 +482,12 @@ func (h *Handler) UpdateRole() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if role.Name != nil {
-			*role.Name = strings.ToLower(*role.Name)
-		}
 		if err := role.Validate(); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		if err := h.service.UpdateRole(ctx, sqlTx, eventID, role); err != nil {
+		if err := h.service.UpdateRole(ctx, sqlTx, eventID, name, role); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}

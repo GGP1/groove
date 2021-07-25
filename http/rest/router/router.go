@@ -169,7 +169,7 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 				permissions.post("/clone", events.ClonePermissions())
 				permissions.post("/create", events.CreatePermission())
 				permissions.delete("/delete/:key", events.DeletePermission())
-				permissions.put("/update", events.UpdatePermission())
+				permissions.put("/update/:key", events.UpdatePermission())
 			}
 
 			// /events/:id/products
@@ -191,7 +191,7 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 				roles.delete("/delete/:name", events.DeleteRole())
 				roles.post("/set", events.SetRoles())
 				roles.post("/user", events.GetUserRole())
-				roles.put("/update", events.UpdateRole())
+				roles.put("/update/:name", events.UpdateRole())
 			}
 
 			// /events/:id/zones
