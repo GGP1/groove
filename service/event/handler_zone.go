@@ -49,7 +49,7 @@ func (h *Handler) AccessZone() http.HandlerFunc {
 			return
 		}
 
-		zone, err := h.service.GetZoneByName(ctx, sqlTx, eventID, name)
+		zone, err := h.service.GetZone(ctx, sqlTx, eventID, name)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -137,8 +137,8 @@ func (h *Handler) DeleteZone() http.HandlerFunc {
 	}
 }
 
-// GetZoneByName retrieves a zone in an event with the given name.
-func (h *Handler) GetZoneByName() http.Handler {
+// GetZone retrieves a zone in an event with the given name.
+func (h *Handler) GetZone() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -159,7 +159,7 @@ func (h *Handler) GetZoneByName() http.Handler {
 			return
 		}
 
-		zone, err := h.service.GetZoneByName(ctx, sqlTx, eventID, name)
+		zone, err := h.service.GetZone(ctx, sqlTx, eventID, name)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -169,7 +169,7 @@ func (h *Handler) GetZoneByName() http.Handler {
 	})
 }
 
-// GetZones ..
+// GetZones fetches all the zones from an event.
 func (h *Handler) GetZones() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -202,4 +202,51 @@ func (h *Handler) GetZones() http.Handler {
 
 		response.JSONAndCache(h.mc, w, cacheKey, zones)
 	})
+}
+
+// UpdateZone updates an event's zone.
+func (h *Handler) UpdateZone() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		routerParams := httprouter.ParamsFromContext(ctx)
+		eventID := routerParams.ByName("id")
+		if err := ulid.Validate(eventID); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		name := strings.ToLower(routerParams.ByName("name"))
+
+		sqlTx := h.service.BeginSQLTx(ctx, false)
+		defer sqlTx.Rollback()
+
+		if err := h.requirePermissions(ctx, r, sqlTx, eventID, permissions.ModifyRoles); err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		var zone zone.UpdateZone
+		if err := json.NewDecoder(r.Body).Decode(&zone); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		defer r.Body.Close()
+
+		if err := zone.Validate(); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		if err := h.service.UpdateZone(ctx, sqlTx, eventID, name, zone); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		if err := sqlTx.Commit(); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		response.JSON(w, http.StatusOK, zone)
+	}
 }

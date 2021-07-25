@@ -127,10 +127,10 @@ func (s *service) GetUserRole(ctx context.Context, sqlTx *sql.Tx, eventID, userI
 	return s.roleService.GetUserRole(ctx, sqlTx, eventID, userID)
 }
 
-// GetZoneByName returns the permission keys required to enter a zone.
-func (s *service) GetZoneByName(ctx context.Context, sqlTx *sql.Tx, eventID, name string) (zone.Zone, error) {
-	s.metrics.incMethodCalls("GetZoneByName")
-	return s.zoneService.GetZoneByName(ctx, sqlTx, eventID, name)
+// GetZone returns the permission keys required to enter a zone.
+func (s *service) GetZone(ctx context.Context, sqlTx *sql.Tx, eventID, name string) (zone.Zone, error) {
+	s.metrics.incMethodCalls("GetZone")
+	return s.zoneService.GetZone(ctx, sqlTx, eventID, name)
 }
 
 // GetZones gets an event's zones.
@@ -179,6 +179,12 @@ func (s *service) UpdateProduct(ctx context.Context, sqlTx *sql.Tx, eventID stri
 func (s *service) UpdateRole(ctx context.Context, sqlTx *sql.Tx, eventID, name string, role role.UpdateRole) error {
 	s.metrics.incMethodCalls("UpdateRole")
 	return s.roleService.UpdateRole(ctx, sqlTx, eventID, name, role)
+}
+
+// UpdateZone sets new values for an event's zone.
+func (s service) UpdateZone(ctx context.Context, sqlTx *sql.Tx, eventID, name string, updateZone zone.UpdateZone) error {
+	s.metrics.incMethodCalls("UpdateZone")
+	return s.zoneService.UpdateZone(ctx, sqlTx, eventID, name, updateZone)
 }
 
 // UserHasRole returns if the user has a role inside the event or not.

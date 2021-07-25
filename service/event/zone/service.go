@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/GGP1/groove/internal/bufferpool"
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/pkg/errors"
 )
@@ -12,8 +13,9 @@ import (
 type Service interface {
 	CreateZone(ctx context.Context, sqlTx *sql.Tx, eventID string, zone Zone) error
 	DeleteZone(ctx context.Context, sqlTx *sql.Tx, eventID, name string) error
-	GetZoneByName(ctx context.Context, sqlTx *sql.Tx, eventID, name string) (Zone, error)
+	GetZone(ctx context.Context, sqlTx *sql.Tx, eventID, name string) (Zone, error)
 	GetZones(ctx context.Context, sqlTx *sql.Tx, eventID string) ([]Zone, error)
+	UpdateZone(ctx context.Context, sqlTx *sql.Tx, eventID, name string, updateZone UpdateZone) error
 }
 
 type service struct {
@@ -53,7 +55,7 @@ func (s service) DeleteZone(ctx context.Context, sqlTx *sql.Tx, eventID, name st
 }
 
 // GetZoneByName returns the permission keys required to enter a zone.
-func (s service) GetZoneByName(ctx context.Context, sqlTx *sql.Tx, eventID, name string) (Zone, error) {
+func (s service) GetZone(ctx context.Context, sqlTx *sql.Tx, eventID, name string) (Zone, error) {
 	q := "SELECT name, required_permission_keys FROM events_zones WHERE event_id=$1 AND name=$2"
 	row := sqlTx.QueryRowContext(ctx, q, eventID, name)
 
@@ -90,4 +92,38 @@ func (s service) GetZones(ctx context.Context, sqlTx *sql.Tx, eventID string) ([
 	}
 
 	return zones, nil
+}
+
+// UpdateZone sets new values for an event's zone.
+func (s service) UpdateZone(ctx context.Context, sqlTx *sql.Tx, eventID, name string, updateZone UpdateZone) error {
+	buf := bufferpool.Get()
+	buf.WriteString("UPDATE events_zones SET")
+
+	if updateZone.RequiredPermissionKeys != nil {
+		buf.WriteString(" required_permission_keys='")
+		buf.WriteString("'{")
+		for i, key := range *updateZone.RequiredPermissionKeys {
+			if i != 0 {
+				buf.WriteByte(',')
+			}
+			buf.WriteByte('"')
+			buf.WriteString(key)
+			buf.WriteByte('"')
+		}
+		buf.WriteString("}'")
+	}
+
+	buf.WriteString(" WHERE event_id='")
+	buf.WriteString(eventID)
+	buf.WriteByte('\'')
+	buf.WriteString("AND name='")
+	buf.WriteString(name)
+	buf.WriteByte('\'')
+
+	if _, err := sqlTx.ExecContext(ctx, buf.String()); err != nil {
+		return errors.Wrap(err, "updating role")
+	}
+
+	bufferpool.Put(buf)
+	return nil
 }
