@@ -252,6 +252,37 @@ func (h *Handler) DeleteRole() http.HandlerFunc {
 	}
 }
 
+// GetPermission returns a permission from an event with the given key.
+func (h *Handler) GetPermission() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		routerParams := httprouter.ParamsFromContext(ctx)
+		eventID := routerParams.ByName("id")
+		if err := ulid.Validate(eventID); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		key := strings.ToLower(routerParams.ByName("key"))
+
+		sqlTx := h.service.BeginSQLTx(ctx, true)
+		defer sqlTx.Rollback()
+
+		if err := h.requirePermissions(ctx, r, sqlTx, eventID, permissions.ModifyPermissions); err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		permission, err := h.service.GetPermission(ctx, sqlTx, eventID, key)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		response.JSON(w, http.StatusOK, permission)
+	}
+}
+
 // GetPermissions retrives all event's permissions.
 func (h *Handler) GetPermissions() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -278,6 +309,72 @@ func (h *Handler) GetPermissions() http.HandlerFunc {
 		}
 
 		permissions, err := h.service.GetPermissions(ctx, sqlTx, eventID)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		response.JSONAndCache(h.mc, w, cacheKey, permissions)
+	}
+}
+
+// GetRole returns a role from an event with the given name.
+func (h *Handler) GetRole() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		routerParams := httprouter.ParamsFromContext(ctx)
+		eventID := routerParams.ByName("id")
+		if err := ulid.Validate(eventID); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		name := strings.ToLower(routerParams.ByName("name"))
+
+		sqlTx := h.service.BeginSQLTx(ctx, true)
+		defer sqlTx.Rollback()
+
+		if err := h.requirePermissions(ctx, r, sqlTx, eventID, permissions.ModifyRoles); err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		role, err := h.service.GetRole(ctx, sqlTx, eventID, name)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		response.JSON(w, http.StatusOK, role)
+	}
+}
+
+// GetRoles retrives all event's roles.
+func (h *Handler) GetRoles() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		eventID, err := params.IDFromCtx(ctx)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		cacheKey := eventID + "_roles"
+		if item, err := h.mc.Get(cacheKey); err == nil {
+			response.EncodedJSON(w, item.Value)
+			return
+		}
+
+		sqlTx := h.service.BeginSQLTx(ctx, true)
+		defer sqlTx.Rollback()
+
+		if err := h.requirePermissions(ctx, r, sqlTx, eventID, permissions.ModifyRoles); err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		permissions, err := h.service.GetRoles(ctx, sqlTx, eventID)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -325,41 +422,6 @@ func (h *Handler) GetUserRole() http.HandlerFunc {
 		}
 
 		response.JSON(w, http.StatusOK, role)
-	}
-}
-
-// GetRoles retrives all event's roles.
-func (h *Handler) GetRoles() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-
-		eventID, err := params.IDFromCtx(ctx)
-		if err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		cacheKey := eventID + "_roles"
-		if item, err := h.mc.Get(cacheKey); err == nil {
-			response.EncodedJSON(w, item.Value)
-			return
-		}
-
-		sqlTx := h.service.BeginSQLTx(ctx, true)
-		defer sqlTx.Rollback()
-
-		if err := h.requirePermissions(ctx, r, sqlTx, eventID, permissions.ModifyRoles); err != nil {
-			response.Error(w, http.StatusForbidden, err)
-			return
-		}
-
-		permissions, err := h.service.GetRoles(ctx, sqlTx, eventID)
-		if err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-
-		response.JSONAndCache(h.mc, w, cacheKey, permissions)
 	}
 }
 

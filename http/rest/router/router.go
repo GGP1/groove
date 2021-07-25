@@ -166,6 +166,7 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 			{
 				permissions.use(requireLogin)
 				permissions.get("/", events.GetPermissions())
+				permissions.get("/:key", events.GetPermission())
 				permissions.post("/clone", events.ClonePermissions())
 				permissions.post("/create", events.CreatePermission())
 				permissions.delete("/delete/:key", events.DeletePermission())
@@ -186,6 +187,7 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 			{
 				roles.use(requireLogin)
 				roles.get("/", events.GetRoles())
+				roles.get("/:name", events.GetRole())
 				roles.post("/clone", events.CloneRoles())
 				roles.post("/create", events.CreateRole())
 				roles.delete("/delete/:name", events.DeleteRole())

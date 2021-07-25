@@ -20,6 +20,7 @@ type Service interface {
 	CreateRole(ctx context.Context, sqlTx *sql.Tx, eventID string, role Role) error
 	DeletePermission(ctx context.Context, sqlTx *sql.Tx, eventID, key string) error
 	DeleteRole(ctx context.Context, sqlTx *sql.Tx, eventID, name string) error
+	GetPermission(ctx context.Context, sqlTx *sql.Tx, eventID, key string) (Permission, error)
 	GetPermissions(ctx context.Context, sqlTx *sql.Tx, eventID string) ([]Permission, error)
 	GetRole(ctx context.Context, sqlTx *sql.Tx, eventID, name string) (Role, error)
 	GetRoles(ctx context.Context, sqlTx *sql.Tx, eventID string) ([]Role, error)
@@ -159,6 +160,22 @@ func (s service) DeleteRole(ctx context.Context, sqlTx *sql.Tx, eventID, name st
 		return errors.Wrap(err, "deleting role")
 	}
 	return nil
+}
+
+// GetPermission returns a permission from an event with the given key.
+func (s service) GetPermission(ctx context.Context, sqlTx *sql.Tx, eventID, key string) (Permission, error) {
+	q := "SELECT name, description, created_at FROM events_permissions WHERE event_id=$1 AND key=$2"
+	row := sqlTx.QueryRowContext(ctx, q, eventID, key)
+
+	permission := Permission{Key: key}
+	if err := row.Scan(&permission.Name, &permission.Description, &permission.CreatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return Permission{}, errors.Errorf("permission with key %q in event %q does not exists", key, eventID)
+		}
+		return Permission{}, errors.Wrap(err, "scanning permission")
+	}
+
+	return permission, nil
 }
 
 // GetPermissions returns all event's permissions.

@@ -91,6 +91,12 @@ func (s *service) GetMedia(ctx context.Context, sqlTx *sql.Tx, eventID string, p
 	return s.mediaService.GetMedia(ctx, sqlTx, eventID, params)
 }
 
+// GetPermission a permission from an event with the given key.
+func (s *service) GetPermission(ctx context.Context, sqlTx *sql.Tx, eventID, key string) (role.Permission, error) {
+	s.metrics.incMethodCalls("GetPermission")
+	return s.roleService.GetPermission(ctx, sqlTx, eventID, key)
+}
+
 // GetPermissions returns all event's permissions.
 func (s *service) GetPermissions(ctx context.Context, sqlTx *sql.Tx, eventID string) ([]role.Permission, error) {
 	s.metrics.incMethodCalls("GetPermissions")
