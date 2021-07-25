@@ -60,10 +60,8 @@ type UpdateRole struct {
 
 // Validate validates update roles fields.
 func (r UpdateRole) Validate() error {
-	if r.PermissionKeys != nil {
-		if len(*r.PermissionKeys) == 0 {
-			return errors.New("permission_keys required")
-		}
+	if r.PermissionKeys == nil || len(*r.PermissionKeys) == 0 {
+		return errors.New("permission_keys required")
 	}
 	return nil
 }
