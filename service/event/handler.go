@@ -945,6 +945,40 @@ func (h *Handler) Update() http.HandlerFunc {
 	}
 }
 
+// UserJoin ..
+func (h *Handler) UserJoin() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		eventID, err := params.IDFromCtx(ctx)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		session, err := auth.GetSession(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		sqlTx := h.service.BeginSQLTx(ctx, false)
+		defer sqlTx.Rollback()
+
+		if err := h.service.UserJoin(ctx, sqlTx, eventID, session.ID); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		if err := sqlTx.Commit(); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		response.JSONMessage(w, http.StatusOK, "Joined event")
+	}
+}
+
 // privacyFilter lets through only users that can fetch the event data if it's private,
 // if it's public it lets anyone in.
 func (h *Handler) privacyFilter(ctx context.Context, r *http.Request, tx *sql.Tx, eventID string) error {

@@ -16,6 +16,7 @@ var ReservedRoles = romap.New(map[string]interface{}{
 	Host:      []string{permissions.All},
 	Attendant: []string{permissions.Access},
 	Moderator: []string{permissions.Access, permissions.BanUsers},
+	Viewer:    []string{permissions.ViewEvent},
 })
 
 const (
@@ -25,6 +26,8 @@ const (
 	Attendant = "attendant"
 	// Moderator is in charge of banning problematic users
 	Moderator = "moderator"
+	// Viewer can see the content's of an event's page
+	Viewer = "viewer"
 )
 
 // Role represents a set of permissions inside the event.

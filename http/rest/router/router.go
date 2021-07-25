@@ -112,6 +112,7 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 			id.delete("/delete", events.Delete(), requireLogin)
 			id.get("/hosts", events.GetHosts())
 			id.put("/update", events.Update(), requireLogin)
+			id.get("/join", events.UserJoin(), requireLogin)
 
 			// /events/:id/bans
 			bans := id.group("/bans")

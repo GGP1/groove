@@ -19,6 +19,7 @@ var ReservedKeys = romap.New(map[string]interface{}{
 	InviteUsers:       struct{}{},
 	SetUserRole:       struct{}{},
 	UpdateEvent:       struct{}{},
+	ViewEvent:         struct{}{},
 })
 
 // Pre-defined permission key.
@@ -34,6 +35,7 @@ const (
 	ModifyZones       = "modify_zones"
 	SetUserRole       = "set_user_role"
 	UpdateEvent       = "update_event"
+	ViewEvent         = "view_event"
 )
 
 // Require makes sure the user has all the permissions required.

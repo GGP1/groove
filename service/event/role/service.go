@@ -12,9 +12,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-// TODO: Use users sets instead of cloning roles and permissions?
-// Reference the cloned values instead of copying all the data?
-
 // Service interface for the roles service.
 type Service interface {
 	ClonePermissions(ctx context.Context, sqlTx *sql.Tx, exporterEventID, importerEventID string) error
@@ -29,6 +26,7 @@ type Service interface {
 	GetUserRole(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) (Role, error)
 	IsHost(ctx context.Context, sqlTx *sql.Tx, userID string, eventIDs ...string) (bool, error)
 	SetRoles(ctx context.Context, sqlTx *sql.Tx, eventID, roleName string, userIDs ...string) error
+	SetViewerRole(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) error
 	UpdatePermission(ctx context.Context, sqlTx *sql.Tx, eventID string, permission UpdatePermission) error
 	UpdateRole(ctx context.Context, sqlTx *sql.Tx, eventID string, role UpdateRole) error
 	UserHasRole(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) (bool, error)
@@ -282,9 +280,33 @@ func (s service) IsHost(ctx context.Context, sqlTx *sql.Tx, userID string, event
 
 // SetRoles assigns a role to n users inside an event.
 func (s service) SetRoles(ctx context.Context, sqlTx *sql.Tx, eventID, roleName string, userIDs ...string) error {
-	q := "INSERT INTO events_users_roles (event_id, user_id, role_name) VALUES"
-	insert := postgres.BulkInsertRoles(q, eventID, roleName, userIDs)
+	public, err := postgres.QueryBool(ctx, sqlTx, "SELECT public FROM events WHERE id=$1", eventID)
+	if err != nil {
+		return err
+	}
 
+	if !public {
+		// Verify that the users already have a role before assigning them other (ensuring they already take part in the event).
+		// The only exception is the creator's host role or when the event is public.
+		q1 := "SELECT EXISTS(SELECT 1 FROM events_users_roles WHERE event_id=$1 AND user_id=$2)"
+		stmt, err := sqlTx.PrepareContext(ctx, q1)
+		if err != nil {
+			return errors.Wrap(err, "prepraring statement")
+		}
+
+		var hasRole bool // Will be overwritten on each iteration
+		for _, userID := range userIDs {
+			if err := stmt.QueryRowContext(ctx, eventID, userID).Scan(&hasRole); err != nil {
+				return err
+			}
+			if !hasRole {
+				return errors.Errorf("user %q is not part of the event %q", userID, eventID)
+			}
+		}
+	}
+
+	q2 := "INSERT INTO events_users_roles (event_id, user_id, role_name) VALUES"
+	insert := postgres.BulkInsertRoles(q2, eventID, roleName, userIDs)
 	if _, err := sqlTx.ExecContext(ctx, insert); err != nil {
 		return errors.Wrap(err, "setting roles")
 	}
@@ -292,7 +314,17 @@ func (s service) SetRoles(ctx context.Context, sqlTx *sql.Tx, eventID, roleName 
 	return nil
 }
 
-// UpdatePemission ..
+// SetViewerRole assigns the viewer role to a user.
+func (s service) SetViewerRole(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) error {
+	q := "INSERT INTO events_users_roles (event_id, user_id, role_name) VALUES ($1, $2, $3)"
+	if _, err := sqlTx.ExecContext(ctx, q, eventID, userID, Viewer); err != nil {
+		return errors.Wrap(err, "setting viewer role")
+	}
+
+	return nil
+}
+
+// UpdatePemission sets new values for a permission.
 func (s service) UpdatePermission(ctx context.Context, sqlTx *sql.Tx, eventID string, permission UpdatePermission) error {
 	buf := bufferpool.Get()
 	buf.WriteString("UPDATE events_roles SET")

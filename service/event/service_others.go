@@ -145,6 +145,12 @@ func (s *service) SetRoles(ctx context.Context, sqlTx *sql.Tx, eventID, roleName
 	return s.roleService.SetRoles(ctx, sqlTx, eventID, roleName, userIDs...)
 }
 
+// SetViewerRole assigns the viewer role to a user.
+func (s service) SetViewerRole(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) error {
+	s.metrics.incMethodCalls("SetViewerRole")
+	return s.roleService.SetViewerRole(ctx, sqlTx, eventID, userID)
+}
+
 // UpdateMedia updates event's media.
 func (s *service) UpdateMedia(ctx context.Context, sqlTx *sql.Tx, eventID string, media media.Media) error {
 	s.metrics.incMethodCalls("UpdateMedia")

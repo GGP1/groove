@@ -48,6 +48,7 @@ type Service interface {
 	Search(ctx context.Context, query string, params params.Query) ([]Event, error)
 	SQLTx(ctx context.Context, readOnly bool, f func(tx *sql.Tx) (int, error)) (int, error)
 	Update(ctx context.Context, sqlTx *sql.Tx, eventID string, event UpdateEvent) error
+	UserJoin(ctx context.Context, tx *sql.Tx, eventID, userID string) error
 
 	media.Service
 	product.Service
@@ -180,20 +181,23 @@ func (s *service) Create(ctx context.Context, eventID string, event CreateEvent)
 		return errors.Wrap(err, "creating event")
 	}
 
-	// Create host and attendant roles
+	// Create host, attendant and viewer roles
 	q2 := `INSERT INTO events_roles 
 	(event_id, name, permission_keys) 
 	VALUES 
-	($1, $2, $3), ($1, $4, $5)`
-	_, err = sqlTx.ExecContext(ctx, q2, eventID, role.Host, pq.StringArray{permissions.All},
-		role.Attendant, pq.StringArray{permissions.Access})
+	($1, $2, $3), ($1, $4, $5), ($1, $6, $7)`
+	_, err = sqlTx.ExecContext(ctx, q2, eventID,
+		role.Host, pq.StringArray{permissions.All},
+		role.Attendant, pq.StringArray{permissions.Access},
+		role.Viewer, pq.StringArray{permissions.ViewEvent},
+	)
 	if err != nil {
-		return errors.Wrap(err, "setting role")
+		return errors.Wrap(err, "creating event roles")
 	}
 
 	q3 := "INSERT INTO events_users_roles (event_id, user_id, role_name) VALUES ($1, $2, $3)"
 	if _, err := sqlTx.ExecContext(ctx, q3, eventID, event.HostID, role.Host); err != nil {
-		return errors.Wrap(err, "setting user role")
+		return errors.Wrap(err, "setting host role")
 	}
 
 	q4 := `INSERT INTO events_locations 
@@ -571,6 +575,22 @@ func (s *service) Update(ctx context.Context, sqlTx *sql.Tx, eventID string, eve
 	}
 
 	return nil
+}
+
+// UserJoin joins a user to a private event and sets it the role of viewer.
+func (s *service) UserJoin(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) error {
+	s.metrics.incMethodCalls("UserJoin")
+
+	users, err := s.GetInvited(ctx, sqlTx, eventID, params.Query{LookupID: userID})
+	if err != nil {
+		return err
+	}
+
+	if users == nil {
+		return errors.Errorf("user %q is not invited to the event %q", userID, eventID)
+	}
+
+	return s.SetViewerRole(ctx, sqlTx, eventID, userID)
 }
 
 // queryUsers returns the users found in the dgraph query passed.
