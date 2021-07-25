@@ -20,7 +20,6 @@ func (h *Handler) ClonePermissions() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		// TODO: let user clone specific keys (same with roles)
 		var req struct {
 			ExporterEventID string `json:"exporter_event_id,omitempty"`
 		}
@@ -79,7 +78,6 @@ func (h *Handler) CloneRoles() http.HandlerFunc {
 
 		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
 			// Verify that the user is a host in both events
-			// TODO: find a way to call requirePermissions just once
 			if err := h.requirePermissions(ctx, r, tx, req.ExporterEventID, permissions.ModifyRoles); err != nil {
 				return http.StatusForbidden, err
 			}
