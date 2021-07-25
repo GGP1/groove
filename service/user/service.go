@@ -543,16 +543,16 @@ func (s *service) getEventsEdge(ctx context.Context, userID string, query query,
 	vars := dgraph.QueryVars(userID, params)
 	res, err := s.dc.NewReadOnlyTxn().QueryRDFWithVars(ctx, getQuery[query], vars)
 	if err != nil {
-		return nil, errors.Wrap(err, "dgraph: fetching events")
+		return nil, errors.Wrap(err, "dgraph: fetching event ids")
 	}
 
-	ids := dgraph.ParseRDFULIDs(res.Rdf)
-	if len(ids) == 0 {
+	eventIDs := dgraph.ParseRDFULIDs(res.Rdf)
+	if len(eventIDs) == 0 {
 		return nil, nil
 	}
 
-	pgQ := postgres.SelectInID(postgres.Events, ids, params.Fields)
-	rows, err := s.db.QueryContext(ctx, pgQ)
+	q := postgres.SelectInID(postgres.Events, eventIDs, params.Fields)
+	rows, err := s.db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, errors.Wrap(err, "postgres: fetching events")
 	}
@@ -569,15 +569,15 @@ func (s *service) getUsersEdge(ctx context.Context, userID string, query query, 
 	vars := dgraph.QueryVars(userID, params)
 	res, err := s.dc.NewReadOnlyTxn().QueryRDFWithVars(ctx, getQuery[query], vars)
 	if err != nil {
-		return nil, errors.Wrap(err, "fetching users from dgraph")
+		return nil, errors.Wrap(err, "dgraph: fetching user ids")
 	}
 
-	usersIds := dgraph.ParseRDFULIDs(res.Rdf)
-	if len(usersIds) == 0 {
+	userIDs := dgraph.ParseRDFULIDs(res.Rdf)
+	if len(userIDs) == 0 {
 		return nil, nil
 	}
 
-	q := postgres.SelectInID(postgres.Users, usersIds, params.Fields)
+	q := postgres.SelectInID(postgres.Users, userIDs, params.Fields)
 	rows, err := s.db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, errors.Wrap(err, "postgres: fetching users")
