@@ -8,11 +8,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event/role"
 	"github.com/GGP1/groove/test"
 
 	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -96,6 +98,30 @@ func TestGetPermissions(t *testing.T) {
 
 		assert.Equal(t, expectedKey, permissions[0].Key)
 	})
+
+	t.Run("UpdatePermission", func(t *testing.T) {
+		name := "update_permission"
+		uptPermission := role.UpdatePermission{
+			Name: &name,
+		}
+		err := roleSv.UpdatePermission(ctx, sqlTx, eventID, expectedKey, uptPermission)
+		assert.NoError(t, err)
+
+		permissions, err := roleSv.GetPermissions(ctx, sqlTx, eventID)
+		assert.NoError(t, err)
+
+		assert.Equal(t, name, permissions[0].Name)
+	})
+
+	t.Run("DeletePermission", func(t *testing.T) {
+		err := roleSv.DeletePermission(ctx, sqlTx, eventID, expectedKey)
+		assert.NoError(t, err)
+
+		permissions, err := roleSv.GetPermissions(ctx, sqlTx, eventID)
+		assert.NoError(t, err)
+
+		assert.Equal(t, 0, len(permissions))
+	})
 }
 
 func TestRoles(t *testing.T) {
@@ -110,22 +136,30 @@ func TestRoles(t *testing.T) {
 	err = createEvent(ctx, eventID, "roles")
 	assert.NoError(t, err)
 
-	expectedRole := role.Attendant
-	expectedPermKeys := map[string]struct{}{
-		"invite_users": {},
+	expectedRole := role.Role{
+		Name:           role.Attendant,
+		PermissionKeys: pq.StringArray{permissions.InviteUsers},
 	}
 
 	t.Run("CreateRole", func(t *testing.T) {
-		role := role.Role{
-			Name:           expectedRole,
-			PermissionKeys: expectedPermKeys,
-		}
-		err = roleSv.CreateRole(ctx, sqlTx, eventID, role)
+		err = roleSv.CreateRole(ctx, sqlTx, eventID, expectedRole)
 		assert.NoError(t, err)
 	})
 
+	t.Run("DeleteRole", func(t *testing.T) {
+		name := "delete"
+		err := roleSv.CreateRole(ctx, sqlTx, eventID, role.Role{Name: name, PermissionKeys: pq.StringArray{"abc"}})
+		assert.NoError(t, err)
+
+		err = roleSv.DeleteRole(ctx, sqlTx, eventID, name)
+		assert.NoError(t, err)
+
+		_, err = roleSv.GetRole(ctx, sqlTx, eventID, name)
+		assert.Error(t, err)
+	})
+
 	t.Run("SetRoles", func(t *testing.T) {
-		err = roleSv.SetRoles(ctx, sqlTx, eventID, expectedRole, userID)
+		err = roleSv.SetRoles(ctx, sqlTx, eventID, expectedRole.Name, userID)
 		assert.NoError(t, err)
 	})
 
@@ -134,14 +168,14 @@ func TestRoles(t *testing.T) {
 		assert.NoError(t, err)
 
 		assert.Equal(t, 1, len(roles))
-		assert.Equal(t, expectedRole, roles[0].Name)
+		assert.Equal(t, expectedRole, roles[0])
 	})
 
 	t.Run("GetRole", func(t *testing.T) {
-		role, err := roleSv.GetRole(ctx, sqlTx, eventID, expectedRole)
+		role, err := roleSv.GetRole(ctx, sqlTx, eventID, expectedRole.Name)
 		assert.NoError(t, err)
 
-		assert.Equal(t, expectedPermKeys, role.PermissionKeys)
+		assert.Equal(t, expectedRole, role)
 	})
 
 	t.Run("GetUserRole", func(t *testing.T) {
@@ -150,10 +184,32 @@ func TestRoles(t *testing.T) {
 
 		assert.Equal(t, expectedRole, gotRole)
 	})
-}
 
-func TestUserHasRole(t *testing.T) {
+	t.Run("SetViewerRole", func(t *testing.T) {
+		err := roleSv.SetViewerRole(ctx, sqlTx, eventID, userID)
+		assert.NoError(t, err)
 
+		gotRole, err := roleSv.GetUserRole(ctx, sqlTx, eventID, userID)
+		assert.NoError(t, err)
+
+		assert.Equal(t, role.Viewer, gotRole.Name)
+	})
+
+	t.Run("UserHasRole", func(t *testing.T) {
+		t.Run("True", func(t *testing.T) {
+			ok, err := roleSv.UserHasRole(ctx, sqlTx, eventID, userID)
+			assert.NoError(t, err)
+
+			assert.True(t, ok)
+		})
+
+		t.Run("False", func(t *testing.T) {
+			ok, err := roleSv.UserHasRole(ctx, sqlTx, eventID, ulid.NewString())
+			assert.NoError(t, err)
+
+			assert.False(t, ok)
+		})
+	})
 }
 
 func createEvent(ctx context.Context, id, name string) error {

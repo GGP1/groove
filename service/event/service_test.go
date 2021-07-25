@@ -17,6 +17,7 @@ import (
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/dgraph-io/dgo/v210"
+	"github.com/dgraph-io/dgo/v210/protos/api"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -189,11 +190,52 @@ func TestCanInvite(t *testing.T) {
 	err = test.CreateUser(ctx, db, dc, invitedID, "can_invite2@email.com", "can_invite2", "1")
 	assert.NoError(t, err)
 
-	// TODO: test scenarios where the invited user has nobody and mutual_follow settings
-	ok, err := eventSv.CanInvite(ctx, sqlTx, userID, invitedID)
-	assert.NoError(t, err)
+	t.Run("Anyone", func(t *testing.T) {
+		// Anyone is the default setting
+		ok, err := eventSv.CanInvite(ctx, sqlTx, userID, invitedID)
+		assert.NoError(t, err)
 
-	assert.True(t, ok)
+		assert.True(t, ok)
+	})
+
+	t.Run("Mutual follow", func(t *testing.T) {
+		_, err := sqlTx.Exec("UPDATE users SET invitations='mutual_follow' WHERE id=$1", invitedID)
+		assert.NoError(t, err)
+
+		vars := map[string]string{"$follower_id": userID, "$followed_id": invitedID}
+		query := `query q($follower_id: string, $followed_id: string) {
+		follower as var(func: eq(user_id, $follower_id))
+		followed as var(func: eq(user_id, $followed_id))
+	}`
+		mu := &api.Mutation{
+			Cond: "@if(eq(len(follower), 1) AND eq(len(followed), 1))",
+			SetNquads: []byte(`uid(follower) <following> uid(followed) .
+		uid(followed) <follwiing> uid(follower) .`),
+		}
+		req := &api.Request{
+			Query:     query,
+			Vars:      vars,
+			Mutations: []*api.Mutation{mu},
+			CommitNow: true,
+		}
+		_, err = dc.NewTxn().Do(ctx, req)
+		assert.NoError(t, err)
+
+		ok, err := eventSv.CanInvite(ctx, sqlTx, userID, invitedID)
+		assert.NoError(t, err)
+
+		assert.True(t, ok)
+	})
+
+	t.Run("Nobody", func(t *testing.T) {
+		_, err := sqlTx.Exec("UPDATE users SET invitations='nobody' WHERE id=$1", invitedID)
+		assert.NoError(t, err)
+
+		ok, err := eventSv.CanInvite(ctx, sqlTx, userID, invitedID)
+		assert.NoError(t, err)
+
+		assert.False(t, ok)
+	})
 }
 
 func TestCreate(t *testing.T) {
