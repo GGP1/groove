@@ -113,6 +113,14 @@ func (h *Handler) AddConfirmed() http.HandlerFunc {
 				return http.StatusForbidden, errors.New("the user is not invited to the event")
 			}
 
+			availableSlots, err := h.service.AvailableSlots(ctx, tx, eventID)
+			if err != nil {
+				return http.StatusInternalServerError, err
+			}
+			if availableSlots < 1 {
+				return http.StatusForbidden, errors.New("there are no slots available")
+			}
+
 			if err := h.service.AddEdge(ctx, eventID, Confirmed, reqBody.UserID); err != nil {
 				return http.StatusInternalServerError, err
 			}
@@ -961,7 +969,7 @@ func (h *Handler) Update() http.HandlerFunc {
 	}
 }
 
-// UserJoin ..
+// UserJoin joins a user to a private event and sets it the viewer role.
 func (h *Handler) UserJoin() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -979,9 +987,9 @@ func (h *Handler) UserJoin() http.HandlerFunc {
 		}
 
 		sqlTx := h.service.BeginSQLTx(ctx, false)
-		defer sqlTx.Rollback()
 
 		if err := h.service.UserJoin(ctx, sqlTx, eventID, session.ID); err != nil {
+			_ = sqlTx.Rollback()
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}

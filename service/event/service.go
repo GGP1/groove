@@ -25,14 +25,15 @@ import (
 // Service represents the event service.
 type Service interface {
 	AddEdge(ctx context.Context, eventID string, predicate predicate, userID string) error
+	AvailableSlots(ctx context.Context, sqlTx *sql.Tx, eventID string) (int64, error)
 	BeginSQLTx(ctx context.Context, readOnly bool) *sql.Tx
 	CanInvite(ctx context.Context, sqlTx *sql.Tx, userID, invitedID string) (bool, error)
 	Create(ctx context.Context, eventID string, event CreateEvent) error
 	Delete(ctx context.Context, sqlTx *sql.Tx, eventID string) error
-	GetByID(ctx context.Context, sqlTx *sql.Tx, eventID string) (Event, error)
 	GetBanned(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]User, error)
 	GetBannedCount(ctx context.Context, eventID string) (*uint64, error)
 	GetBannedFriends(ctx context.Context, sqlTx *sql.Tx, eventID, userID string, params params.Query) ([]User, error)
+	GetByID(ctx context.Context, sqlTx *sql.Tx, eventID string) (Event, error)
 	GetConfirmed(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]User, error)
 	GetConfirmedCount(ctx context.Context, eventID string) (*uint64, error)
 	GetConfirmedFriends(ctx context.Context, sqlTx *sql.Tx, eventID, userID string, params params.Query) ([]User, error)
@@ -103,6 +104,25 @@ func (s *service) AddEdge(ctx context.Context, eventID string, predicate predica
 	}
 
 	return nil
+}
+
+// AvailableSlots returns an even'ts number of slots available.
+func (s *service) AvailableSlots(ctx context.Context, sqlTx *sql.Tx, eventID string) (int64, error) {
+	s.metrics.incMethodCalls("AvailableSlots")
+
+	q := "SELECT slots FROM events WHERE id=$1"
+	row := sqlTx.QueryRowContext(ctx, q, eventID)
+	var slots uint64
+	if err := row.Scan(&slots); err != nil {
+		return 0, errors.Wrap(err, "scanning slots")
+	}
+
+	confirmedCount, err := s.GetConfirmedCount(ctx, eventID)
+	if err != nil {
+		return 0, err
+	}
+
+	return int64(slots - *confirmedCount), nil
 }
 
 // BeginSQLTx starts and returns a new postgres transaction, if the connection fails it panics.
@@ -576,16 +596,24 @@ func (s *service) Update(ctx context.Context, sqlTx *sql.Tx, eventID string, eve
 	return nil
 }
 
-// UserJoin joins a user to a private event and sets it the role of viewer.
+// UserJoin joins a user to a private event and sets it the viewer role.
 func (s *service) UserJoin(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) error {
 	s.metrics.incMethodCalls("UserJoin")
 
-	users, err := s.GetInvited(ctx, sqlTx, eventID, params.Query{LookupID: userID})
+	isPublic, err := s.IsPublic(ctx, sqlTx, eventID)
+	if err != nil {
+		return err
+	}
+	if isPublic {
+		return errors.Errorf("event %q is public, cannot join", eventID)
+	}
+
+	invited, err := s.GetInvited(ctx, sqlTx, eventID, params.Query{LookupID: userID})
 	if err != nil {
 		return err
 	}
 
-	if users == nil {
+	if invited == nil {
 		return errors.Errorf("user %q is not invited to the event %q", userID, eventID)
 	}
 
