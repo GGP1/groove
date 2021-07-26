@@ -138,42 +138,32 @@ func TestDelete(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestFollow(t *testing.T) {
+func TestAddFriend(t *testing.T) {
 	ctx := context.Background()
 	userID := ulid.NewString()
-	followedID := ulid.NewString()
+	friendID := ulid.NewString()
 
-	err := test.CreateUser(ctx, db, dc, userID, "follow1@email.com", "follow1", "1")
+	err := test.CreateUser(ctx, db, dc, userID, "friend@email.com", "friend", "1")
 	assert.NoError(t, err)
-	err = test.CreateUser(ctx, db, dc, followedID, "follow2@email.com", "follow2", "2")
-	assert.NoError(t, err)
-
-	err = userSv.Follow(context.Background(), userID, followedID)
+	err = test.CreateUser(ctx, db, dc, friendID, "friend2@email.com", "friend2", "2")
 	assert.NoError(t, err)
 
-	// Test if we receive the followed user
-	following, err := userSv.GetFollowing(ctx, userID, params.Query{LookupID: followedID})
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(following))
-	assert.Equal(t, followedID, following[0].ID)
-
-	// Test if we receive the follower user
-	followers, err := userSv.GetFollowers(ctx, followedID, params.Query{LookupID: userID})
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(followers))
-	assert.Equal(t, userID, followers[0].ID)
-
-	// Remove follow and test again
-	err = userSv.Unfollow(ctx, userID, followedID)
+	err = userSv.AddFriend(context.Background(), userID, friendID)
 	assert.NoError(t, err)
 
-	following2, err := userSv.GetFollowing(ctx, userID, params.Query{LookupID: followedID})
+	// Test if we receive the friend user
+	friends, err := userSv.GetFriends(ctx, userID, params.Query{LookupID: friendID})
 	assert.NoError(t, err)
-	assert.Equal(t, 0, len(following2))
+	assert.Equal(t, 1, len(friends))
+	assert.Equal(t, friendID, friends[0].ID)
 
-	followers2, err := userSv.GetFollowers(ctx, followedID, params.Query{LookupID: userID})
+	// Remove friendship and test again
+	err = userSv.RemoveFriend(ctx, userID, friendID)
 	assert.NoError(t, err)
-	assert.Equal(t, 0, len(followers2))
+
+	friends2, err := userSv.GetFriends(ctx, userID, params.Query{LookupID: friendID})
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(friends2))
 }
 
 func TestGetBy(t *testing.T) {

@@ -15,12 +15,9 @@ const (
 	confirmed
 	confirmedLookup
 	confirmedCount
-	followedBy
-	followedByLookup
-	followedByCount
-	following
-	followingLookup
-	followingCount
+	friends
+	friendsLookup
+	friendsCount
 	invited
 	invitedLookup
 	invitedCount
@@ -109,40 +106,21 @@ var getQuery = map[query]string{
 			}
 		}
 	}`,
-	followedBy: `query q($id: string, $cursor: string, $limit: string) {
+	friends: `query q($id: string, $cursor: string, $limit: string) {
 		q(func: eq(user_id, $id)) {
-			~following (orderasc: user_id) (first: $limit, offset: $cursor) {
+			friend (orderasc: user_id) (first: $limit, offset: $cursor) {
 				user_id
 			}
 		}
 	}`,
-	followedByCount: `query q($id: string) {
+	friendsCount: `query q($id: string) {
 		q(func: eq(user_id, $id)) {
-			count(~following)
+			count(friend)
 		}
 	}`,
-	followedByLookup: `query q($id: string, $lookup_id: string) {
+	friendsLookup: `query q($id: string, $lookup_id: string) {
 		q(func: eq(user_id, $id)) {
-			~following @filter(eq(user_id, $lookup_id)) {
-				user_id
-			}
-		}
-	}`,
-	following: `query q($id: string, $cursor: string, $limit: string) {
-		q(func: eq(user_id, $id)) {
-			following (orderasc: user_id) (first: $limit, offset: $cursor) {
-				user_id
-			}
-		}
-	}`,
-	followingCount: `query q($id: string) {
-		q(func: eq(user_id, $id)) {
-			count(following)
-		}
-	}`,
-	followingLookup: `query q($id: string, $lookup_id: string) {
-		q(func: eq(user_id, $id)) {
-			following @filter(eq(user_id, $lookup_id)) {
+			friend @filter(eq(user_id, $lookup_id)) {
 				user_id
 			}
 		}
@@ -187,18 +165,12 @@ var getQuery = map[query]string{
 	}`,
 }
 
-// Blocked queries are not implemented as they information is irrelevant for the user that blocked them.
 const (
+	// Blocked queries are not implemented as they information is irrelevant for the user that blocked them.
 	_ mixedQuery = iota
-	// get users following user that follow target
-	followersFollowing
-	followersFollowingLookup
-	// get users followed by user that follow target
-	followingFollowing
-	followingFollowingLookup
-	// get users followed by both user and target
-	followingFollowers
-	followingFollowersLookup
+	// get users friends of user that are friends of target as well
+	friendsOfFriend
+	friendsOfFriendLookup
 )
 
 // mixedQuery looks for matches in two predicates (one from a user and one from an event) instead of one.
@@ -206,56 +178,20 @@ type mixedQuery uint8
 
 // getMixedQuery is a list with queries that check two predicates.
 var getMixedQuery = map[mixedQuery]string{
-	followersFollowing: `query q($user_id: string, $target_user_id: string) {
-		target as var(func: eq(user_id, $target_user_id))
-		
-		q(func: eq(user_id, $user_id)) {
-			~following @filter(uid_in(following, uid(target))) (orderasc: user_id) (first: $limit, offset: $cursor) {
-				user_id
-			}
-		}
-	}`,
-	followersFollowingLookup: `query q($user_id: string, $target_user_id: string, $lookup_id: string) {
-		target as var(func: eq(user_id, $target_user_id))
-		
-		q(func: eq(user_id, $user_id)) {
-			~following @filter(uid_in(following, uid(target)) AND (eq(user_id, $lookup_id))) {
-				user_id
-			}
-		}
-	}`,
-	followingFollowing: `query q($user_id: string, $target_user_id: string) {
+	friendsOfFriend: `query q($user_id: string, $target_user_id: string) {
 		target as var(func: eq(user_id, $target_user_id))
 
 		q(func: eq(user_id, $user_id)) {
-			following @filter(uid_in(following, uid(target))) (orderasc: user_id) (first: $limit, offset: $cursor) {
+			friend @filter(uid_in(friend, uid(target))) (orderasc: user_id) (first: $limit, offset: $cursor) {
 				user_id
 			}
 		}
 	}`,
-	followingFollowingLookup: `query q($user_id: string, $target_user_id: string, $lookup_id: string) {
+	friendsOfFriendLookup: `query q($user_id: string, $target_user_id: string, $lookup_id: string) {
 		target as var(func: eq(user_id, $target_user_id))
 
 		q(func: eq(user_id, $user_id)) {
-			following @filter(uid_in(following, uid(target)) AND (eq(user_id, $lookup_id))) {
-				user_id
-			}
-		}
-	}`,
-	followingFollowers: `query q($user_id: string, $target_user_id: string) {
-		target as var(func: eq(user_id, $target_user_id))
-		
-		q(func: eq(user_id, $user_id)) {
-			following @filter(uid_in(~following, uid(target))) (orderasc: user_id) (first: $limit, offset: $cursor) {
-				user_id
-			}
-		}
-	}`,
-	followingFollowersLookup: `query q($user_id: string, $target_user_id: string, $lookup_id: string) {
-		target as var(func: eq(user_id, $target_user_id))
-		
-		q(func: eq(user_id, $user_id)) {
-			following @filter(uid_in(~following, uid(target)) AND (eq(user_id, $lookup_id))) {
+			friend @filter(uid_in(friend, uid(target)) AND (eq(user_id, $lookup_id))) {
 				user_id
 			}
 		}

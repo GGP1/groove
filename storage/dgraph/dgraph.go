@@ -59,7 +59,7 @@ type Event {
 
 type User {
 	user_id
-	following
+	friend
 	blocked
 }
 
@@ -70,5 +70,5 @@ confirmed: [uid] @reverse .
 banned: [uid] @reverse .
 
 user_id: string @index(hash) .
-following: [uid] @reverse .
+friend: [uid] .
 blocked: [uid] @reverse .`

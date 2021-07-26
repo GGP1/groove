@@ -172,8 +172,7 @@ type User struct {
 	Private         *bool      `json:"private,omitempty"`
 	VerifiedEmail   *bool      `json:"verified_email,omitempty" db:"verified_email"`
 	ProfileImageURL string     `json:"profile_image_url,omitempty" db:"profile_image_url"`
-	FollowersCount  *uint64    `json:"followers_count,omitempty"`
-	FollowingCount  *uint64    `json:"following_count,omitempty"`
+	FriendsCount    *uint64    `json:"friends_count,omitempty"`
 	CreatedAt       *time.Time `json:"created_at,omitempty" db:"created_at"`
 	UpdatedAt       *time.Time `json:"updated_at,omitempty" db:"updated_at"`
 }

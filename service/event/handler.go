@@ -223,7 +223,7 @@ func (h *Handler) AddLike() http.HandlerFunc {
 
 		users, err := h.service.GetConfirmed(ctx, sqlTx, eventID, params.Query{LookupID: session.ID})
 		if err != nil || len(users) == 0 {
-			response.Error(w, http.StatusForbidden, errors.New("must have attended to the event to like it"))
+			response.Error(w, http.StatusForbidden, errors.New("must be confirmed in the event to like it"))
 			return
 		}
 
@@ -331,7 +331,7 @@ func (h *Handler) GetBans() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
+		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -358,33 +358,37 @@ func (h *Handler) GetBans() http.HandlerFunc {
 	}
 }
 
-// GetBansFollowing returns event banned users that are followed by the user passed.
-func (h *Handler) GetBansFollowing() http.HandlerFunc {
+// GetBannedFriends returns event banned users that are friends of the user passed.
+func (h *Handler) GetBannedFriends() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		ctxParams := httprouter.ParamsFromContext(ctx)
-		eventID := ctxParams.ByName("id")
-		userID := ctxParams.ByName("user_id")
-		if err := ulid.ValidateN(eventID, userID); err != nil {
+		eventID, err := params.IDFromCtx(ctx)
+		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
+		session, err := auth.GetSession(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
 		sqlTx := h.service.BeginSQLTx(ctx, true)
-		users, err := h.service.GetBannedFollowing(ctx, sqlTx, eventID, userID, params)
+		users, err := h.service.GetBannedFriends(ctx, sqlTx, eventID, session.ID, params)
 		if err != nil {
-			sqlTx.Rollback()
+			_ = sqlTx.Rollback()
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
-		sqlTx.Rollback()
+		_ = sqlTx.Rollback()
 
 		response.JSON(w, http.StatusOK, users)
 	}
@@ -443,7 +447,7 @@ func (h *Handler) GetConfirmed() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
+		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -470,33 +474,37 @@ func (h *Handler) GetConfirmed() http.HandlerFunc {
 	}
 }
 
-// GetConfirmedFollowing returns event confirmed users that are followed by the user passed.
-func (h *Handler) GetConfirmedFollowing() http.HandlerFunc {
+// GetConfirmedFriends returns event confirmed users that are friends of the user passed.
+func (h *Handler) GetConfirmedFriends() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		routerParams := httprouter.ParamsFromContext(ctx)
-		eventID := routerParams.ByName("id")
-		userID := routerParams.ByName("user_id")
-		if err := ulid.ValidateN(eventID, userID); err != nil {
+		eventID, err := params.IDFromCtx(ctx)
+		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
+		session, err := auth.GetSession(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
 		sqlTx := h.service.BeginSQLTx(ctx, true)
-		users, err := h.service.GetConfirmedFollowing(ctx, sqlTx, eventID, userID, params)
+		users, err := h.service.GetConfirmedFriends(ctx, sqlTx, eventID, session.ID, params)
 		if err != nil {
-			sqlTx.Rollback()
+			_ = sqlTx.Rollback()
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
-		sqlTx.Rollback()
+		_ = sqlTx.Rollback()
 
 		response.JSON(w, http.StatusOK, users)
 	}
@@ -521,7 +529,7 @@ func (h *Handler) GetHosts() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
+		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -565,7 +573,7 @@ func (h *Handler) GetInvited() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
+		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -592,33 +600,37 @@ func (h *Handler) GetInvited() http.HandlerFunc {
 	}
 }
 
-// GetInvitedFollowing returns event invited users that are followed by the user passed.
-func (h *Handler) GetInvitedFollowing() http.HandlerFunc {
+// GetInvitedFriends returns event invited users that are friends of the user passed.
+func (h *Handler) GetInvitedFriends() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		routerParams := httprouter.ParamsFromContext(ctx)
-		eventID := routerParams.ByName("id")
-		userID := routerParams.ByName("user_id")
-		if err := ulid.ValidateN(eventID, userID); err != nil {
+		eventID, err := params.IDFromCtx(ctx)
+		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
+		session, err := auth.GetSession(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
 		sqlTx := h.service.BeginSQLTx(ctx, true)
-		users, err := h.service.GetInvitedFollowing(ctx, sqlTx, eventID, userID, params)
+		users, err := h.service.GetInvitedFriends(ctx, sqlTx, eventID, session.ID, params)
 		if err != nil {
-			sqlTx.Rollback()
+			_ = sqlTx.Rollback()
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
-		sqlTx.Rollback()
+		_ = sqlTx.Rollback()
 
 		response.JSON(w, http.StatusOK, users)
 	}
@@ -643,7 +655,7 @@ func (h *Handler) GetLikes() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
+		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -670,33 +682,37 @@ func (h *Handler) GetLikes() http.HandlerFunc {
 	}
 }
 
-// GetLikesFollowing returns users liking the event that are followed by the user passed.
-func (h *Handler) GetLikesFollowing() http.HandlerFunc {
+// GetLikesFriends returns users liking the event that are friends of the user passed.
+func (h *Handler) GetLikesFriends() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		routerParams := httprouter.ParamsFromContext(ctx)
-		eventID := routerParams.ByName("id")
-		userID := routerParams.ByName("user_id")
-		if err := ulid.ValidateN(eventID, userID); err != nil {
+		eventID, err := params.IDFromCtx(ctx)
+		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
+		session, err := auth.GetSession(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
 		sqlTx := h.service.BeginSQLTx(ctx, true)
-		users, err := h.service.GetLikedByFollowing(ctx, sqlTx, eventID, userID, params)
+		users, err := h.service.GetLikedByFriends(ctx, sqlTx, eventID, session.ID, params)
 		if err != nil {
-			sqlTx.Rollback()
+			_ = sqlTx.Rollback()
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
-		sqlTx.Rollback()
+		_ = sqlTx.Rollback()
 
 		response.JSON(w, http.StatusOK, users)
 	}

@@ -24,8 +24,7 @@ type User struct {
 	IsAdmin         *bool     `json:"is_admin,omitempty" db:"is_admin"`
 	Invitations     string    `json:"invitations,omitempty"`
 	Location        Location  `json:"location,omitempty"`
-	NFollowers      uint64    `json:"n_followers,omitempty"`
-	NFollows        uint64    `json:"n_follows,omitempty"`
+	FriendsCount    uint64    `json:"friends_count,omitempty"`
 	Reports         []Report  `json:"reports,omitempty"`
 	Payment         Payment   `json:"payment,omitempty"`
 	CreatedAt       time.Time `json:"created_at,omitempty" db:"created_at"`
@@ -92,8 +91,7 @@ type ListUser struct {
 	BlockedCount         *uint64    `json:"blocked_count,omitempty"`
 	BlockedByCount       *uint64    `json:"blocked_by_count,omitempty"`
 	ConfirmedEventsCount *uint64    `json:"confirmed_events_count,omitempty"`
-	FollowersCount       *uint64    `json:"followers_count,omitempty"`
-	FollowingCount       *uint64    `json:"following_count,omitempty"`
+	FriendsCount         *uint64    `json:"friends_count,omitempty"`
 	HostedEventsCount    *uint64    `json:"hosting_events_count,omitempty"`
 	InvitedEventsCount   *uint64    `json:"invited_events_count,omitempty"`
 	CreatedAt            *time.Time `json:"created_at,omitempty" db:"created_at"`
@@ -153,8 +151,7 @@ type Report struct {
 // Invitations settings
 const (
 	_ invitations = iota
-	Anyone
-	MutualFollow
+	Friends
 	Nobody
 )
 
@@ -162,10 +159,8 @@ type invitations uint8
 
 func (i invitations) String() string {
 	switch i {
-	case Anyone:
-		return "anyone"
-	case MutualFollow:
-		return "mutual_follow"
+	case Friends:
+		return "friends"
 	case Nobody:
 		return "nobody"
 	default:
@@ -175,7 +170,7 @@ func (i invitations) String() string {
 
 func (i invitations) Validate() error {
 	switch i {
-	case Anyone, MutualFollow, Nobody:
+	case Friends, Nobody:
 		return nil
 	}
 

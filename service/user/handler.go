@@ -18,8 +18,8 @@ type blockedIDBody struct {
 	BlockedID string `json:"blocked_id,omitempty"`
 }
 
-type followedIDBody struct {
-	FollowedID string `json:"followed_id,omitempty"`
+type friendIDBody struct {
+	FriendID string `json:"friend_id,omitempty"`
 }
 
 // Handler is the user handler.
@@ -33,6 +33,37 @@ func NewHandler(service Service, cache *memcache.Client) Handler {
 	return Handler{
 		service: service,
 		mc:      cache,
+	}
+}
+
+// AddFriend adds a new friend to the user.
+func (h *Handler) AddFriend() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		var reqBody friendIDBody
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		defer r.Body.Close()
+
+		userID := httprouter.ParamsFromContext(ctx).ByName("id")
+		if err := ulid.ValidateN(userID, reqBody.FriendID); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		if err := h.service.AddFriend(ctx, userID, reqBody.FriendID); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		type resp struct {
+			ID       string `json:"id,omitempty"`
+			FriendID string `json:"friend_id,omitempty"`
+		}
+		response.JSON(w, http.StatusOK, resp{ID: userID, FriendID: reqBody.FriendID})
 	}
 }
 
@@ -121,38 +152,6 @@ func (h *Handler) Delete() http.HandlerFunc {
 		}
 
 		response.JSONMessage(w, http.StatusOK, userID)
-	}
-}
-
-// Follow executes the follow from the user passed to another one.
-func (h *Handler) Follow() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-
-		var reqBody followedIDBody
-		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-		defer r.Body.Close()
-
-		userID := httprouter.ParamsFromContext(ctx).ByName("id")
-		if err := ulid.ValidateN(userID, reqBody.FollowedID); err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		if err := h.service.Follow(ctx, userID, reqBody.FollowedID); err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-
-		type resp struct {
-			ID            string `json:"id,omitempty"`
-			FollowedID    string `json:"followed_id,omitempty"`
-			PendingFollow bool   `json:"pending_follow,omitempty"` // If the follow was already performed or not
-		}
-		response.JSON(w, http.StatusOK, resp{ID: userID, FollowedID: reqBody.FollowedID})
 	}
 }
 
@@ -311,8 +310,8 @@ func (h *Handler) GetConfirmedEvents() http.HandlerFunc {
 	}
 }
 
-// GetFollowers get the users following the user passed.
-func (h *Handler) GetFollowers() http.HandlerFunc {
+// GetFriends gets the users friends of the user passed.
+func (h *Handler) GetFriends() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		userID, err := params.IDFromCtx(ctx)
@@ -327,7 +326,7 @@ func (h *Handler) GetFollowers() http.HandlerFunc {
 		}
 
 		if params.Count {
-			count, err := h.service.GetFollowersCount(ctx, userID)
+			count, err := h.service.GetFriendsCount(ctx, userID)
 			if err != nil {
 				response.Error(w, http.StatusInternalServerError, err)
 				return
@@ -337,49 +336,13 @@ func (h *Handler) GetFollowers() http.HandlerFunc {
 			return
 		}
 
-		followers, err := h.service.GetFollowers(ctx, userID, params)
+		friends, err := h.service.GetFriends(ctx, userID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		response.JSON(w, http.StatusOK, followers)
-	}
-}
-
-// GetFollowing gets the users followed by the user passed.
-func (h *Handler) GetFollowing() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		userID, err := params.IDFromCtx(ctx)
-		if err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
-		if err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		if params.Count {
-			count, err := h.service.GetFollowingCount(ctx, userID)
-			if err != nil {
-				response.Error(w, http.StatusInternalServerError, err)
-				return
-			}
-
-			response.JSONCount(w, http.StatusOK, count)
-			return
-		}
-
-		following, err := h.service.GetFollowing(ctx, userID, params)
-		if err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-
-		response.JSON(w, http.StatusOK, following)
+		response.JSON(w, http.StatusOK, friends)
 	}
 }
 
@@ -473,6 +436,37 @@ func (h *Handler) GetLikedEvents() http.HandlerFunc {
 	}
 }
 
+// RemoveFriend removes a friend.
+func (h *Handler) RemoveFriend() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		var reqBody friendIDBody
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		defer r.Body.Close()
+
+		userID := httprouter.ParamsFromContext(ctx).ByName("id")
+		if err := ulid.ValidateN(userID, reqBody.FriendID); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		if err := h.service.RemoveFriend(ctx, userID, reqBody.FriendID); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		type resp struct {
+			ID       string `json:"id,omitempty"`
+			FriendID string `json:"friend_id,omitempty"`
+		}
+		response.JSON(w, http.StatusOK, resp{ID: userID, FriendID: reqBody.FriendID})
+	}
+}
+
 // Search performs a user search.
 func (h *Handler) Search() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -532,37 +526,6 @@ func (h *Handler) Unblock() http.HandlerFunc {
 			UnblockedID string `json:"unblocked_id,omitempty"`
 		}
 		response.JSON(w, http.StatusOK, resp{ID: userID, UnblockedID: reqBody.BlockedID})
-	}
-}
-
-// Unfollow removes the follow from the user passed to another.
-func (h *Handler) Unfollow() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-
-		var reqBody followedIDBody
-		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-		defer r.Body.Close()
-
-		userID := httprouter.ParamsFromContext(ctx).ByName("id")
-		if err := ulid.ValidateN(userID, reqBody.FollowedID); err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		if err := h.service.Unfollow(ctx, userID, reqBody.FollowedID); err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-
-		type resp struct {
-			ID           string `json:"id,omitempty"`
-			UnfollowedID string `json:"unfollowed_id,omitempty"`
-		}
-		response.JSON(w, http.StatusOK, resp{ID: userID, UnfollowedID: reqBody.FollowedID})
 	}
 }
 

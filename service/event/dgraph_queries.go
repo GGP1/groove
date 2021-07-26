@@ -10,7 +10,8 @@ const (
 
 // Query
 const (
-	banned query = iota
+	_ query = iota
+	banned
 	bannedCount
 	bannedLookup
 	confirmed
@@ -107,25 +108,16 @@ var getQuery = map[query]string{
 	}`,
 }
 
-// Following queries require users to follow each other
 const (
 	_ mixedQuery = iota
-	// get users banned from the event that are followers of user
-	bannedFollowers
-	// get users banned from the event that are followed by user
-	bannedFollowing
-	// get users confirmed in the event that are followers of user
-	confirmedFollowers
-	// get users confirmed in the event that are followed by user
-	confirmedFollowing
-	// get users invited to the event that are followers of user
-	invitedFollowers
-	// get users invited to the event that are followed by user
-	invitedFollowing
-	// get users liking the event that are followers of user
-	likedByFollowers
-	// get users liking the event that are followed by user
-	likedByFollowing
+	// get users banned from the event that a friend of user
+	bannedFriends
+	// get users confirmed in the event that a friend of user
+	confirmedFriends
+	// get users invited to the event that a friend of user
+	invitedFriends
+	// get users liking the event that a friend of user
+	likedByFriends
 )
 
 // mixedQuery looks for matches in two predicates (one from a user and one from an event) instead of one.
@@ -133,82 +125,42 @@ type mixedQuery uint8
 
 // getMixedQuery is a list with queries that check two predicates.
 var getMixedQuery = map[mixedQuery]string{
-	bannedFollowers: `query q($event_id: string, $user_id: string) {
+	bannedFriends: `query q($event_id: string, $user_id: string) {
 		user as var(func: eq(user_id, $user_id))
 		event as var(func: eq(event_id, $event_id))
 
 		q(func: uid(user)) {
-			~following @filter(uid_in(~banned, uid(event))) (orderasc: user_id) (first: $limit, offset: $cursor) {
+			friend @filter(uid_in(~banned, uid(event))) (orderasc: user_id) (first: $limit, offset: $cursor) {
 				user_id
 			}
 		}
 	}`,
-	bannedFollowing: `query q($event_id: string, $user_id: string) {
+	confirmedFriends: `query q($event_id: string, $user_id: string) {
 		user as var(func: eq(user_id, $user_id))
 		event as var(func: eq(event_id, $event_id))
 
 		q(func: uid(user)) {
-			following @filter(uid_in(~banned, uid(event)) AND uid_in(following, uid(user))) (orderasc: user_id) (first: $limit, offset: $cursor) {
+			friend @filter(uid_in(~confirmed, uid(event))) (orderasc: user_id) (first: $limit, offset: $cursor) {
 				user_id
 			}
 		}
 	}`,
-	confirmedFollowers: `query q($event_id: string, $user_id: string) {
+	invitedFriends: `query q($event_id: string, $user_id: string, $cursor: string, $limit: string) {
 		user as var(func: eq(user_id, $user_id))
 		event as var(func: eq(event_id, $event_id))
 
 		q(func: uid(user)) {
-			~following @filter(uid_in(~confirmed, uid(event))) (orderasc: user_id) (first: $limit, offset: $cursor) {
+			friend @filter(uid_in(~invited, uid(event))) (orderasc: user_id) (first: $limit, offset: $cursor) {
 				user_id
 			}
 		}
 	}`,
-	confirmedFollowing: `query q($event_id: string, $user_id: string) {
+	likedByFriends: `query q($event_id: string, $user_id: string) {
 		user as var(func: eq(user_id, $user_id))
 		event as var(func: eq(event_id, $event_id))
 
 		q(func: uid(user)) {
-			following @filter(uid_in(~confirmed, uid(event)) AND uid_in(following, uid(user))) (orderasc: user_id) (first: $limit, offset: $cursor) {
-				user_id
-			}
-		}
-	}`,
-	invitedFollowers: `query q($event_id: string, $user_id: string) {
-		user as var(func: eq(user_id, $user_id))
-		event as var(func: eq(event_id, $event_id))
-
-		q(func: uid(user)) {
-			~following @filter(uid_in(~invited, uid(event))) (orderasc: user_id) (first: $limit, offset: $cursor) {
-				user_id
-			}
-		}
-	}`,
-	invitedFollowing: `query q($event_id: string, $user_id: string, $cursor: string, $limit: string) {
-		user as var(func: eq(user_id, $user_id))
-		event as var(func: eq(event_id, $event_id))
-
-		q(func: uid(user)) {
-			following @filter(uid_in(~invited, uid(event)) AND uid_in(following, uid(user))) (orderasc: user_id) (first: $limit, offset: $cursor) {
-				user_id
-			}
-		}
-	}`,
-	likedByFollowers: `query q($event_id: string, $user_id: string) {
-		user as var(func: eq(user_id, $user_id))
-		event as var(func: eq(event_id, $event_id))
-
-		q(func: uid(user)) {
-			~following @filter(uid_in(~liked_by, uid(event))) (orderasc: user_id) (first: $limit, offset: $cursor) {
-				user_id
-			}
-		}
-	}`,
-	likedByFollowing: `query q($event_id: string, $user_id: string) {
-		user as var(func: eq(user_id, $user_id))
-		event as var(func: eq(event_id, $event_id))
-
-		q(func: uid(user)) {
-			following @filter(uid_in(~liked_by, uid(event)) AND uid_in(following, uid(user))) (orderasc: user_id) (first: $limit, offset: $cursor) {
+			friend @filter(uid_in(~liked_by, uid(event))) (orderasc: user_id) (first: $limit, offset: $cursor) {
 				user_id
 			}
 		}

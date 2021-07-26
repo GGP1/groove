@@ -120,7 +120,7 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 				bans.use(requireLogin)
 				bans.get("/", events.GetBans())
 				bans.post("/add", events.AddBanned())
-				bans.get("/following/:user_id", events.GetBansFollowing())
+				bans.get("/friends", events.GetBannedFriends())
 				bans.post("/remove", events.RemoveBanned())
 			}
 
@@ -130,7 +130,7 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 				confirmed.use(requireLogin)
 				confirmed.get("/", events.GetConfirmed())
 				confirmed.post("/add", events.AddConfirmed())
-				confirmed.get("/following/:user_id", events.GetConfirmedFollowing())
+				confirmed.get("/friends", events.GetConfirmedFriends())
 				confirmed.post("/remove", events.RemoveConfirmed())
 			}
 
@@ -140,7 +140,7 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 				invited.use(requireLogin)
 				invited.get("/", events.GetInvited())
 				invited.post("/add", events.AddInvited())
-				invited.get("/following/:user_id", events.GetInvitedFollowing())
+				invited.get("/friends", events.GetInvitedFriends())
 				invited.post("/remove", events.RemoveInvited())
 			}
 			// /events/:id/likes
@@ -149,7 +149,7 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 				likes.use(requireLogin)
 				likes.get("/", events.GetLikes())
 				likes.post("/add", events.AddLike())
-				likes.get("/following/:user_id", events.GetLikesFollowing())
+				likes.get("/friends", events.GetLikesFriends())
 				likes.post("/remove", events.RemoveLike())
 			}
 
@@ -201,7 +201,7 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 			{
 				zones.use(requireLogin)
 				zones.get("/", events.GetZones())
-				zones.get("/:name", events.GetZone())
+				zones.get("/zone/:name", events.GetZone())
 				zones.get("/access/:name", events.AccessZone())
 				zones.post("/create", events.CreateZone())
 				zones.delete("/delete/:name", events.DeleteZone())
@@ -228,21 +228,26 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 			id.get("/blocked", users.GetBlocked())
 			id.get("/blocked_by", users.GetBlockedBy())
 			id.delete("/delete", users.Delete(), ownUserOnly)
-			id.post("/follow", users.Follow(), ownUserOnly)
-			id.get("/followers", users.GetFollowers())
-			id.get("/following", users.GetFollowing())
 			id.post("/unblock", users.Unblock(), ownUserOnly)
-			id.post("/unfollow", users.Unfollow(), ownUserOnly)
 			id.put("/update", users.Update(), ownUserOnly)
 
 			// /users/:id/events
 			evs := id.group("/events")
 			{
+				evs.use(ownUserOnly)
 				evs.get("/banned", users.GetBannedEvents())
 				evs.get("/confirmed", users.GetConfirmedEvents())
 				evs.get("/hosted", users.GetHostedEvents())
 				evs.get("/invited", users.GetInvitedEvents())
 				evs.get("/liked", users.GetLikedEvents())
+			}
+
+			// /users/:id/friends
+			friends := id.group("/friends")
+			{
+				friends.get("/", users.GetFriends())
+				friends.post("/add", users.AddFriend(), ownUserOnly)
+				friends.post("/remove", users.RemoveFriend(), ownUserOnly)
 			}
 		}
 	}

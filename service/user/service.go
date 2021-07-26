@@ -21,10 +21,10 @@ import (
 
 // Service represents the user service.
 type Service interface {
+	AddFriend(ctx context.Context, userID, friendID string) error
 	Block(ctx context.Context, userID, blockedID string) error
 	Create(ctx context.Context, userID string, user CreateUser) error
 	Delete(ctx context.Context, userID string) error
-	Follow(ctx context.Context, userID, followedID string) error
 	GetBannedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
 	GetBlocked(ctx context.Context, userID string, params params.Query) ([]ListUser, error)
 	GetBlockedCount(ctx context.Context, userID string) (*uint64, error)
@@ -34,18 +34,16 @@ type Service interface {
 	GetByID(ctx context.Context, value string) (ListUser, error)
 	GetByUsername(ctx context.Context, value string) (ListUser, error)
 	GetConfirmedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
-	GetFollowers(ctx context.Context, userID string, params params.Query) ([]ListUser, error)
-	GetFollowersCount(ctx context.Context, userID string) (*uint64, error)
-	GetFollowing(ctx context.Context, userID string, params params.Query) ([]ListUser, error)
-	GetFollowingCount(ctx context.Context, userID string) (*uint64, error)
+	GetFriends(ctx context.Context, userID string, params params.Query) ([]ListUser, error)
+	GetFriendsCount(ctx context.Context, userID string) (*uint64, error)
 	GetInvitedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
 	GetHostedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
 	GetLikedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
 	IsAdmin(ctx context.Context, tx *sql.Tx, userID string) (bool, error)
 	PrivateProfile(ctx context.Context, userID string) (bool, error)
+	RemoveFriend(ctx context.Context, userID string, friendID string) error
 	Search(ctx context.Context, query string, params params.Query) ([]ListUser, error)
 	Unblock(ctx context.Context, userID, blockedID string) error
-	Unfollow(ctx context.Context, userID string, followedID string) error
 	Update(ctx context.Context, userID string, user UpdateUser) error
 }
 
@@ -67,6 +65,37 @@ func NewService(db *sql.DB, dc *dgo.Dgraph, mc *memcache.Client, admins map[stri
 		admins:  admins,
 		metrics: initMetrics(),
 	}
+}
+
+// AddFriend adds a new friend.
+func (s *service) AddFriend(ctx context.Context, userID, friendID string) error {
+	s.metrics.incMethodCalls("AddFriend")
+
+	vars := map[string]string{"$user_id": userID, "$friend_id": friendID}
+	query := `query q($user_id: string, $friend_id: string) {
+		user as var(func: eq(user_id, $user_id))
+		friend as var(func: eq(user_id, $friend_id))
+	}`
+	mu := &api.Mutation{
+		Cond: "@if(eq(len(user), 1) AND eq(len(friend), 1))",
+		SetNquads: []byte(`uid(user) <friend> uid(friend) .
+		uid(friend) <friend> uid(user) .`),
+	}
+	req := &api.Request{
+		Query:     query,
+		Vars:      vars,
+		Mutations: []*api.Mutation{mu},
+		CommitNow: true,
+	}
+	if _, err := s.dc.NewTxn().Do(ctx, req); err != nil {
+		return errors.Wrap(err, "creating friendship edges")
+	}
+
+	if err := s.mc.Delete(userID); err != nil && err != memcache.ErrCacheMiss {
+		return errors.Wrap(err, "memcached: deleting user")
+	}
+
+	return nil
 }
 
 // Block blocks a user.
@@ -198,45 +227,6 @@ func (s *service) Delete(ctx context.Context, userID string) error {
 	return nil
 }
 
-// Follow creates the "following" edge between userID and followedID.
-func (s *service) Follow(ctx context.Context, userID, followedID string) error {
-	s.metrics.incMethodCalls("Follow")
-
-	private, err := s.PrivateProfile(ctx, followedID)
-	if err != nil {
-		return err
-	}
-	if private {
-		// TODO: put petition on pending
-		// Store the petition inside a pending_follows table for later confirmation?
-	}
-
-	vars := map[string]string{"$follower_id": userID, "$followed_id": followedID}
-	query := `query q($follower_id: string, $followed_id: string) {
-		follower as var(func: eq(user_id, $follower_id))
-		followed as var(func: eq(user_id, $followed_id))
-	}`
-	mu := &api.Mutation{
-		Cond:      "@if(eq(len(follower), 1) AND eq(len(followed), 1))",
-		SetNquads: []byte("uid(follower) <following> uid(followed) ."),
-	}
-	req := &api.Request{
-		Query:     query,
-		Vars:      vars,
-		Mutations: []*api.Mutation{mu},
-		CommitNow: true,
-	}
-	if _, err := s.dc.NewTxn().Do(ctx, req); err != nil {
-		return errors.Wrap(err, "creating followage edges")
-	}
-
-	if err := s.mc.Delete(userID); err != nil && err != memcache.ErrCacheMiss {
-		return errors.Wrap(err, "memcached: deleting user")
-	}
-
-	return nil
-}
-
 // GetBannedEvents returns the events that the user is attending.
 func (s *service) GetBannedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error) {
 	s.metrics.incMethodCalls("GetBannedEvents")
@@ -325,42 +315,23 @@ func (s *service) GetConfirmedEvents(ctx context.Context, userID string, params 
 	return s.getEventsEdge(ctx, userID, predicate, params)
 }
 
-// GetFollowers returns the user's followers, if not follower is found it returns nil.
-func (s *service) GetFollowers(ctx context.Context, userID string, params params.Query) ([]ListUser, error) {
-	s.metrics.incMethodCalls("GetFollowers")
+// GetFriends returns people the user fetched is friend of.
+func (s *service) GetFriends(ctx context.Context, userID string, params params.Query) ([]ListUser, error) {
+	s.metrics.incMethodCalls("GetFriends")
 
-	predicate := followedBy
+	predicate := friends
 	if params.LookupID != "" {
-		predicate = followedByLookup
+		predicate = friendsLookup
 	}
 
 	return s.getUsersEdge(ctx, userID, predicate, params)
 }
 
-// GetFollowersCount returns the user's number of followers.
-func (s *service) GetFollowersCount(ctx context.Context, userID string) (*uint64, error) {
-	s.metrics.incMethodCalls("GetFollowersCount")
+// GetFriendsCount returns the number of users friends of the one fetched.
+func (s *service) GetFriendsCount(ctx context.Context, userID string) (*uint64, error) {
+	s.metrics.incMethodCalls("GetFriendsCount")
 
-	return dgraph.GetCount(ctx, s.dc, getQuery[followedByCount], userID)
-}
-
-// GetFollowing returns people the user fetched is following.
-func (s *service) GetFollowing(ctx context.Context, userID string, params params.Query) ([]ListUser, error) {
-	s.metrics.incMethodCalls("GetFollowing")
-
-	predicate := following
-	if params.LookupID != "" {
-		predicate = followingLookup
-	}
-
-	return s.getUsersEdge(ctx, userID, predicate, params)
-}
-
-// GetFollowingCount returns the number of users followed by the one fetched.
-func (s *service) GetFollowingCount(ctx context.Context, userID string) (*uint64, error) {
-	s.metrics.incMethodCalls("GetFollowingCount")
-
-	return dgraph.GetCount(ctx, s.dc, getQuery[followingCount], userID)
+	return dgraph.GetCount(ctx, s.dc, getQuery[friendsCount], userID)
 }
 
 // GetHostedEvents returns the events hosted by the user with the given id.
@@ -454,6 +425,31 @@ func (s *service) PrivateProfile(ctx context.Context, userID string) (bool, erro
 	return isPrivate, nil
 }
 
+// RemoveFriend removes a friend.
+func (s *service) RemoveFriend(ctx context.Context, userID string, friendID string) error {
+	vars := map[string]string{"$user_id": userID, "$friend_id": friendID}
+	q := `query q($user_id: string, $friend_id: string) {
+		user as var(func: eq(user_id, $user_id))
+		friend as var(func: eq(user_id, $friend_id))
+	}`
+	mu := &api.Mutation{
+		DelNquads: []byte(`uid(user) <friend> uid(friend) .
+		uid(friend) <friend> uid(user) .`),
+	}
+	req := &api.Request{
+		Vars:      vars,
+		Query:     q,
+		Mutations: []*api.Mutation{mu},
+		CommitNow: true,
+	}
+
+	if _, err := s.dc.NewTxn().Do(ctx, req); err != nil {
+		return errors.Wrap(err, "removing friendship")
+	}
+
+	return nil
+}
+
 // Search returns users matching the given query.
 func (s *service) Search(ctx context.Context, query string, params params.Query) ([]ListUser, error) {
 	s.metrics.incMethodCalls("Search")
@@ -492,30 +488,6 @@ func (s *service) Unblock(ctx context.Context, userID string, blockedID string) 
 
 	if _, err := s.dc.NewTxn().Do(ctx, req); err != nil {
 		return errors.Wrap(err, "deleting block")
-	}
-
-	return nil
-}
-
-// Unfollow removes the follow from one user to other.
-func (s *service) Unfollow(ctx context.Context, userID string, followedID string) error {
-	vars := map[string]string{"$follower_id": userID, "$followed_id": followedID}
-	q := `query q($follower_id: string, $followed_id: string) {
-		follower as var(func: eq(user_id, $follower_id))
-		followed as var(func: eq(user_id, $followed_id))
-	}`
-	mu := &api.Mutation{
-		DelNquads: []byte("uid(follower) <following> uid(followed) ."),
-	}
-	req := &api.Request{
-		Vars:      vars,
-		Query:     q,
-		Mutations: []*api.Mutation{mu},
-		CommitNow: true,
-	}
-
-	if _, err := s.dc.NewTxn().Do(ctx, req); err != nil {
-		return errors.Wrap(err, "deleting follow")
 	}
 
 	return nil
@@ -638,8 +610,7 @@ func (s *service) getCounts(ctx context.Context, user *ListUser) error {
 			count(blocked)
 			count(~blocked)
 			count(~confirmed)
-			count(~following)
-			count(following)
+			count(friend)
 			count(~invited)
 		}
 	}`
@@ -657,8 +628,7 @@ func (s *service) getCounts(ctx context.Context, user *ListUser) error {
 	user.BlockedCount = mp["blocked"]
 	user.BlockedByCount = mp["~blocked"]
 	user.ConfirmedEventsCount = mp["~confirmed"]
-	user.FollowersCount = mp["~following"]
-	user.FollowingCount = mp["following"]
+	user.FriendsCount = mp["friend"]
 	user.InvitedEventsCount = mp["~invited"]
 
 	return nil

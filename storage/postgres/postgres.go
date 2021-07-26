@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS events
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname='invitations') THEN
-	CREATE TYPE invitations AS enum ('anyone', 'mutual_follow', 'nobody');
+	CREATE TYPE invitations AS enum ('friends', 'nobody');
 END IF;
 END$$;
 
@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS users
     is_admin boolean DEFAULT false,
 	premium boolean DEFAULT false,
 	private boolean DEFAULT false,
-	invitations invitations DEFAULT 'anyone',
+	invitations invitations DEFAULT 'friends',
     verified_email boolean DEFAULT false,
     created_at timestamp with time zone DEFAULT NOW(),
     updated_at timestamp with time zone,

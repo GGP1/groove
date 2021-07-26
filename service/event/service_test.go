@@ -190,27 +190,19 @@ func TestCanInvite(t *testing.T) {
 	err = test.CreateUser(ctx, db, dc, invitedID, "can_invite2@email.com", "can_invite2", "1")
 	assert.NoError(t, err)
 
-	t.Run("Anyone", func(t *testing.T) {
-		// Anyone is the default setting
-		ok, err := eventSv.CanInvite(ctx, sqlTx, userID, invitedID)
+	t.Run("Friends", func(t *testing.T) {
+		_, err := sqlTx.Exec("UPDATE users SET invitations='friends' WHERE id=$1", invitedID)
 		assert.NoError(t, err)
 
-		assert.True(t, ok)
-	})
-
-	t.Run("Mutual follow", func(t *testing.T) {
-		_, err := sqlTx.Exec("UPDATE users SET invitations='mutual_follow' WHERE id=$1", invitedID)
-		assert.NoError(t, err)
-
-		vars := map[string]string{"$follower_id": userID, "$followed_id": invitedID}
-		query := `query q($follower_id: string, $followed_id: string) {
-		follower as var(func: eq(user_id, $follower_id))
-		followed as var(func: eq(user_id, $followed_id))
+		vars := map[string]string{"$user_id": userID, "$friend_id": invitedID}
+		query := `query q($user_id: string, $friend_id: string) {
+		user as var(func: eq(user_id, $user_id))
+		friend as var(func: eq(user_id, $friend_id))
 	}`
 		mu := &api.Mutation{
-			Cond: "@if(eq(len(follower), 1) AND eq(len(followed), 1))",
-			SetNquads: []byte(`uid(follower) <following> uid(followed) .
-		uid(followed) <follwiing> uid(follower) .`),
+			Cond: "@if(eq(len(user), 1) AND eq(len(friend), 1))",
+			SetNquads: []byte(`uid(user) <friend> uid(friend) .
+		uid(friend) <friend> uid(user) .`),
 		}
 		req := &api.Request{
 			Query:     query,
@@ -293,11 +285,11 @@ func TestGetByID(t *testing.T) {
 	assert.Equal(t, name, event.Name)
 }
 
-func TestGetBannedFollowing(t *testing.T) {
+func TestGetBannedFriends(t *testing.T) {
 
 }
 
-func TestGetConfirmedFollowing(t *testing.T) {
+func TestGetConfirmedFriends(t *testing.T) {
 
 }
 
@@ -323,11 +315,11 @@ func TestGetHosts(t *testing.T) {
 	assert.Equal(t, email, users[0].Email)
 }
 
-func TestGetInvitedFollowing(t *testing.T) {
+func TestGetInvitedFriends(t *testing.T) {
 
 }
 
-func TestGetLikedByFollowing(t *testing.T) {
+func TestGetLikedByFriends(t *testing.T) {
 
 }
 
