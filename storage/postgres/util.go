@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/GGP1/groove/internal/bufferpool"
 	"github.com/GGP1/groove/internal/params"
@@ -126,25 +128,19 @@ func ScanStringSlice(rows *sql.Rows) ([]string, error) {
 }
 
 // FullTextSearch returns an SQL query implementing FTS.
-func FullTextSearch(table table, searchFields []string, query string, params params.Query) string {
+func FullTextSearch(table table, query string, params params.Query) string {
 	buf := bufferpool.Get()
 
 	buf.WriteString("SELECT ")
 	writeFields(buf, table, params.Fields)
 	buf.WriteString(" FROM ")
 	buf.WriteString(string(table))
-
 	buf.WriteString(" WHERE ")
-	buf.WriteString("to_tsvector(")
-	for i, sf := range searchFields {
-		if i != 0 {
-			buf.WriteString(" || ' ' || ")
-		}
-		buf.WriteString(sf)
-	}
-	buf.WriteString(") @@ plainto_tsquery('")
-	buf.WriteString(query)
-	buf.WriteString("')")
+	buf.WriteString("search @@ to_tsquery('")
+	// FTS operators: "&" (AND), "<->" (FOLLOWED BY)
+	// See https://www.postgresql.org/docs/13/textsearch-controls.html
+	replaceAll(buf, strings.TrimSpace(query), " ", "&")
+	buf.WriteString(":*')")
 	addPagination(buf, "id", params)
 
 	q := buf.String()
@@ -245,9 +241,45 @@ func writeFields(buf *bytes.Buffer, table table, fields []string) {
 	} else {
 		for i, f := range fields {
 			if i != 0 {
-				buf.WriteString(", ")
+				buf.WriteByte(',')
 			}
 			buf.WriteString(f)
 		}
 	}
+}
+
+// replaceAll is like strings.ReplaceAll but it writes the new string
+// directly to the buffer passed to save an allocation.
+func replaceAll(b *bytes.Buffer, s, old, new string) {
+	if old == new {
+		b.WriteString(s)
+		return
+	}
+
+	// Compute number of replacements.
+	m := strings.Count(s, old)
+	if m == 0 {
+		b.WriteString(s)
+		return
+	}
+
+	if len(new) > len(old) {
+		b.Grow(m * (len(new) - len(old)))
+	}
+	start := 0
+	for i := 0; i < m; i++ {
+		j := start
+		if len(old) == 0 {
+			if i > 0 {
+				_, wid := utf8.DecodeRuneInString(s[start:])
+				j += wid
+			}
+		} else {
+			j += strings.Index(s[start:], old)
+		}
+		b.WriteString(s[start:j])
+		b.WriteString(new)
+		start = j + len(old)
+	}
+	b.WriteString(s[start:])
 }

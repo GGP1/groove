@@ -331,7 +331,7 @@ func TestSearch(t *testing.T) {
 	err := test.CreateUser(ctx, db, dc, userID, "search@email.com", "search", "1")
 	assert.NoError(t, err)
 
-	users, err := userSv.Search(ctx, "search", params.Query{})
+	users, err := userSv.Search(ctx, "sea", params.Query{})
 	assert.NoError(t, err)
 
 	assert.Equal(t, 1, len(users))

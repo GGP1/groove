@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS events
 	start_time integer NOT NULL,
 	end_time integer NOT NULL,
 	min_age integer DEFAULT 0,
+	search tsvector,
 	created_at timestamp with time zone DEFAULT NOW(),
     updated_at timestamp with time zone,
     CONSTRAINT events_pkey PRIMARY KEY (id)
@@ -60,6 +61,20 @@ BEGIN
 	CREATE TYPE invitations AS enum ('friends', 'nobody');
 END IF;
 END$$;
+
+CREATE INDEX ON events USING GIN (search);
+
+CREATE OR REPLACE FUNCTION events_tsvector_trigger() RETURNS trigger AS $$
+BEGIN
+  new.search := to_tsvector('english', new.name);
+  return new;
+END
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS events_tsvector_update ON events;
+
+CREATE TRIGGER events_tsvector_update BEFORE INSERT OR UPDATE
+    ON events FOR EACH ROW EXECUTE PROCEDURE events_tsvector_trigger();
 
 CREATE TABLE IF NOT EXISTS users
 (
@@ -76,10 +91,27 @@ CREATE TABLE IF NOT EXISTS users
 	private boolean DEFAULT false,
 	invitations invitations DEFAULT 'friends',
     verified_email boolean DEFAULT false,
+	search tsvector,
     created_at timestamp with time zone DEFAULT NOW(),
     updated_at timestamp with time zone,
     CONSTRAINT users_pkey PRIMARY KEY (id)
 );
+
+CREATE INDEX ON users USING GIN (search);
+
+CREATE OR REPLACE FUNCTION users_tsvector_trigger() RETURNS trigger AS $$
+BEGIN
+  new.search :=
+  setweight(to_tsvector('english', new.username), 'A')
+  || setweight(to_tsvector('english', new.name), 'B');
+  return new;
+END
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS users_tsvector_update ON users;
+
+CREATE TRIGGER users_tsvector_update BEFORE INSERT OR UPDATE
+    ON users FOR EACH ROW EXECUTE PROCEDURE users_tsvector_trigger();
 
 CREATE TABLE IF NOT EXISTS users_locations
 (

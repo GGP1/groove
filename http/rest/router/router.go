@@ -254,8 +254,8 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 
 	router.post("/create/event", events.Create())
 	router.post("/create/user", users.Create())
-	router.get("/search/event/:query", events.Search())
-	router.get("/search/user/:query", users.Search())
+	router.get("/search/events/:query", events.Search())
+	router.get("/search/users/:query", users.Search())
 
 	return router
 }

@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
 
@@ -50,6 +51,18 @@ func TestBulkInsert(t *testing.T) {
 
 	expected := "INSERT INTO events_staff (event_id, role_name, user_id) VALUES ('1234','1','staff'), ('1234','2','staff')"
 	got := BulkInsertRoles(q, eventID, "staff", userIDs)
+
+	assert.Equal(t, expected, got)
+}
+
+func TestFullTextSearch(t *testing.T) {
+	expected := "SELECT testing,full,text,search FROM events WHERE search @@ to_tsquery('query&text:*') ORDER BY id DESC LIMIT 7"
+	query := "query text"
+	got := FullTextSearch(Events, query, params.Query{
+		Cursor: params.DefaultCursor,
+		Fields: []string{"testing", "full", "text", "search"},
+		Limit:  "7",
+	})
 
 	assert.Equal(t, expected, got)
 }
@@ -132,6 +145,14 @@ func TestSelectWhereID(t *testing.T) {
 		got := SelectWhereID(Media, "event_id", "qwertyu", "id", params)
 		assert.Equal(t, expected, got)
 	})
+}
+
+func TestReplaceAllWithBuf(t *testing.T) {
+	var buf bytes.Buffer
+	buf.WriteString("SELECT * FROM users WHERE search @@ to_tsquery('")
+	replaceAll(&buf, "replace all strings')", " ", " & ")
+
+	assert.Equal(t, "SELECT * FROM users WHERE search @@ to_tsquery('replace & all & strings')", buf.String())
 }
 
 func BenchmarkSelectInID(b *testing.B) {

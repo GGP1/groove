@@ -336,7 +336,19 @@ func TestIsPublic(t *testing.T) {
 	assert.Equal(t, true, got)
 }
 
-func TestSearch(t *testing.T) {}
+func TestSearch(t *testing.T) {
+	ctx := context.Background()
+	eventID := ulid.NewString()
+
+	err := test.CreateEvent(ctx, db, dc, eventID, "search")
+	assert.NoError(t, err)
+
+	events, err := eventSv.Search(ctx, "sea", params.Query{})
+	assert.NoError(t, err)
+
+	assert.Equal(t, 1, len(events))
+	assert.Equal(t, events[0].ID, eventID)
+}
 
 func TestPgTx(t *testing.T) {
 	assert.NotPanics(t, func() {
