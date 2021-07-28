@@ -135,8 +135,7 @@ func FullTextSearch(table table, query string, params params.Query) string {
 	writeFields(buf, table, params.Fields)
 	buf.WriteString(" FROM ")
 	buf.WriteString(string(table))
-	buf.WriteString(" WHERE ")
-	buf.WriteString("search @@ to_tsquery('")
+	buf.WriteString(" WHERE search @@ to_tsquery('")
 	// FTS operators: "&" (AND), "<->" (FOLLOWED BY)
 	// See https://www.postgresql.org/docs/13/textsearch-controls.html
 	replaceAll(buf, strings.TrimSpace(query), " ", "&")
