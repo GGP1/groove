@@ -1,12 +1,5 @@
 package sanitize
 
-import (
-	"errors"
-	"strings"
-)
-
-var errInvalidQuery = errors.New("invalid query")
-
 // Normalize replaces latin script letters with unique and equivalent characters.
 //
 // Usually only names, emails and usernames should be normalized.
@@ -28,15 +21,6 @@ func Normalize(s string) string {
 	}
 
 	return string(runes)
-}
-
-// UserInput returns an error if the query contains invalid characters.
-func UserInput(query string) error {
-	if strings.ContainsAny(query, ";-\\'\":*#$%/|@,¬<>_()[]}{¡~€^") {
-		return errInvalidQuery
-	}
-
-	return nil
 }
 
 var normalized = map[rune]rune{

@@ -10,6 +10,7 @@ import (
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/response"
+	"github.com/GGP1/groove/internal/sanitize"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event/role"
 
@@ -902,7 +903,13 @@ func (h *Handler) RemoveLike() http.HandlerFunc {
 func (h *Handler) Search() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+
 		query := httprouter.ParamsFromContext(ctx).ByName("query")
+		query = sanitize.Normalize(query)
+		if err := params.ValidateSearchQuery(query); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
 
 		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
 		if err != nil {

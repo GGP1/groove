@@ -7,6 +7,7 @@ import (
 	"github.com/GGP1/groove/internal/apikey"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/response"
+	"github.com/GGP1/groove/internal/sanitize"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event"
 
@@ -473,6 +474,12 @@ func (h *Handler) Search() http.HandlerFunc {
 		ctx := r.Context()
 
 		query := httprouter.ParamsFromContext(ctx).ByName("query")
+		query = sanitize.Normalize(query)
+		if err := params.ValidateSearchQuery(query); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
 		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)

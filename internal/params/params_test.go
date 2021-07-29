@@ -124,6 +124,19 @@ func TestParseQuery(t *testing.T) {
 	})
 }
 
+func TestValidateSearchQuery(t *testing.T) {
+	t.Run("Valid", func(t *testing.T) {
+		query := "searching for values"
+		err := ValidateSearchQuery(query)
+		assert.NoError(t, err)
+	})
+	t.Run("Invalid", func(t *testing.T) {
+		query := "'; DROP TABLE users; --"
+		err := ValidateSearchQuery(query)
+		assert.Error(t, err)
+	})
+}
+
 func TestParseBool(t *testing.T) {
 	cases := []struct {
 		desc     string

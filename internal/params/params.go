@@ -95,6 +95,14 @@ func ParseQuery(rawQuery string, obj obj) (Query, error) {
 	return params, nil
 }
 
+// ValidateSearchQuery returns an error if the query contains invalid characters.
+func ValidateSearchQuery(query string) error {
+	if strings.ContainsAny(query, ";-\\'\":*#$%/|@,¬<>_()[]}{¡~€^") {
+		return errors.New("query contains invalid characters")
+	}
+	return nil
+}
+
 func parseFields(obj obj, values url.Values) ([]string, error) {
 	var fields []string
 	switch obj {

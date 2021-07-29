@@ -8,7 +8,6 @@ import (
 
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/permissions"
-	"github.com/GGP1/groove/internal/sanitize"
 	"github.com/GGP1/groove/service/event/media"
 	"github.com/GGP1/groove/service/event/product"
 	"github.com/GGP1/groove/service/event/role"
@@ -544,11 +543,6 @@ func (s *service) RemoveEdge(ctx context.Context, eventID string, predicate pred
 // Search returns events matching the given query.
 func (s *service) Search(ctx context.Context, query string, params params.Query) ([]Event, error) {
 	s.metrics.incMethodCalls("Search")
-
-	query = sanitize.Normalize(query)
-	if err := sanitize.UserInput(query); err != nil {
-		return nil, err
-	}
 
 	q := postgres.FullTextSearch(postgres.Events, query, params)
 	rows, err := s.db.QueryContext(ctx, q)

@@ -7,7 +7,6 @@ import (
 
 	"github.com/GGP1/groove/internal/log"
 	"github.com/GGP1/groove/internal/params"
-	"github.com/GGP1/groove/internal/sanitize"
 	"github.com/GGP1/groove/service/event"
 	"github.com/GGP1/groove/storage/dgraph"
 	"github.com/GGP1/groove/storage/postgres"
@@ -454,11 +453,6 @@ func (s *service) RemoveFriend(ctx context.Context, userID string, friendID stri
 // Search returns users matching the given query.
 func (s *service) Search(ctx context.Context, query string, params params.Query) ([]ListUser, error) {
 	s.metrics.incMethodCalls("Search")
-
-	query = sanitize.Normalize(query)
-	if err := sanitize.UserInput(query); err != nil {
-		return nil, err
-	}
 
 	q := postgres.FullTextSearch(postgres.Users, query, params)
 	rows, err := s.db.QueryContext(ctx, q)
