@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/response"
@@ -294,8 +295,8 @@ func (h *Handler) GetPermissions() http.HandlerFunc {
 			return
 		}
 
-		cacheKey := eventID + "_permissions"
-		if item, err := h.mc.Get(cacheKey); err == nil {
+		cacheKey := cache.PermissionsKey(eventID)
+		if item, err := h.cache.Get(cacheKey); err == nil {
 			response.EncodedJSON(w, item.Value)
 			return
 		}
@@ -314,7 +315,7 @@ func (h *Handler) GetPermissions() http.HandlerFunc {
 			return
 		}
 
-		response.JSONAndCache(h.mc, w, cacheKey, permissions)
+		response.JSONAndCache(h.cache, w, cacheKey, permissions)
 	}
 }
 
@@ -360,8 +361,8 @@ func (h *Handler) GetRoles() http.HandlerFunc {
 			return
 		}
 
-		cacheKey := eventID + "_roles"
-		if item, err := h.mc.Get(cacheKey); err == nil {
+		cacheKey := cache.RolesKey(eventID)
+		if item, err := h.cache.Get(cacheKey); err == nil {
 			response.EncodedJSON(w, item.Value)
 			return
 		}
@@ -380,7 +381,7 @@ func (h *Handler) GetRoles() http.HandlerFunc {
 			return
 		}
 
-		response.JSONAndCache(h.mc, w, cacheKey, permissions)
+		response.JSONAndCache(h.cache, w, cacheKey, permissions)
 	}
 }
 

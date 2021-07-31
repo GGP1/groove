@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/GGP1/groove/auth"
+	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/response"
@@ -180,8 +181,8 @@ func (h *Handler) GetZones() http.Handler {
 			return
 		}
 
-		cacheKey := eventID + "_zones"
-		if item, err := h.mc.Get(cacheKey); err == nil {
+		cacheKey := cache.ZonesKey(eventID)
+		if item, err := h.cache.Get(cacheKey); err == nil {
 			response.EncodedJSON(w, item.Value)
 			return
 		}
@@ -200,7 +201,7 @@ func (h *Handler) GetZones() http.Handler {
 			return
 		}
 
-		response.JSONAndCache(h.mc, w, cacheKey, zones)
+		response.JSONAndCache(h.cache, w, cacheKey, zones)
 	})
 }
 

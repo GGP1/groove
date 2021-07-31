@@ -10,13 +10,13 @@ import (
 	"github.com/GGP1/groove/auth"
 	"github.com/GGP1/groove/config"
 	"github.com/GGP1/groove/http/rest/middleware"
+	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/log"
 	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/service/event"
 	"github.com/GGP1/groove/service/report"
 	"github.com/GGP1/groove/service/user"
 
-	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/dgraph-io/dgo/v210"
 	"github.com/go-redis/redis/v8"
 	"github.com/julienschmidt/httprouter"
@@ -36,7 +36,7 @@ type Router struct {
 }
 
 // New returns a new router.
-func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc *memcache.Client) http.Handler {
+func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, cache cache.Client) http.Handler {
 	router := &Router{
 		Router: &httprouter.Router{
 			RedirectTrailingSlash:  true,
@@ -58,8 +58,8 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 		router.middlewares = append(router.middlewares, middleware.NewRateLimiter(config.RateLimiter, rdb).Limit)
 	}
 
-	eventService := event.NewService(db, dc, mc)
-	userService := user.NewService(db, dc, mc, config.Admins)
+	eventService := event.NewService(db, dc, cache)
+	userService := user.NewService(db, dc, cache, config.Admins)
 	session := auth.NewService(db, rdb, config.Sessions)
 
 	authMw := middleware.NewAuth(db, session, userService)
@@ -102,7 +102,7 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 	})
 	router.get("/metrics", promHandler, adminsOnly)
 
-	events := event.NewHandler(eventService, mc)
+	events := event.NewHandler(eventService, cache)
 	ev := router.group("/events")
 	{
 		// /events/:id
@@ -217,7 +217,7 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, mc
 		rp.post("/create", reports.CreateReport(), requireLogin)
 	}
 
-	users := user.NewHandler(userService, mc)
+	users := user.NewHandler(userService, cache)
 	us := router.group("/users")
 	{
 		// /users/:id

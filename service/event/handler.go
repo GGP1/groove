@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/GGP1/groove/auth"
+	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/response"
@@ -14,7 +15,6 @@ import (
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event/role"
 
-	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/julienschmidt/httprouter"
 	"github.com/pkg/errors"
 )
@@ -34,14 +34,14 @@ type edgeMuResponse struct {
 // Handler handles events endpoints.
 type Handler struct {
 	service Service
-	mc      *memcache.Client
+	cache   cache.Client
 }
 
 // NewHandler returns an event handler.
-func NewHandler(service Service, mc *memcache.Client) Handler {
+func NewHandler(service Service, cache cache.Client) Handler {
 	return Handler{
 		service: service,
-		mc:      mc,
+		cache:   cache,
 	}
 }
 
@@ -414,7 +414,8 @@ func (h *Handler) GetByID() http.HandlerFunc {
 			return
 		}
 
-		if item, err := h.mc.Get(eventID); err == nil {
+		cacheKey := cache.EventsKey(eventID)
+		if item, err := h.cache.Get(cacheKey); err == nil {
 			response.EncodedJSON(w, item.Value)
 			return
 		}
@@ -433,7 +434,7 @@ func (h *Handler) GetByID() http.HandlerFunc {
 			return
 		}
 
-		response.JSONAndCache(h.mc, w, eventID, event)
+		response.JSONAndCache(h.cache, w, cacheKey, event)
 	}
 }
 

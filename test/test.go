@@ -9,12 +9,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GGP1/groove/config"
+	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/service/event"
 	"github.com/GGP1/groove/storage/dgraph"
+	"github.com/GGP1/groove/storage/memcached"
 	"github.com/GGP1/groove/storage/postgres"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/dgraph-io/dgo/v210"
 	"github.com/dgraph-io/dgo/v210/protos/api"
 	"github.com/go-redis/redis/v8"
@@ -162,7 +164,7 @@ func StartDgraph(t testing.TB) *dgo.Dgraph {
 }
 
 // RunMemcached initializes a docker container with memcached running in it.
-func RunMemcached() (*dockertest.Pool, *dockertest.Resource, *memcache.Client, error) {
+func RunMemcached() (*dockertest.Pool, *dockertest.Resource, cache.Client, error) {
 	pool, err := dockertest.NewPool("")
 	if err != nil {
 		return nil, nil, nil, err
@@ -173,20 +175,22 @@ func RunMemcached() (*dockertest.Pool, *dockertest.Resource, *memcache.Client, e
 		return nil, nil, nil, err
 	}
 
-	var mc *memcache.Client
+	var cache cache.Client
 	err = pool.Retry(func() error {
-		mc = memcache.New(fmt.Sprintf("localhost:%s", resource.GetPort("11211/tcp")))
-		return mc.Ping()
+		cache, err = memcached.NewClient(config.Memcached{
+			Servers: []string{fmt.Sprintf("localhost:%s", resource.GetPort("11211/tcp"))},
+		})
+		return err
 	})
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	return pool, resource, mc, nil
+	return pool, resource, cache, nil
 }
 
 // StartMemcached starts a memcached container and makes the cleanup.
-func StartMemcached(t testing.TB) *memcache.Client {
+func StartMemcached(t testing.TB) cache.Client {
 	pool, resource, mc, err := RunMemcached()
 	assert.NoError(t, err)
 

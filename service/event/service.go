@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/service/event/media"
@@ -58,9 +59,9 @@ type Service interface {
 }
 
 type service struct {
-	db *sql.DB
-	dc *dgo.Dgraph
-	mc *memcache.Client
+	db    *sql.DB
+	dc    *dgo.Dgraph
+	cache cache.Client
 
 	mediaService   media.Service
 	productService product.Service
@@ -71,15 +72,15 @@ type service struct {
 }
 
 // NewService returns a new event service.
-func NewService(db *sql.DB, dc *dgo.Dgraph, mc *memcache.Client) Service {
+func NewService(db *sql.DB, dc *dgo.Dgraph, cache cache.Client) Service {
 	return &service{
 		db:             db,
 		dc:             dc,
-		mc:             mc,
-		mediaService:   media.NewService(db, mc),
-		productService: product.NewService(db, mc),
-		roleService:    role.NewService(db, mc),
-		zoneService:    zone.NewService(db, mc),
+		cache:          cache,
+		mediaService:   media.NewService(db, cache),
+		productService: product.NewService(db, cache),
+		roleService:    role.NewService(db, cache),
+		zoneService:    zone.NewService(db, cache),
 		metrics:        initMetrics(),
 	}
 }
@@ -99,7 +100,7 @@ func (s *service) AddEdge(ctx context.Context, eventID string, predicate predica
 		return err
 	}
 
-	if err := s.mc.Delete(eventID); err != nil && err != memcache.ErrCacheMiss {
+	if err := s.cache.Delete(eventID); err != nil && err != memcache.ErrCacheMiss {
 		return errors.Wrap(err, "memcached: deleting event")
 	}
 
@@ -278,7 +279,7 @@ func (s *service) Delete(ctx context.Context, sqlTx *sql.Tx, eventID string) err
 		return errors.Wrap(err, "dgraph: deleting event")
 	}
 
-	if err := s.mc.Delete(eventID); err != nil && err != memcache.ErrCacheMiss {
+	if err := s.cache.Delete(eventID); err != nil && err != memcache.ErrCacheMiss {
 		return errors.Wrap(err, "memcached: deleting event")
 	}
 
@@ -533,7 +534,7 @@ func (s *service) RemoveEdge(ctx context.Context, eventID string, predicate pred
 		return err
 	}
 
-	if err := s.mc.Delete(eventID); err != nil && err != memcache.ErrCacheMiss {
+	if err := s.cache.Delete(eventID); err != nil && err != memcache.ErrCacheMiss {
 		return errors.Wrap(err, "memcached: deleting event")
 	}
 
@@ -588,7 +589,7 @@ func (s *service) Update(ctx context.Context, sqlTx *sql.Tx, eventID string, eve
 		return errors.Wrap(err, "updating event")
 	}
 
-	if err := s.mc.Delete(eventID); err != nil && err != memcache.ErrCacheMiss {
+	if err := s.cache.Delete(eventID); err != nil && err != memcache.ErrCacheMiss {
 		return errors.Wrap(err, "memcached: deleting event")
 	}
 

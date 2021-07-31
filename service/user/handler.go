@@ -5,13 +5,13 @@ import (
 	"net/http"
 
 	"github.com/GGP1/groove/internal/apikey"
+	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/internal/sanitize"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event"
 
-	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/julienschmidt/httprouter"
 )
 
@@ -26,14 +26,14 @@ type friendIDBody struct {
 // Handler is the user handler.
 type Handler struct {
 	service Service
-	mc      *memcache.Client
+	cache   cache.Client
 }
 
 // NewHandler returns a new user handler
-func NewHandler(service Service, cache *memcache.Client) Handler {
+func NewHandler(service Service, cache cache.Client) Handler {
 	return Handler{
 		service: service,
-		mc:      cache,
+		cache:   cache,
 	}
 }
 
@@ -270,7 +270,8 @@ func (h *Handler) GetByID() http.HandlerFunc {
 			return
 		}
 
-		if item, err := h.mc.Get(userID); err == nil {
+		cacheKey := cache.UsersKey(userID)
+		if item, err := h.cache.Get(cacheKey); err == nil {
 			response.EncodedJSON(w, item.Value)
 			return
 		}
@@ -281,7 +282,7 @@ func (h *Handler) GetByID() http.HandlerFunc {
 			return
 		}
 
-		response.JSONAndCache(h.mc, w, userID, user)
+		response.JSONAndCache(h.cache, w, cacheKey, user)
 	}
 }
 

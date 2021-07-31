@@ -5,8 +5,7 @@ import (
 	"net/http"
 
 	"github.com/GGP1/groove/internal/bufferpool"
-
-	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/GGP1/groove/internal/cache"
 )
 
 // Performance optimizations:
@@ -80,7 +79,7 @@ func JSON(w http.ResponseWriter, status int, v interface{}) {
 // JSONAndCache works just like json but saves the encoding of v to the cache before writing the response.
 //
 // The status should always be 200 (OK). Usually, only single users and events will be cached.
-func JSONAndCache(mc *memcache.Client, w http.ResponseWriter, key string, v interface{}) {
+func JSONAndCache(cache cache.Client, w http.ResponseWriter, key string, v interface{}) {
 	buf := bufferpool.Get()
 
 	if err := json.NewEncoder(buf).Encode(v); err != nil {
@@ -89,10 +88,11 @@ func JSONAndCache(mc *memcache.Client, w http.ResponseWriter, key string, v inte
 		return
 	}
 
+	// Copied here once as it's used twice, returning the buffer as soon as possible
 	value := buf.Bytes()
 	bufferpool.Put(buf)
 
-	if err := mc.Set(&memcache.Item{Key: key, Value: value}); err != nil {
+	if err := cache.Set(key, value); err != nil {
 		Error(w, http.StatusInternalServerError, err)
 		return
 	}

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event"
@@ -15,19 +16,18 @@ import (
 	"github.com/GGP1/groove/service/user"
 	"github.com/GGP1/groove/test"
 
-	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/dgraph-io/dgo/v210"
 	"github.com/dgraph-io/dgo/v210/protos/api"
 	"github.com/stretchr/testify/assert"
 )
 
 var (
-	userSv  user.Service
-	eventSv event.Service
-	db      *sql.DB
-	sqlTx   *sql.Tx
-	dc      *dgo.Dgraph
-	mc      *memcache.Client
+	userSv      user.Service
+	eventSv     event.Service
+	db          *sql.DB
+	sqlTx       *sql.Tx
+	dc          *dgo.Dgraph
+	cacheClient cache.Client
 )
 
 func TestMain(m *testing.M) {
@@ -50,9 +50,9 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 	dc = dgraph
-	mc = memcached
+	cacheClient = memcached
 
-	eventSv = event.NewService(postgres, dgraph, memcached)
+	eventSv = event.NewService(postgres, dgraph, cacheClient)
 
 	code := m.Run()
 

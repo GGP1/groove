@@ -5,13 +5,13 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/log"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/service/event"
 	"github.com/GGP1/groove/storage/dgraph"
 	"github.com/GGP1/groove/storage/postgres"
 
-	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/dgraph-io/dgo/v210"
 	"github.com/dgraph-io/dgo/v210/protos/api"
 	"github.com/pkg/errors"
@@ -48,20 +48,20 @@ type Service interface {
 }
 
 type service struct {
-	db *sql.DB
-	dc *dgo.Dgraph
-	mc *memcache.Client
+	db    *sql.DB
+	dc    *dgo.Dgraph
+	cache cache.Client
 
 	admins  map[string]interface{} // TODO: let admins modify this on the run? Must use mutexes
 	metrics metrics
 }
 
 // NewService returns a new user service.
-func NewService(db *sql.DB, dc *dgo.Dgraph, mc *memcache.Client, admins map[string]interface{}) Service {
+func NewService(db *sql.DB, dc *dgo.Dgraph, cache cache.Client, admins map[string]interface{}) Service {
 	return &service{
 		db:      db,
 		dc:      dc,
-		mc:      mc,
+		cache:   cache,
 		admins:  admins,
 		metrics: initMetrics(),
 	}
@@ -91,10 +91,9 @@ func (s *service) AddFriend(ctx context.Context, userID, friendID string) error 
 		return errors.Wrap(err, "creating friendship edges")
 	}
 
-	if err := s.mc.Delete(userID); err != nil && err != memcache.ErrCacheMiss {
-		return errors.Wrap(err, "memcached: deleting user")
+	if err := s.cache.Delete(cache.UsersKey(userID)); err != nil {
+		return errors.Wrap(err, "deleting user")
 	}
-
 	return nil
 }
 
@@ -121,10 +120,9 @@ func (s *service) Block(ctx context.Context, userID, blockedID string) error {
 		return errors.Wrap(err, "performing block")
 	}
 
-	if err := s.mc.Delete(userID); err != nil && err != memcache.ErrCacheMiss {
-		return errors.Wrap(err, "memcached: deleting user")
+	if err := s.cache.Delete(cache.UsersKey(userID)); err != nil {
+		return errors.Wrap(err, "deleting user")
 	}
-
 	return nil
 }
 
@@ -219,8 +217,8 @@ func (s *service) Delete(ctx context.Context, userID string) error {
 		return err
 	}
 
-	if err := s.mc.Delete(userID); err != nil && err != memcache.ErrCacheMiss {
-		return errors.Wrap(err, "memcached: deleting user")
+	if err := s.cache.Delete(cache.UsersKey(userID)); err != nil {
+		return errors.Wrap(err, "deleting user")
 	}
 
 	s.metrics.registeredUsers.Dec()
@@ -498,15 +496,13 @@ func (s *service) Update(ctx context.Context, userID string, user UpdateUser) er
 
 	// The query includes two positional parameters: id and updated_at
 	q := updateUserQuery(user)
-	_, err := s.db.ExecContext(ctx, q, userID, time.Now())
-	if err != nil {
+	if _, err := s.db.ExecContext(ctx, q, userID, time.Now()); err != nil {
 		return errors.Wrap(err, "updating user")
 	}
 
-	if err := s.mc.Delete(userID); err != nil && err != memcache.ErrCacheMiss {
-		return errors.Wrap(err, "deleting user from cache")
+	if err := s.cache.Delete(cache.UsersKey(userID)); err != nil {
+		return errors.Wrap(err, "deleting user")
 	}
-
 	return nil
 }
 

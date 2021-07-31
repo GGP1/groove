@@ -43,7 +43,7 @@ func main() {
 	}
 	defer closeConn()
 
-	mc, err := memcached.Connect(cfg.Memcached)
+	cache, err := memcached.NewClient(cfg.Memcached)
 	if err != nil {
 		log.Sugar().Fatalf("Failed connecting to memcached: %v", err)
 	}
@@ -54,7 +54,7 @@ func main() {
 	}
 	defer rdb.Close()
 
-	router := router.New(cfg, db, dc, rdb, mc)
+	router := router.New(cfg, db, dc, rdb, cache)
 	server := server.New(cfg.Server, router)
 
 	log.Sugar().Infof("Server started: version %q, branch %q, commit %q", version, branch, commit)

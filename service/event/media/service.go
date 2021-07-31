@@ -4,11 +4,11 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/storage/postgres"
 
-	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/pkg/errors"
 )
 
@@ -21,15 +21,15 @@ type Service interface {
 }
 
 type service struct {
-	db *sql.DB
-	mc *memcache.Client
+	db    *sql.DB
+	cache cache.Client
 }
 
 // NewService returns a new media service.
-func NewService(db *sql.DB, mc *memcache.Client) Service {
+func NewService(db *sql.DB, cache cache.Client) Service {
 	return service{
-		db: db,
-		mc: mc,
+		db:    db,
+		cache: cache,
 	}
 }
 

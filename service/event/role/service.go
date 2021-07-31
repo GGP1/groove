@@ -5,10 +5,10 @@ import (
 	"database/sql"
 
 	"github.com/GGP1/groove/internal/bufferpool"
+	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/storage/postgres"
 
-	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/pkg/errors"
 )
 
@@ -34,15 +34,15 @@ type Service interface {
 }
 
 type service struct {
-	db *sql.DB
-	mc *memcache.Client
+	db    *sql.DB
+	cache cache.Client
 }
 
 // NewService returns a new role service.
-func NewService(db *sql.DB, mc *memcache.Client) Service {
+func NewService(db *sql.DB, cache cache.Client) Service {
 	return service{
-		db: db,
-		mc: mc,
+		db:    db,
+		cache: cache,
 	}
 }
 
@@ -101,8 +101,8 @@ func (s service) CreatePermission(ctx context.Context, sqlTx *sql.Tx, eventID st
 		return errors.Wrap(err, "creating permission")
 	}
 
-	if err := s.mc.Delete(eventID + "_permissions"); err != nil && err != memcache.ErrCacheMiss {
-		return errors.Wrap(err, "memcached: deleting event")
+	if err := s.cache.Delete(cache.PermissionsKey(eventID)); err != nil {
+		return errors.Wrap(err, "deleting permission")
 	}
 
 	return nil
@@ -137,8 +137,8 @@ func (s service) CreateRole(ctx context.Context, sqlTx *sql.Tx, eventID string, 
 		return errors.Wrap(err, "creating role")
 	}
 
-	if err := s.mc.Delete(eventID + "_roles"); err != nil && err != memcache.ErrCacheMiss {
-		return errors.Wrap(err, "memcached: deleting event")
+	if err := s.cache.Delete(cache.RolesKey(eventID)); err != nil {
+		return errors.Wrap(err, "deleting roles")
 	}
 
 	return nil

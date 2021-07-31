@@ -8,20 +8,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event/role"
 	"github.com/GGP1/groove/test"
 
-	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 )
 
 var (
-	roleSv role.Service
-	sqlTx  *sql.Tx
-	mc     *memcache.Client
+	roleSv      role.Service
+	sqlTx       *sql.Tx
+	cacheClient cache.Client
 )
 
 func TestMain(m *testing.M) {
@@ -38,9 +38,9 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	mc = memcached
+	cacheClient = memcached
 
-	roleSv = role.NewService(db, mc)
+	roleSv = role.NewService(db, cacheClient)
 
 	code := m.Run()
 

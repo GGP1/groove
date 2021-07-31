@@ -7,18 +7,18 @@ import (
 	"os"
 	"testing"
 
+	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event/media"
 	"github.com/GGP1/groove/test"
 
-	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/stretchr/testify/assert"
 )
 
 var (
-	mediaSv media.Service
-	sqlTx   *sql.Tx
-	mc      *memcache.Client
+	mediaSv     media.Service
+	sqlTx       *sql.Tx
+	cacheClient cache.Client
 )
 
 func TestMain(m *testing.M) {
@@ -34,9 +34,9 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	mc = memcached
+	cacheClient = memcached
 
-	mediaSv = media.NewService(postgres, memcached)
+	mediaSv = media.NewService(postgres, cacheClient)
 
 	code := m.Run()
 

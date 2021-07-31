@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/GGP1/groove/internal/log"
+	"github.com/bradfitz/gomemcache/memcache"
 
 	"github.com/pkg/errors"
 	"github.com/spf13/viper"
@@ -42,7 +43,10 @@ type Logger struct {
 
 // Memcached configuration.
 type Memcached struct {
-	Servers []string
+	ItemsExpiration int32
+	MaxIdleConns    int
+	Servers         []string
+	Timeout         time.Duration
 }
 
 // Postgres configuration.
@@ -198,7 +202,10 @@ var (
 			"outfiles": []string{},
 		},
 		"memcached": map[string]interface{}{
-			"servers": []string{"localhost:11211"},
+			"itemsexpiration": 0,
+			"maxidleconns":    memcache.DefaultMaxIdleConns,
+			"servers":         []string{"localhost:11211"},
+			"timeout":         memcache.DefaultTimeout,
 		},
 		"postgres": map[string]interface{}{
 			"host":        "postgres",
@@ -258,7 +265,10 @@ var (
 		// Logger
 		"logger.outfiles": "LOGGER_OUTFILES",
 		// Memcached
-		"memcached.servers": "MEMCACHED_SERVERS",
+		"memcached.itemsexpiration": "MEMCACHED_ITEMSEXPIRATION",
+		"memcached.maxidleconns":    "MEMCACHED_MAXIDLECONS",
+		"memcached.servers":         "MEMCACHED_SERVERS",
+		"memcached.timeout":         "MEMCACHED_TIMEOUT",
 		// Postgres
 		"postgres.username": "POSTGRES_USERNAME",
 		"postgres.password": "POSTGRES_PASSWORD",

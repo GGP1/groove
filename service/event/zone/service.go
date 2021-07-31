@@ -5,7 +5,8 @@ import (
 	"database/sql"
 
 	"github.com/GGP1/groove/internal/bufferpool"
-	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/GGP1/groove/internal/cache"
+
 	"github.com/pkg/errors"
 )
 
@@ -19,15 +20,15 @@ type Service interface {
 }
 
 type service struct {
-	db *sql.DB
-	mc *memcache.Client
+	db    *sql.DB
+	cache cache.Client
 }
 
 // NewService returns a new zones service.
-func NewService(db *sql.DB, mc *memcache.Client) Service {
+func NewService(db *sql.DB, cache cache.Client) Service {
 	return service{
-		db: db,
-		mc: mc,
+		db:    db,
+		cache: cache,
 	}
 }
 
@@ -38,10 +39,9 @@ func (s service) CreateZone(ctx context.Context, sqlTx *sql.Tx, eventID string, 
 		return errors.Wrap(err, "creating zone")
 	}
 
-	if err := s.mc.Delete(eventID + "_zones"); err != nil && err != memcache.ErrCacheMiss {
-		return errors.Wrap(err, "memcached: deleting event")
+	if err := s.cache.Delete(cache.ZonesKey(eventID)); err != nil {
+		return errors.Wrap(err, "deleting zone")
 	}
-
 	return nil
 }
 

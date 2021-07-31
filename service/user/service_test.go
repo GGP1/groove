@@ -8,23 +8,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event"
 	"github.com/GGP1/groove/service/user"
 	"github.com/GGP1/groove/test"
 
-	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/dgraph-io/dgo/v210"
 	"github.com/stretchr/testify/assert"
 )
 
 var (
-	userSv  user.Service
-	eventSv event.Service
-	db      *sql.DB
-	dc      *dgo.Dgraph
-	mc      *memcache.Client
+	userSv      user.Service
+	eventSv     event.Service
+	db          *sql.DB
+	dc          *dgo.Dgraph
+	cacheClient cache.Client
 )
 
 const adminEmail = "admin@email.com"
@@ -48,9 +48,9 @@ func TestMain(m *testing.M) {
 
 	db = postgres
 	dc = dgraph
-	mc = memcached
-	userSv = user.NewService(db, dc, mc, map[string]interface{}{adminEmail: struct{}{}})
-	eventSv = event.NewService(db, dc, mc)
+	cacheClient = memcached
+	userSv = user.NewService(db, dc, cacheClient, map[string]interface{}{adminEmail: struct{}{}})
+	eventSv = event.NewService(db, dc, cacheClient)
 
 	code := m.Run()
 
