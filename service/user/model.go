@@ -110,11 +110,13 @@ type UpdateUser struct {
 	Username    *string      `json:"username,omitempty"`
 	Private     *bool        `json:"private,omitempty"`
 	Invitations *invitations `json:"invitations,omitempty"`
-	UpdatedAt   *time.Time   `json:"updated_at,omitempty"`
 }
 
 // Validate ..
 func (u UpdateUser) Validate() error {
+	if u == (UpdateUser{}) {
+		return errors.New("no values provided")
+	}
 	if u.Username != nil {
 		if len(*u.Username) > 24 {
 			return errors.New("invalid username length, must be lower than 24 characters")
@@ -154,8 +156,7 @@ type Report struct {
 
 // Invitations settings
 const (
-	_ invitations = iota
-	Friends
+	Friends invitations = iota + 1
 	Nobody
 )
 

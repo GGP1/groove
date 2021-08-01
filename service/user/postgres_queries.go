@@ -3,7 +3,6 @@ package user
 import (
 	"database/sql"
 
-	"github.com/GGP1/groove/internal/bufferpool"
 	"github.com/GGP1/groove/service/event"
 
 	"github.com/pkg/errors"
@@ -133,40 +132,4 @@ func userColumns(u *ListUser, columns []string) []interface{} {
 	}
 
 	return result
-}
-
-func updateUserQuery(u UpdateUser) string {
-	buf := bufferpool.Get()
-	buf.WriteString("UPDATE users SET")
-
-	if u.Name != nil {
-		buf.WriteString(" name='")
-		buf.WriteString(*u.Name)
-		buf.WriteString("',")
-	}
-	if u.Username != nil {
-		buf.WriteString(" username='")
-		buf.WriteString(*u.Username)
-		buf.WriteString("',")
-	}
-	if u.Private != nil {
-		buf.WriteString(" private=")
-		if *u.Private {
-			buf.WriteString("TRUE")
-		} else {
-			buf.WriteString("FALSE")
-		}
-		buf.WriteByte(',')
-	}
-	if u.Invitations != nil {
-		buf.WriteString(" invitations=")
-		buf.WriteString(u.Invitations.String())
-		buf.WriteByte(',')
-	}
-	buf.WriteString(" updated_at=$2 WHERE id=$1")
-
-	q := buf.String()
-	bufferpool.Put(buf)
-
-	return q
 }

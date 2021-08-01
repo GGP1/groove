@@ -588,15 +588,22 @@ func (s *service) SQLTx(ctx context.Context, readOnly bool, f func(tx *sql.Tx) (
 func (s *service) Update(ctx context.Context, sqlTx *sql.Tx, eventID string, event UpdateEvent) error {
 	s.metrics.incMethodCalls("Update")
 
-	// The query includes two positional parameters: id and updated_at
-	q := updateEventQuery(event)
-	_, err := sqlTx.ExecContext(ctx, eventID, q, eventID, time.Now())
+	q := `UPDATE events SET 
+	name = COALESCE($2,name), 
+	type = COALESCE($3,type), 
+	start_time = COALESCE($4,start_time),
+	end_time = COALESCE($5,end_time),
+	ticket_cost = COALESCE($6,ticket_cost),
+	updated_at = $7
+	WHERE id = $1`
+	_, err := sqlTx.ExecContext(ctx, q, eventID, event.Name, event.Type, event.StartTime,
+		event.EndTime, event.TicketCost, time.Now())
 	if err != nil {
 		return errors.Wrap(err, "updating event")
 	}
 
-	if err := s.cache.Delete(eventID); err != nil && err != memcache.ErrCacheMiss {
-		return errors.Wrap(err, "memcached: deleting event")
+	if err := s.cache.Delete(cache.EventsKey(eventID)); err != nil {
+		return errors.Wrap(err, "deleting event")
 	}
 
 	return nil

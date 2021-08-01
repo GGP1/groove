@@ -2,9 +2,7 @@ package event
 
 import (
 	"database/sql"
-	"strconv"
 
-	"github.com/GGP1/groove/internal/bufferpool"
 	"github.com/pkg/errors"
 )
 
@@ -158,52 +156,4 @@ func userColumns(u *User, columns []string) []interface{} {
 	}
 
 	return result
-}
-
-func updateEventQuery(e UpdateEvent) string {
-	buf := bufferpool.Get()
-	buf.WriteString("UPDATE events SET")
-
-	if e.Name != nil {
-		buf.WriteString(" name='")
-		buf.WriteString(*e.Name)
-		buf.WriteString("',")
-	}
-	if e.Type != nil {
-		buf.WriteString(" type=")
-		buf.WriteString(strconv.Itoa(int(*e.Type)))
-		buf.WriteByte(',')
-	}
-	if e.StartTime != nil {
-		buf.WriteString(" start_time=")
-		buf.WriteString(strconv.Itoa(int(*e.StartTime)))
-		buf.WriteByte(',')
-	}
-	if e.EndTime != nil {
-		buf.WriteString(" end_time=")
-		buf.WriteString(strconv.Itoa(int(*e.EndTime)))
-		buf.WriteByte(',')
-	}
-	if e.Slots != nil {
-		buf.WriteString(" slots=")
-		buf.WriteString(strconv.Itoa(int(*e.Slots)))
-		buf.WriteByte(',')
-	}
-	if e.TicketCost != nil {
-		buf.WriteString(" ticket_cost=")
-		buf.WriteString(strconv.Itoa(int(*e.TicketCost)))
-		buf.WriteByte(',')
-	}
-	if e.MinAge != nil {
-		buf.WriteString(" min_age=")
-		buf.WriteString(strconv.Itoa(int(*e.MinAge)))
-		buf.WriteByte(',')
-	}
-
-	buf.WriteString(" updated_at=$2 WHERE id=$1")
-
-	q := buf.String()
-	bufferpool.Put(buf)
-
-	return q
 }

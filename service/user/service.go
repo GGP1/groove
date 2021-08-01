@@ -523,9 +523,16 @@ func (s *service) Unblock(ctx context.Context, userID string, blockedID string) 
 func (s *service) Update(ctx context.Context, userID string, user UpdateUser) error {
 	s.metrics.incMethodCalls("Update")
 
-	// The query includes two positional parameters: id and updated_at
-	q := updateUserQuery(user)
-	if _, err := s.db.ExecContext(ctx, q, userID, time.Now()); err != nil {
+	q := `UPDATE users SET
+	name = COALESCE($2,name),
+	username = COALESCE($3,username),
+	private = COALESCE($4,private),
+	invitations = COALESCE($5,invitations),
+	updated_at = $6 
+	WHERE id=$1`
+	_, err := s.db.ExecContext(ctx, q, userID, user.Name, user.Username,
+		user.Private, user.Invitations.String(), time.Now())
+	if err != nil {
 		return errors.Wrap(err, "updating user")
 	}
 

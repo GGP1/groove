@@ -47,8 +47,8 @@ type Event struct {
 	Name       string            `json:"name,omitempty"`
 	Type       eventType         `json:"type,omitempty"`
 	Public     *bool             `json:"public,omitempty"`
-	StartTime  uint64            `json:"start_time,omitempty" db:"start_time"`
-	EndTime    uint64            `json:"end_time,omitempty" db:"end_time"`
+	StartTime  time.Time         `json:"start_time,omitempty" db:"start_time"`
+	EndTime    time.Time         `json:"end_time,omitempty" db:"end_time"`
 	MinAge     uint16            `json:"min_age,omitempty" db:"min_age"`
 	TicketCost *uint64           `json:"ticket_cost,omitempty" db:"ticket_cost"`
 	Slots      *uint64           `json:"slots,omitempty"`
@@ -74,8 +74,8 @@ type CreateEvent struct {
 	Name       string    `json:"name,omitempty"`
 	Type       eventType `json:"type,omitempty"`
 	Public     *bool     `json:"public,omitempty"`
-	StartTime  uint64    `json:"start_time,omitempty" db:"start_time"`
-	EndTime    uint64    `json:"end_time,omitempty" db:"end_time"`
+	StartTime  time.Time `json:"start_time,omitempty" db:"start_time"`
+	EndTime    time.Time `json:"end_time,omitempty" db:"end_time"`
 	MinAge     uint16    `json:"min_age,omitempty" db:"min_age"`
 	Slots      uint64    `json:"slots,omitempty"`
 	TicketCost uint64    `json:"ticket_cost,omitempty" db:"ticket_cost"`
@@ -93,11 +93,17 @@ func (c CreateEvent) Validate() error {
 	if c.Public == nil {
 		return errors.New("public required")
 	}
-	if c.StartTime == 0 {
+	if c.StartTime.IsZero() {
 		return errors.New("start_time required")
 	}
-	if c.EndTime == 0 {
+	if c.StartTime.Before(time.Now()) {
+		return errors.New("start_time must be sometime in the future")
+	}
+	if c.EndTime.IsZero() {
 		return errors.New("end_time required")
+	}
+	if c.EndTime.Before(c.StartTime) {
+		return errors.New("end_time must be after start_time")
 	}
 	if c.MinAge == 0 {
 		return errors.New("min_age required")
@@ -156,11 +162,50 @@ func (l Location) Validate() error {
 type UpdateEvent struct {
 	Name       *string    `json:"name,omitempty"`
 	Type       *eventType `json:"type,omitempty"`
-	StartTime  *uint64    `json:"start_time,omitempty" db:"start_time"`
-	EndTime    *uint64    `json:"end_time,omitempty" db:"end_time"`
+	StartTime  *time.Time `json:"start_time,omitempty" db:"start_time"`
+	EndTime    *time.Time `json:"end_time,omitempty" db:"end_time"`
 	MinAge     *uint16    `json:"min_age,omitempty" db:"min_age"`
-	Slots      *uint64    `json:"slots,omitempty"`
 	TicketCost *uint64    `json:"ticket_cost,omitempty" db:"ticket_cost"`
+}
+
+// Validate verifies the values inside the struct are valid.
+func (u UpdateEvent) Validate() error {
+	if u == (UpdateEvent{}) {
+		return errors.New("no values provided")
+	}
+	if u.Name != nil {
+		if *u.Name == "" {
+			return errors.New("invalid name")
+		}
+	}
+	if u.Type != nil {
+		if *u.Type == 0 {
+			return errors.New("invalid type")
+		}
+	}
+	if u.StartTime != nil || u.EndTime != nil {
+		if u.StartTime == nil || u.EndTime == nil {
+			return errors.New("both start_time and end_time must be modified together")
+		}
+		if u.StartTime.IsZero() {
+			return errors.New("invalid start_time")
+		}
+		if u.StartTime.Before(time.Now()) {
+			return errors.New("start_time must be sometime in the future")
+		}
+		if u.EndTime.IsZero() {
+			return errors.New("invalid end_time")
+		}
+		if u.EndTime.Before(*u.StartTime) {
+			return errors.New("end_time must be after start_time")
+		}
+	}
+	if u.MinAge != nil {
+		if *u.MinAge == 0 {
+			return errors.New("min_age must be higher than zero")
+		}
+	}
+	return nil
 }
 
 // User represents a user in the context of an event.

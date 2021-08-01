@@ -242,8 +242,8 @@ func TestGetHostedEvents(t *testing.T) {
 		Type:      event.Talk,
 		Public:    &boolean,
 		Slots:     100,
-		StartTime: 1,
-		EndTime:   2,
+		StartTime: time.Now(),
+		EndTime:   time.Now().Add(time.Second * 1500),
 	}
 	err = eventSv.Create(ctx, eventID, createEvent)
 	assert.NoError(t, err)

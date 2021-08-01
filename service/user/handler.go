@@ -55,6 +55,8 @@ func (h *Handler) AddFriend() http.HandlerFunc {
 			return
 		}
 
+		// TODO: require confirmation from the other user before performing operation.
+		// Probably better to implement SendRequest() and trigger AddFriend as a consequence of the confirmation
 		if err := h.service.AddFriend(ctx, userID, reqBody.FriendID); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return

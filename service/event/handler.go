@@ -984,6 +984,11 @@ func (h *Handler) Update() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
+		if err := uptEvent.Validate(); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
 		if err := h.service.Update(ctx, sqlTx, eventID, uptEvent); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
