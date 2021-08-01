@@ -179,7 +179,7 @@ func validateEventFields(fields []string) error {
 		switch f {
 		case "":
 			return errors.Errorf("invalid empty field at index %d", i)
-		case "id", "created_at", "updated_at", "name", "event_id",
+		case "id", "created_at", "updated_at", "name", "description", "event_id",
 			"type", "public", "virtual", "ticket_cost", "slots", "attending",
 			"start_time", "end_time", "min_age":
 			continue

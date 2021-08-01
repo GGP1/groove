@@ -12,7 +12,7 @@ import (
 
 // Event type
 const (
-	Meeting = iota + 1
+	Meeting eventType = iota + 1
 	Party
 	Conference
 	Talk
@@ -43,21 +43,22 @@ type eventType uint8
 //
 // Use pointers to distinguish default values.
 type Event struct {
-	ID         string            `json:"id,omitempty"`
-	Name       string            `json:"name,omitempty"`
-	Type       eventType         `json:"type,omitempty"`
-	Public     *bool             `json:"public,omitempty"`
-	StartTime  time.Time         `json:"start_time,omitempty" db:"start_time"`
-	EndTime    time.Time         `json:"end_time,omitempty" db:"end_time"`
-	MinAge     uint16            `json:"min_age,omitempty" db:"min_age"`
-	TicketCost *uint64           `json:"ticket_cost,omitempty" db:"ticket_cost"`
-	Slots      *uint64           `json:"slots,omitempty"`
-	Location   *Location         `json:"location,omitempty"`
-	Products   []product.Product `json:"products,omitempty"`
-	Media      []media.Media     `json:"media,omitempty"`
-	Zones      []zone.Zone       `json:"zones,omitempty"`
-	CreatedAt  *time.Time        `json:"created_at,omitempty" db:"created_at"`
-	UpdatedAt  *time.Time        `json:"updated_at,omitempty" db:"updated_at"`
+	ID          string            `json:"id,omitempty"`
+	Name        string            `json:"name,omitempty"`
+	Description string            `json:"description,omitempty"`
+	Type        eventType         `json:"type,omitempty"`
+	Public      *bool             `json:"public,omitempty"`
+	StartTime   time.Time         `json:"start_time,omitempty" db:"start_time"`
+	EndTime     time.Time         `json:"end_time,omitempty" db:"end_time"`
+	MinAge      uint16            `json:"min_age,omitempty" db:"min_age"`
+	TicketCost  *uint64           `json:"ticket_cost,omitempty" db:"ticket_cost"`
+	Slots       *uint64           `json:"slots,omitempty"`
+	Location    *Location         `json:"location,omitempty"`
+	Products    []product.Product `json:"products,omitempty"`
+	Media       []media.Media     `json:"media,omitempty"`
+	Zones       []zone.Zone       `json:"zones,omitempty"`
+	CreatedAt   *time.Time        `json:"created_at,omitempty" db:"created_at"`
+	UpdatedAt   *time.Time        `json:"updated_at,omitempty" db:"updated_at"`
 }
 
 // Statistics contains statistics from an event.
@@ -70,16 +71,17 @@ type Statistics struct {
 
 // CreateEvent is the structure used to create an event.
 type CreateEvent struct {
-	HostID     string    `json:"host_id,omitempty"`
-	Name       string    `json:"name,omitempty"`
-	Type       eventType `json:"type,omitempty"`
-	Public     *bool     `json:"public,omitempty"`
-	StartTime  time.Time `json:"start_time,omitempty" db:"start_time"`
-	EndTime    time.Time `json:"end_time,omitempty" db:"end_time"`
-	MinAge     uint16    `json:"min_age,omitempty" db:"min_age"`
-	Slots      uint64    `json:"slots,omitempty"`
-	TicketCost uint64    `json:"ticket_cost,omitempty" db:"ticket_cost"`
-	Location   Location  `json:"location,omitempty"`
+	HostID      string    `json:"host_id,omitempty"`
+	Name        string    `json:"name,omitempty"`
+	Description string    `json:"description,omitempty"`
+	Type        eventType `json:"type,omitempty"`
+	Public      *bool     `json:"public,omitempty"`
+	StartTime   time.Time `json:"start_time,omitempty" db:"start_time"`
+	EndTime     time.Time `json:"end_time,omitempty" db:"end_time"`
+	MinAge      uint16    `json:"min_age,omitempty" db:"min_age"`
+	Slots       uint64    `json:"slots,omitempty"`
+	TicketCost  uint64    `json:"ticket_cost,omitempty" db:"ticket_cost"`
+	Location    Location  `json:"location,omitempty"`
 }
 
 // Validate verifies if the event received is valid.
@@ -160,13 +162,14 @@ func (l Location) Validate() error {
 //
 // Use pointers to distinguish default values.
 type UpdateEvent struct {
-	Name       *string    `json:"name,omitempty"`
-	Type       *eventType `json:"type,omitempty"`
-	StartTime  *time.Time `json:"start_time,omitempty" db:"start_time"`
-	EndTime    *time.Time `json:"end_time,omitempty" db:"end_time"`
-	MinAge     *uint16    `json:"min_age,omitempty" db:"min_age"`
-	TicketCost *uint64    `json:"ticket_cost,omitempty" db:"ticket_cost"`
-	Slots      *uint64    `json:"slots,omitempty"`
+	Name        *string    `json:"name,omitempty"`
+	Description *string    `json:"description,omitempty"`
+	Type        *eventType `json:"type,omitempty"`
+	StartTime   *time.Time `json:"start_time,omitempty" db:"start_time"`
+	EndTime     *time.Time `json:"end_time,omitempty" db:"end_time"`
+	MinAge      *uint16    `json:"min_age,omitempty" db:"min_age"`
+	TicketCost  *uint64    `json:"ticket_cost,omitempty" db:"ticket_cost"`
+	Slots       *uint64    `json:"slots,omitempty"`
 }
 
 // Validate verifies the values inside the struct are valid.

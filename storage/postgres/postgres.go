@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS events
 (
 	id varchar(26),
 	name text NOT NULL,
+	description text NOT NULL,
 	type integer NOT NULL,
 	public boolean NOT NULL,
 	ticket_cost integer DEFAULT 0,

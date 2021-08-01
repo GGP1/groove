@@ -188,10 +188,10 @@ func (s *service) Create(ctx context.Context, eventID string, event CreateEvent)
 	}
 
 	q1 := `INSERT INTO events 
-	(id, name, type, public, start_time, end_time, slots, min_age, ticket_cost, updated_at)
+	(id, name, description, type, public, start_time, end_time, slots, min_age, ticket_cost, updated_at)
 	VALUES 
-	($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
-	_, err = sqlTx.ExecContext(ctx, q1, eventID, event.Name, event.Type, event.Public,
+	($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
+	_, err = sqlTx.ExecContext(ctx, q1, eventID, event.Name, event.Description, event.Type, event.Public,
 		event.StartTime, event.EndTime, event.Slots, event.MinAge, event.TicketCost, time.Time{})
 	if err != nil {
 		return errors.Wrap(err, "creating event")
@@ -322,14 +322,14 @@ func (s *service) GetByID(ctx context.Context, sqlTx *sql.Tx, eventID string) (E
 
 	var event Event
 	eventQ := `SELECT 
-	id, name, type, public, start_time, end_time, slots, 
+	id, name, description, type, public, start_time, end_time, slots, 
 	min_age, ticket_cost, created_at, updated_at 
 	FROM events 
 	WHERE id=$1`
 	row := sqlTx.QueryRowContext(ctx, eventQ, eventID)
-	err := row.Scan(&event.ID, &event.Name, &event.Type, &event.Public,
-		&event.StartTime, &event.EndTime, &event.Slots, &event.MinAge,
-		&event.TicketCost, &event.CreatedAt, &event.UpdatedAt)
+	err := row.Scan(&event.ID, &event.Name, &event.Description, &event.Type,
+		&event.Public, &event.StartTime, &event.EndTime, &event.Slots,
+		&event.MinAge, &event.TicketCost, &event.CreatedAt, &event.UpdatedAt)
 	if err != nil {
 		return Event{}, errors.Wrap(err, "fetching event")
 	}
@@ -583,6 +583,15 @@ func (s *service) SQLTx(ctx context.Context, readOnly bool, f func(tx *sql.Tx) (
 func (s *service) Update(ctx context.Context, sqlTx *sql.Tx, eventID string, event UpdateEvent) error {
 	s.metrics.incMethodCalls("Update")
 
+	var startTime time.Time
+	if err := sqlTx.QueryRowContext(ctx, "SELECT start_time FROM events WHERE id=$1", eventID).Scan(&startTime); err != nil {
+		return errors.Wrap(err, "scanning start time")
+	}
+	// TODO: Only the description or details of the event should be modifiable after the event started
+	if startTime.Before(time.Now()) {
+		return errors.New("cannot modify an event that has already started")
+	}
+
 	if event.Slots != nil {
 		confirmedCount, err := s.GetConfirmedCount(ctx, eventID)
 		if err != nil {
@@ -595,16 +604,17 @@ func (s *service) Update(ctx context.Context, sqlTx *sql.Tx, eventID string, eve
 	}
 
 	q := `UPDATE events SET 
-	name = COALESCE($2,name), 
-	type = COALESCE($3,type), 
-	start_time = COALESCE($4,start_time),
-	end_time = COALESCE($5,end_time),
-	ticket_cost = COALESCE($6,ticket_cost),
-	slots = COALESCE($7,slots),
-	updated_at = $8
+	name = COALESCE($2,name),
+	description = COALESCE($3,description), 
+	type = COALESCE($4,type), 
+	start_time = COALESCE($5,start_time),
+	end_time = COALESCE($6,end_time),
+	ticket_cost = COALESCE($7,ticket_cost),
+	slots = COALESCE($8,slots),
+	updated_at = $9
 	WHERE id = $1`
-	_, err := sqlTx.ExecContext(ctx, q, eventID, event.Name, event.Type, event.StartTime,
-		event.EndTime, event.TicketCost, event.Slots, time.Now())
+	_, err := sqlTx.ExecContext(ctx, q, eventID, event.Name, event.Description, event.Type,
+		event.StartTime, event.EndTime, event.TicketCost, event.Slots, time.Now())
 	if err != nil {
 		return errors.Wrap(err, "updating event")
 	}

@@ -30,6 +30,8 @@ func eventColumns(e *Event, columns []string) []interface{} {
 			result = append(result, &e.ID)
 		case "name":
 			result = append(result, &e.Name)
+		case "description":
+			result = append(result, &e.Description)
 		case "type":
 			result = append(result, &e.Type)
 		case "public":

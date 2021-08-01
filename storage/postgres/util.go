@@ -23,7 +23,7 @@ const (
 	// Users table
 	Users table = "users"
 
-	eventDefaultFields   = "id, name, public, start_time, end_time, ticket_cost, min_age, slots"
+	eventDefaultFields   = "id, name, description, type, public, start_time, end_time, ticket_cost, min_age, slots"
 	mediaDefaultFields   = "id, event_id, url"
 	productDefaultFields = "id, event_id, stock, brand, type, subtotal, total"
 	userDefaultFields    = "id, name, username, email, created_at, updated_at"
