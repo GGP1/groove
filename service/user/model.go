@@ -76,26 +76,30 @@ func (c CreateUser) Validate() error {
 //
 // Use pointers to distinguish default values.
 type ListUser struct {
-	ID                   string     `json:"id,omitempty"`
-	Name                 string     `json:"name,omitempty"`
-	Username             string     `json:"username,omitempty"`
-	Email                string     `json:"email,omitempty"`
-	BirthDate            *time.Time `json:"birth_date,omitempty" db:"birth_date"`
-	Description          string     `json:"description,omitempty"`
-	Premium              *bool      `json:"premium,omitempty"`
-	Private              *bool      `json:"private,omitempty"`
-	VerifiedEmail        *bool      `json:"verified_email,omitempty" db:"verified_email"`
-	ProfileImageURL      string     `json:"profile_image_url,omitempty" db:"profile_image_url"`
-	Invitations          string     `json:"invitations,omitempty"`
-	Location             *Location  `json:"location,omitempty"`
-	BlockedCount         *uint64    `json:"blocked_count,omitempty"`
-	BlockedByCount       *uint64    `json:"blocked_by_count,omitempty"`
-	ConfirmedEventsCount *uint64    `json:"confirmed_events_count,omitempty"`
-	FriendsCount         *uint64    `json:"friends_count,omitempty"`
-	HostedEventsCount    *uint64    `json:"hosting_events_count,omitempty"`
-	InvitedEventsCount   *uint64    `json:"invited_events_count,omitempty"`
-	CreatedAt            *time.Time `json:"created_at,omitempty" db:"created_at"`
-	UpdatedAt            *time.Time `json:"updated_at,omitempty" db:"updated_at"`
+	ID              string     `json:"id,omitempty"`
+	Name            string     `json:"name,omitempty"`
+	Username        string     `json:"username,omitempty"`
+	Email           string     `json:"email,omitempty"`
+	BirthDate       *time.Time `json:"birth_date,omitempty" db:"birth_date"`
+	Description     string     `json:"description,omitempty"`
+	Premium         *bool      `json:"premium,omitempty"`
+	Private         *bool      `json:"private,omitempty"`
+	VerifiedEmail   *bool      `json:"verified_email,omitempty" db:"verified_email"`
+	ProfileImageURL string     `json:"profile_image_url,omitempty" db:"profile_image_url"`
+	Invitations     string     `json:"invitations,omitempty"`
+	Location        *Location  `json:"location,omitempty"`
+	CreatedAt       *time.Time `json:"created_at,omitempty" db:"created_at"`
+	UpdatedAt       *time.Time `json:"updated_at,omitempty" db:"updated_at"`
+}
+
+// Statistics contains statistics from a user.
+type Statistics struct {
+	Blocked         *uint64 `json:"blocked_count,omitempty"`
+	BlockedBy       *uint64 `json:"blocked_by_count,omitempty"`
+	ConfirmedEvents *uint64 `json:"confirmed_events_count,omitempty"`
+	Friends         *uint64 `json:"friends_count,omitempty"`
+	HostedEvents    *uint64 `json:"hosted_events_count,omitempty"`
+	InvitedEvents   *uint64 `json:"invited_events_count,omitempty"`
 }
 
 // UpdateUser is the struct used to update users.

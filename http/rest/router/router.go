@@ -109,6 +109,7 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, ca
 		id := ev.group("/:id")
 		{
 			id.get("/", events.GetByID())
+			id.get("/stats", events.GetCounts())
 			id.delete("/delete", events.Delete(), requireLogin)
 			id.get("/hosts", events.GetHosts())
 			id.put("/update", events.Update(), requireLogin)
@@ -224,6 +225,7 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, ca
 		id := us.group("/:id")
 		{
 			id.get("/", users.GetByID())
+			id.get("/stats", users.GetStatistics())
 			id.post("/block", users.Block(), ownUserOnly)
 			id.get("/blocked", users.GetBlocked())
 			id.get("/blocked_by", users.GetBlockedBy())

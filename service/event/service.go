@@ -45,6 +45,7 @@ type Service interface {
 	GetLikedBy(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]User, error)
 	GetLikedByCount(ctx context.Context, eventID string) (*uint64, error)
 	GetLikedByFriends(ctx context.Context, sqlTx *sql.Tx, eventID, userID string, params params.Query) ([]User, error)
+	GetStatistics(ctx context.Context, eventID string) (Statistics, error)
 	IsPublic(ctx context.Context, sqlTx *sql.Tx, eventID string) (bool, error)
 	RemoveEdge(ctx context.Context, eventID string, predicate predicate, userID string) error
 	Search(ctx context.Context, query string, params params.Query) ([]Event, error)
@@ -98,10 +99,6 @@ func (s *service) AddEdge(ctx context.Context, eventID string, predicate predica
 	})
 	if err != nil {
 		return err
-	}
-
-	if err := s.cache.Delete(eventID); err != nil && err != memcache.ErrCacheMiss {
-		return errors.Wrap(err, "memcached: deleting event")
 	}
 
 	return nil
@@ -338,38 +335,15 @@ func (s *service) GetByID(ctx context.Context, sqlTx *sql.Tx, eventID string) (E
 		return Event{}, errors.Wrap(err, "fetching event")
 	}
 
-	countsQ := `query q($id: string) {
-		q(func: eq(event_id, $id)) {
-			count(banned)
-			count(confirmed)
-			count(invited)
-			count(liked_by)
-		}
-	}`
-	vars := map[string]string{"$id": eventID}
-
-	res, err := s.dc.NewReadOnlyTxn().QueryRDFWithVars(ctx, countsQ, vars)
-	if err != nil {
-		return Event{}, errors.Wrap(err, "querying count")
-	}
-
-	mp, err := dgraph.ParseCountWithMap(res.Rdf)
-	if err != nil {
-		return Event{}, err
-	}
-	event.BannedCount = mp["banned"]
-	event.ConfirmedCount = mp["confirmed"]
-	event.InvitedCount = mp["invited"]
-	event.LikesCount = mp["liked_by"]
-
 	locationQ := `SELECT 
 	virtual, country, state, zip_code, city, address, platform, url
 	FROM events_locations WHERE event_id=$1`
 	locRow := sqlTx.QueryRowContext(ctx, locationQ, eventID)
-	event.Location, err = scanEventLocation(locRow)
+	location, err := scanEventLocation(locRow)
 	if err != nil {
 		return Event{}, nil
 	}
+	event.Location = &location
 
 	return event, nil
 }
@@ -504,6 +478,38 @@ func (s *service) GetLikedByFriends(ctx context.Context, sqlTx *sql.Tx, eventID,
 	}
 
 	return s.queryUsers(ctx, sqlTx, getMixedQuery[likedByFriends], vars, params)
+}
+
+// GetStatistics returns events' predicates statistics.
+func (s *service) GetStatistics(ctx context.Context, eventID string) (Statistics, error) {
+	s.metrics.incMethodCalls("GetStatistics")
+
+	q := `query q($id: string) {
+		q(func: eq(event_id, $id)) {
+			count(banned)
+			count(confirmed)
+			count(invited)
+			count(liked_by)
+		}
+	}`
+	vars := map[string]string{"$id": eventID}
+
+	res, err := s.dc.NewReadOnlyTxn().QueryRDFWithVars(ctx, q, vars)
+	if err != nil {
+		return Statistics{}, errors.Wrap(err, "querying count")
+	}
+
+	mp, err := dgraph.ParseCountWithMap(res.Rdf)
+	if err != nil {
+		return Statistics{}, err
+	}
+
+	return Statistics{
+		Banned:    mp["banned"],
+		Confirmed: mp["confirmed"],
+		Invited:   mp["invited"],
+		Likes:     mp["liked_by"],
+	}, nil
 }
 
 // IsPublic returns if the event is public or not.

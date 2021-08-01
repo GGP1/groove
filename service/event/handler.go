@@ -520,6 +520,27 @@ func (h *Handler) GetConfirmedFriends() http.HandlerFunc {
 	}
 }
 
+// GetCounts returns an event's predicates counts.
+func (h *Handler) GetCounts() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		eventID, err := params.IDFromCtx(ctx)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		counts, err := h.service.GetStatistics(ctx, eventID)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		response.JSON(w, http.StatusOK, counts)
+	}
+}
+
 // GetHosts gets an event's host users.
 func (h *Handler) GetHosts() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

@@ -438,6 +438,26 @@ func (h *Handler) GetLikedEvents() http.HandlerFunc {
 	}
 }
 
+// GetStatistics returns a user's predicates statistics.
+func (h *Handler) GetStatistics() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		userID, err := params.IDFromCtx(ctx)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		counts, err := h.service.GetStatistics(ctx, userID)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		response.JSON(w, http.StatusOK, counts)
+	}
+}
+
 // RemoveFriend removes a friend.
 func (h *Handler) RemoveFriend() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

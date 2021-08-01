@@ -39,6 +39,7 @@ type Service interface {
 	GetInvitedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
 	GetHostedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
 	GetLikedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
+	GetStatistics(ctx context.Context, userID string) (Statistics, error)
 	IsAdmin(ctx context.Context, tx *sql.Tx, userID string) (bool, error)
 	PrivateProfile(ctx context.Context, userID string) (bool, error)
 	RemoveFriend(ctx context.Context, userID string, friendID string) error
@@ -91,9 +92,6 @@ func (s *service) AddFriend(ctx context.Context, userID, friendID string) error 
 		return errors.Wrap(err, "creating friendship edges")
 	}
 
-	if err := s.cache.Delete(cache.UsersKey(userID)); err != nil {
-		return errors.Wrap(err, "deleting user")
-	}
 	return nil
 }
 
@@ -120,9 +118,6 @@ func (s *service) Block(ctx context.Context, userID, blockedID string) error {
 		return errors.Wrap(err, "performing block")
 	}
 
-	if err := s.cache.Delete(cache.UsersKey(userID)); err != nil {
-		return errors.Wrap(err, "deleting user")
-	}
 	return nil
 }
 
@@ -396,6 +391,40 @@ func (s *service) GetLikedEvents(ctx context.Context, userID string, params para
 	return s.getEventsEdge(ctx, userID, predicate, params)
 }
 
+// GetStatistics returns a users' predicates statistics.
+func (s *service) GetStatistics(ctx context.Context, userID string) (Statistics, error) {
+	s.metrics.incMethodCalls("GetStatistics")
+
+	q := `query q($id: string) {
+		q(func: eq(user_id, $id)) {
+			count(blocked)
+			count(~blocked)
+			count(~confirmed)
+			count(friend)
+			count(~invited)
+		}
+	}`
+	vars := map[string]string{"$id": userID}
+
+	res, err := s.dc.NewReadOnlyTxn().QueryRDFWithVars(ctx, q, vars)
+	if err != nil {
+		return Statistics{}, errors.Wrap(err, "querying count")
+	}
+
+	mp, err := dgraph.ParseCountWithMap(res.Rdf)
+	if err != nil {
+		return Statistics{}, err
+	}
+
+	return Statistics{
+		Blocked:         mp["blocked"],
+		BlockedBy:       mp["~blocked"],
+		ConfirmedEvents: mp["~confirmed"],
+		Friends:         mp["friend"],
+		InvitedEvents:   mp["~invited"],
+	}, nil
+}
+
 // IsAdmin returns if the user is an administrator or not.
 func (s *service) IsAdmin(ctx context.Context, tx *sql.Tx, userID string) (bool, error) {
 	isAdmin, err := postgres.QueryBool(ctx, tx, "SELECT is_admin FROM users WHERE id=$1", userID)
@@ -584,10 +613,6 @@ func (s *service) getBy(ctx context.Context, query, value string) (ListUser, err
 	user.Description = description.String
 	user.ProfileImageURL = profileImageURL.String
 
-	if err := s.getCounts(ctx, &user); err != nil {
-		return ListUser{}, err
-	}
-
 	q := "SELECT country, state, city FROM users_locations WHERE user_id=$1"
 	locRow := tx.QueryRowContext(ctx, q, user.ID)
 	var location Location
@@ -597,34 +622,4 @@ func (s *service) getBy(ctx context.Context, query, value string) (ListUser, err
 	user.Location = &location
 
 	return user, nil
-}
-
-func (s *service) getCounts(ctx context.Context, user *ListUser) error {
-	q := `query q($id: string) {
-		q(func: eq(user_id, $id)) {
-			count(blocked)
-			count(~blocked)
-			count(~confirmed)
-			count(friend)
-			count(~invited)
-		}
-	}`
-	vars := map[string]string{"$id": user.ID}
-
-	res, err := s.dc.NewReadOnlyTxn().QueryRDFWithVars(ctx, q, vars)
-	if err != nil {
-		return errors.Wrap(err, "querying count")
-	}
-
-	mp, err := dgraph.ParseCountWithMap(res.Rdf)
-	if err != nil {
-		return err
-	}
-	user.BlockedCount = mp["blocked"]
-	user.BlockedByCount = mp["~blocked"]
-	user.ConfirmedEventsCount = mp["~confirmed"]
-	user.FriendsCount = mp["friend"]
-	user.InvitedEventsCount = mp["~invited"]
-
-	return nil
 }
