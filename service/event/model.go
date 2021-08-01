@@ -166,6 +166,7 @@ type UpdateEvent struct {
 	EndTime    *time.Time `json:"end_time,omitempty" db:"end_time"`
 	MinAge     *uint16    `json:"min_age,omitempty" db:"min_age"`
 	TicketCost *uint64    `json:"ticket_cost,omitempty" db:"ticket_cost"`
+	Slots      *uint64    `json:"slots,omitempty"`
 }
 
 // Validate verifies the values inside the struct are valid.
@@ -203,6 +204,11 @@ func (u UpdateEvent) Validate() error {
 	if u.MinAge != nil {
 		if *u.MinAge == 0 {
 			return errors.New("min_age must be higher than zero")
+		}
+	}
+	if u.Slots != nil {
+		if *u.Slots == 0 {
+			return errors.New("slots must be higher than zero")
 		}
 	}
 	return nil

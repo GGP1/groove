@@ -16,7 +16,6 @@ import (
 	"github.com/GGP1/groove/storage/dgraph"
 	"github.com/GGP1/groove/storage/postgres"
 
-	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/dgraph-io/dgo/v210"
 	"github.com/dgraph-io/dgo/v210/protos/api"
 	"github.com/lib/pq"
@@ -276,8 +275,8 @@ func (s *service) Delete(ctx context.Context, sqlTx *sql.Tx, eventID string) err
 		return errors.Wrap(err, "dgraph: deleting event")
 	}
 
-	if err := s.cache.Delete(eventID); err != nil && err != memcache.ErrCacheMiss {
-		return errors.Wrap(err, "memcached: deleting event")
+	if err := s.cache.Delete(cache.EventsKey(eventID)); err != nil {
+		return errors.Wrap(err, "deleting event")
 	}
 
 	s.metrics.registeredEvents.Dec()
@@ -540,10 +539,6 @@ func (s *service) RemoveEdge(ctx context.Context, eventID string, predicate pred
 		return err
 	}
 
-	if err := s.cache.Delete(eventID); err != nil && err != memcache.ErrCacheMiss {
-		return errors.Wrap(err, "memcached: deleting event")
-	}
-
 	return nil
 }
 
@@ -588,16 +583,28 @@ func (s *service) SQLTx(ctx context.Context, readOnly bool, f func(tx *sql.Tx) (
 func (s *service) Update(ctx context.Context, sqlTx *sql.Tx, eventID string, event UpdateEvent) error {
 	s.metrics.incMethodCalls("Update")
 
+	if event.Slots != nil {
+		confirmedCount, err := s.GetConfirmedCount(ctx, eventID)
+		if err != nil {
+			return err
+		}
+
+		if *event.Slots < *confirmedCount {
+			return errors.New("slots must be higher than the amount of already confirmed users")
+		}
+	}
+
 	q := `UPDATE events SET 
 	name = COALESCE($2,name), 
 	type = COALESCE($3,type), 
 	start_time = COALESCE($4,start_time),
 	end_time = COALESCE($5,end_time),
 	ticket_cost = COALESCE($6,ticket_cost),
-	updated_at = $7
+	slots = COALESCE($7,slots),
+	updated_at = $8
 	WHERE id = $1`
 	_, err := sqlTx.ExecContext(ctx, q, eventID, event.Name, event.Type, event.StartTime,
-		event.EndTime, event.TicketCost, time.Now())
+		event.EndTime, event.TicketCost, event.Slots, time.Now())
 	if err != nil {
 		return errors.Wrap(err, "updating event")
 	}
