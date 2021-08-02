@@ -6,18 +6,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-// scanLocation is the structure used to scan an event's location
-type scanLocation struct {
-	Country  sql.NullString `json:"country,omitempty"`
-	State    sql.NullString `json:"state,omitempty"`
-	ZipCode  sql.NullString `json:"zip_code,omitempty" db:"zip_code"`
-	City     sql.NullString `json:"city,omitempty"`
-	Address  sql.NullString `json:"address,omitempty"`
-	Virtual  *bool          `json:"virtual,omitempty"`
-	Platform sql.NullString `json:"platform,omitempty"`
-	URL      sql.NullString `json:"url,omitempty"`
-}
-
 // eventColumns returns the event fields that will be scanned.
 //
 // When Scan() is called the values are stored inside the variables we passed.
@@ -56,6 +44,27 @@ func eventColumns(e *Event, columns []string) []interface{} {
 	return result
 }
 
+func scanEvent(row *sql.Row) (Event, error) {
+	var (
+		event Event
+		URL   sql.NullString
+	)
+	err := row.Scan(&event.ID, &event.Name, &event.Description, &event.Virtual, &URL,
+		&event.Type, &event.Public, &event.StartTime, &event.EndTime, &event.Slots,
+		&event.MinAge, &event.TicketCost, &event.CreatedAt, &event.UpdatedAt)
+	if err != nil {
+		return Event{}, err
+	}
+
+	event.URL = &URL.String
+	if !*event.Virtual {
+		// TODO: fetch location from location service
+		// event.LocationID
+	}
+
+	return event, nil
+}
+
 func scanEvents(rows *sql.Rows) ([]Event, error) {
 	var events []Event
 
@@ -78,26 +87,6 @@ func scanEvents(rows *sql.Rows) ([]Event, error) {
 	}
 
 	return events, nil
-}
-
-func scanEventLocation(row *sql.Row) (Location, error) {
-	var l scanLocation
-	err := row.Scan(&l.Virtual, &l.Country, &l.State,
-		&l.ZipCode, &l.City, &l.Address, &l.Platform, &l.URL)
-	if err != nil {
-		return Location{}, errors.Wrap(err, "scanning event location")
-	}
-
-	return Location{
-		Virtual:  l.Virtual,
-		Country:  l.Country.String,
-		State:    l.State.String,
-		ZipCode:  l.ZipCode.String,
-		City:     l.City.String,
-		Address:  l.Address.String,
-		Platform: l.Platform.String,
-		URL:      l.URL.String,
-	}, nil
 }
 
 func scanUsers(rows *sql.Rows) ([]User, error) {

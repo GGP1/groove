@@ -188,11 +188,13 @@ func (s *service) Create(ctx context.Context, eventID string, event CreateEvent)
 	}
 
 	q1 := `INSERT INTO events 
-	(id, name, description, type, public, start_time, end_time, slots, min_age, ticket_cost, updated_at)
+	(id, name, description, type, virtual, url, location_id, public, 
+	start_time, end_time, slots, min_age, ticket_cost, updated_at)
 	VALUES 
 	($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
-	_, err = sqlTx.ExecContext(ctx, q1, eventID, event.Name, event.Description, event.Type, event.Public,
-		event.StartTime, event.EndTime, event.Slots, event.MinAge, event.TicketCost, time.Time{})
+	_, err = sqlTx.ExecContext(ctx, q1, eventID, event.Name, event.Description, event.Type,
+		event.Virtual, event.URL, event.LocationID, event.Public, event.StartTime, event.EndTime,
+		event.Slots, event.MinAge, event.TicketCost, time.Time{})
 	if err != nil {
 		return errors.Wrap(err, "creating event")
 	}
@@ -214,17 +216,6 @@ func (s *service) Create(ctx context.Context, eventID string, event CreateEvent)
 	q3 := "INSERT INTO events_users_roles (event_id, user_id, role_name) VALUES ($1, $2, $3)"
 	if _, err := sqlTx.ExecContext(ctx, q3, eventID, event.HostID, role.Host); err != nil {
 		return errors.Wrap(err, "setting host role")
-	}
-
-	q4 := `INSERT INTO events_locations 
-	(event_id, virtual, country, state, city, address, platform, url)
-	VALUES
-	($1, $2, $3, $4, $5, $6, $7, $8)`
-	_, err = sqlTx.ExecContext(ctx, q4, eventID, event.Location.Virtual, event.Location.Country,
-		event.Location.State, event.Location.City, event.Location.Address, event.Location.Platform,
-		event.Location.URL)
-	if err != nil {
-		return errors.Wrap(err, "storing event location")
 	}
 
 	err = dgraph.Mutation(ctx, s.dc, func(dgraphTx *dgo.Txn) error {
@@ -320,29 +311,13 @@ func (s *service) GetBannedFriends(ctx context.Context, sqlTx *sql.Tx, eventID, 
 func (s *service) GetByID(ctx context.Context, sqlTx *sql.Tx, eventID string) (Event, error) {
 	s.metrics.incMethodCalls("GetByID")
 
-	var event Event
-	eventQ := `SELECT 
-	id, name, description, type, public, start_time, end_time, slots, 
-	min_age, ticket_cost, created_at, updated_at 
-	FROM events 
-	WHERE id=$1`
-	row := sqlTx.QueryRowContext(ctx, eventQ, eventID)
-	err := row.Scan(&event.ID, &event.Name, &event.Description, &event.Type,
-		&event.Public, &event.StartTime, &event.EndTime, &event.Slots,
-		&event.MinAge, &event.TicketCost, &event.CreatedAt, &event.UpdatedAt)
-	if err != nil {
-		return Event{}, errors.Wrap(err, "fetching event")
-	}
-
-	locationQ := `SELECT 
-	virtual, country, state, zip_code, city, address, platform, url
-	FROM events_locations WHERE event_id=$1`
-	locRow := sqlTx.QueryRowContext(ctx, locationQ, eventID)
-	location, err := scanEventLocation(locRow)
+	q := `SELECT id, name, description, virtual, url, type, public, start_time, end_time, 
+	slots, min_age, ticket_cost, created_at, updated_at FROM events WHERE id=$1`
+	row := sqlTx.QueryRowContext(ctx, q, eventID)
+	event, err := scanEvent(row)
 	if err != nil {
 		return Event{}, nil
 	}
-	event.Location = &location
 
 	return event, nil
 }

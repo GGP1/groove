@@ -23,7 +23,6 @@ type User struct {
 	VerifiedEmail   *bool     `json:"verified_email,omitempty"`
 	IsAdmin         *bool     `json:"is_admin,omitempty" db:"is_admin"`
 	Invitations     string    `json:"invitations,omitempty"`
-	Location        Location  `json:"location,omitempty"`
 	FriendsCount    uint64    `json:"friends_count,omitempty"`
 	Reports         []Report  `json:"reports,omitempty"`
 	Payment         Payment   `json:"payment,omitempty"`
@@ -38,7 +37,7 @@ type CreateUser struct {
 	Email           string     `json:"email,omitempty"`
 	Password        string     `json:"password,omitempty"`
 	BirthDate       *time.Time `json:"birth_date,omitempty"`
-	Location        Location   `json:"location,omitempty"`
+	LocationID      *int       `json:"location_id,omitempty"`
 	Description     string     `json:"description,omitempty"`
 	ProfileImageURL string     `json:"profile_image_url,omitempty"`
 }
@@ -66,10 +65,13 @@ func (c CreateUser) Validate() error {
 	if c.BirthDate == nil {
 		return errors.New("birth_date required")
 	}
+	if c.LocationID == nil {
+		return errors.New("location_id required")
+	}
 	if len(c.Description) > 144 {
 		return errors.New("invalid description length, must be lower than 144 characters")
 	}
-	return c.Location.Validate()
+	return nil
 }
 
 // ListUser contains information about the user to be provided in profiles.
@@ -87,7 +89,6 @@ type ListUser struct {
 	VerifiedEmail   *bool      `json:"verified_email,omitempty" db:"verified_email"`
 	ProfileImageURL string     `json:"profile_image_url,omitempty" db:"profile_image_url"`
 	Invitations     string     `json:"invitations,omitempty"`
-	Location        *Location  `json:"location,omitempty"`
 	CreatedAt       *time.Time `json:"created_at,omitempty" db:"created_at"`
 	UpdatedAt       *time.Time `json:"updated_at,omitempty" db:"updated_at"`
 }
@@ -130,19 +131,6 @@ func (u UpdateUser) Validate() error {
 	return nil
 }
 
-// Location represents a location for a user.
-type Location struct {
-	Country string `json:"country,omitempty"`
-	State   string `json:"state,omitempty"`
-	City    string `json:"city,omitempty"`
-}
-
-// Validate ..
-func (l Location) Validate() error {
-	// For now it won't be required to provide a location
-	return nil
-}
-
 // Payment contains the financial providers of the users to make transactions.
 type Payment struct {
 	Provider string `json:"provider,omitempty"`
@@ -155,6 +143,7 @@ type Report struct {
 }
 
 // Invitations settings
+// TODO: store invitations as integer in postgres or continue using enums?
 const (
 	Friends invitations = iota + 1
 	Nobody

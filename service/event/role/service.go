@@ -322,6 +322,7 @@ func (s service) SetRoles(ctx context.Context, sqlTx *sql.Tx, eventID, roleName 
 		}
 	}
 
+	// TODO: use arguments or validate the role name to avoid sql injection.
 	q2 := "INSERT INTO events_users_roles (event_id, user_id, role_name) VALUES"
 	insert := postgres.BulkInsertRoles(q2, eventID, roleName, userIDs)
 	if _, err := sqlTx.ExecContext(ctx, insert); err != nil {

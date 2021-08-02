@@ -44,6 +44,9 @@ CREATE TABLE IF NOT EXISTS events
 	name text NOT NULL,
 	description text NOT NULL,
 	type integer NOT NULL,
+	virtual bool NOT NULL,
+	url text,
+	location_id integer,
 	public boolean NOT NULL,
 	ticket_cost integer DEFAULT 0,
 	slots integer NOT NULL,
@@ -86,6 +89,7 @@ CREATE TABLE IF NOT EXISTS users
     password bytea NOT NULL,
 	description varchar(150),
 	birth_date timestamp NOT NULL,
+	location_id int,
 	profile_image_url text,
     is_admin boolean DEFAULT false,
 	premium boolean DEFAULT false,
@@ -113,15 +117,6 @@ DROP TRIGGER IF EXISTS users_tsvector_update ON users;
 
 CREATE TRIGGER users_tsvector_update BEFORE INSERT OR UPDATE
     ON users FOR EACH ROW EXECUTE PROCEDURE users_tsvector_trigger();
-
-CREATE TABLE IF NOT EXISTS users_locations
-(
-	user_id varchar(26),
-	country text,
-	state text,
-	city text,
-    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-);
 
 CREATE TABLE IF NOT EXISTS events_permissions
 (
@@ -155,20 +150,6 @@ CREATE TABLE IF NOT EXISTS events_users_roles
  	role_name varchar(20),
 	FOREIGN KEY (event_id, role_name) REFERENCES events_roles (event_id, name) ON UPDATE CASCADE ON DELETE CASCADE,
  	FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS events_locations
-(
-    event_id varchar(26),
-	virtual bool NOT NULL,
-	country text,
-	state text,
-	zip_code text,
-	city text,
-	address text,
-	platform text,
-	url text,
-    FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS events_media

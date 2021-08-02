@@ -48,12 +48,13 @@ type Event struct {
 	Description string            `json:"description,omitempty"`
 	Type        eventType         `json:"type,omitempty"`
 	Public      *bool             `json:"public,omitempty"`
+	Virtual     *bool             `json:"virtual,omitempty"`
+	URL         *string           `json:"url,omitempty"`
 	StartTime   time.Time         `json:"start_time,omitempty" db:"start_time"`
 	EndTime     time.Time         `json:"end_time,omitempty" db:"end_time"`
 	MinAge      uint16            `json:"min_age,omitempty" db:"min_age"`
 	TicketCost  *uint64           `json:"ticket_cost,omitempty" db:"ticket_cost"`
 	Slots       *uint64           `json:"slots,omitempty"`
-	Location    *Location         `json:"location,omitempty"`
 	Products    []product.Product `json:"products,omitempty"`
 	Media       []media.Media     `json:"media,omitempty"`
 	Zones       []zone.Zone       `json:"zones,omitempty"`
@@ -76,12 +77,14 @@ type CreateEvent struct {
 	Description string    `json:"description,omitempty"`
 	Type        eventType `json:"type,omitempty"`
 	Public      *bool     `json:"public,omitempty"`
+	Virtual     *bool     `json:"virtual,omitempty"`
+	URL         *string   `json:"url,omitempty"`
+	LocationID  *int      `json:"location_id,omitempty"`
 	StartTime   time.Time `json:"start_time,omitempty" db:"start_time"`
 	EndTime     time.Time `json:"end_time,omitempty" db:"end_time"`
 	MinAge      uint16    `json:"min_age,omitempty" db:"min_age"`
 	Slots       uint64    `json:"slots,omitempty"`
 	TicketCost  uint64    `json:"ticket_cost,omitempty" db:"ticket_cost"`
-	Location    Location  `json:"location,omitempty"`
 }
 
 // Validate verifies if the event received is valid.
@@ -94,6 +97,12 @@ func (c CreateEvent) Validate() error {
 	}
 	if c.Public == nil {
 		return errors.New("public required")
+	}
+	if c.Virtual == nil {
+		return errors.New("virtual required")
+	}
+	if c.LocationID == nil {
+		return errors.New("location_id required")
 	}
 	if c.StartTime.IsZero() {
 		return errors.New("start_time required")
@@ -112,48 +121,6 @@ func (c CreateEvent) Validate() error {
 	}
 	if c.Slots == 0 {
 		return errors.New("slots required")
-	}
-	return c.Location.Validate()
-}
-
-// Location represents the place where the event will take place, it could be on-site or virtual.
-type Location struct {
-	Country  string `json:"country,omitempty"`
-	State    string `json:"state,omitempty"`
-	ZipCode  string `json:"zip_code,omitempty" db:"zip_code"`
-	City     string `json:"city,omitempty"`
-	Address  string `json:"address,omitempty"`
-	Virtual  *bool  `json:"virtual,omitempty"`
-	Platform string `json:"platform,omitempty"`
-	URL      string `json:"url,omitempty"`
-}
-
-// Validate ..
-func (l Location) Validate() error {
-	if l.Virtual == nil {
-		return errors.New("virtual required")
-	}
-
-	if *l.Virtual {
-		if l.Platform == "" {
-			return errors.New("plarform required")
-		}
-		if l.URL == "" {
-			return errors.New("url required")
-		}
-	} else {
-		if l.Country == "" {
-			return errors.New("country required")
-		}
-		if l.State == "" {
-			return errors.New("state required")
-		}
-		if l.City == "" {
-			return errors.New("city required")
-		}
-		if l.Address == "" {
-			return errors.New("address required")
-		}
 	}
 	return nil
 }
