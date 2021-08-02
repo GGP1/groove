@@ -62,7 +62,10 @@ func (h *Handler) AccessZone() http.HandlerFunc {
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, "Access granted")
+		type resp struct {
+			Access bool `json:"access,omitempty"`
+		}
+		response.JSON(w, http.StatusOK, resp{Access: true})
 	}
 }
 
