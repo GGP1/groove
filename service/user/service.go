@@ -145,7 +145,7 @@ func (s *service) Create(ctx context.Context, userID string, user CreateUser) er
 	q3 := `INSERT INTO users 
 	(id, name, username, email, password, birth_date, location_id, description, profile_image_url, is_admin, updated_at) 
 	VALUES 
-	($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+	($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 	_, err = psqlTx.ExecContext(ctx, q3, userID, user.Name, user.Username,
 		user.Email, hash, user.BirthDate, user.LocationID, user.Description,
 		user.ProfileImageURL, isAdmin, time.Time{})

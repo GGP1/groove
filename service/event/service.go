@@ -192,7 +192,7 @@ func (s *service) Create(ctx context.Context, eventID string, event CreateEvent)
 	(id, name, description, type, virtual, url, location_id, public, 
 	start_time, end_time, slots, min_age, ticket_cost, updated_at)
 	VALUES 
-	($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
+	($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
 	_, err = sqlTx.ExecContext(ctx, q1, eventID, event.Name, event.Description, event.Type,
 		event.Virtual, event.URL, event.LocationID, event.Public, event.StartTime, event.EndTime,
 		event.Slots, event.MinAge, event.TicketCost, time.Time{})
