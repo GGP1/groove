@@ -59,13 +59,6 @@ CREATE TABLE IF NOT EXISTS events
     CONSTRAINT events_pkey PRIMARY KEY (id)
 );
 
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname='invitations') THEN
-	CREATE TYPE invitations AS enum ('friends', 'nobody');
-END IF;
-END$$;
-
 CREATE INDEX ON events USING GIN (search);
 
 CREATE OR REPLACE FUNCTION events_tsvector_trigger() RETURNS trigger AS $$
@@ -94,7 +87,7 @@ CREATE TABLE IF NOT EXISTS users
     is_admin boolean DEFAULT false,
 	premium boolean DEFAULT false,
 	private boolean DEFAULT false,
-	invitations invitations DEFAULT 'friends',
+	invitations integer DEFAULT 1,
     verified_email boolean DEFAULT false,
 	search tsvector,
     created_at timestamp with time zone DEFAULT NOW(),

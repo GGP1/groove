@@ -524,7 +524,7 @@ func (s *service) Update(ctx context.Context, userID string, user UpdateUser) er
 	updated_at = $6 
 	WHERE id=$1`
 	_, err := s.db.ExecContext(ctx, q, userID, user.Name, user.Username,
-		user.Private, user.Invitations.String(), time.Now())
+		user.Private, user.Invitations, time.Now())
 	if err != nil {
 		return errors.Wrap(err, "updating user")
 	}
@@ -594,7 +594,6 @@ func (s *service) getBy(ctx context.Context, query, value string) (ListUser, err
 	}
 	defer tx.Commit()
 
-	userRow := tx.QueryRowContext(ctx, query, value)
 	var (
 		user ListUser
 		// Use NullString to scan the values that can be null
@@ -602,7 +601,7 @@ func (s *service) getBy(ctx context.Context, query, value string) (ListUser, err
 		description     sql.NullString
 		locationID      int64
 	)
-	err = userRow.Scan(
+	err = tx.QueryRowContext(ctx, query, value).Scan(
 		&user.ID, &user.Name, &user.Username, &user.Email,
 		&user.BirthDate, &locationID, &description, &user.Premium,
 		&user.Private, &user.VerifiedEmail, &profileImageURL,

@@ -191,7 +191,7 @@ func TestCanInvite(t *testing.T) {
 	assert.NoError(t, err)
 
 	t.Run("Friends", func(t *testing.T) {
-		_, err := sqlTx.Exec("UPDATE users SET invitations='friends' WHERE id=$1", invitedID)
+		_, err := sqlTx.Exec("UPDATE users SET invitations=1 WHERE id=$1", invitedID)
 		assert.NoError(t, err)
 
 		vars := map[string]string{"$user_id": userID, "$friend_id": invitedID}
@@ -220,7 +220,7 @@ func TestCanInvite(t *testing.T) {
 	})
 
 	t.Run("Nobody", func(t *testing.T) {
-		_, err := sqlTx.Exec("UPDATE users SET invitations='nobody' WHERE id=$1", invitedID)
+		_, err := sqlTx.Exec("UPDATE users SET invitations=2 WHERE id=$1", invitedID)
 		assert.NoError(t, err)
 
 		ok, err := eventSv.CanInvite(ctx, sqlTx, userID, invitedID)

@@ -8,29 +8,29 @@ import (
 	"github.com/pkg/errors"
 )
 
-// User ..
+// User represents a user inside the system.
 type User struct {
-	ID              string    `json:"id,omitempty"`
-	Name            string    `json:"name,omitempty"`
-	Username        string    `json:"username,omitempty"`
-	Email           string    `json:"email,omitempty"`
-	Password        string    `json:"password,omitempty"`
-	BirthDate       time.Time `json:"birth_date,omitempty" db:"birth_date"`
-	Description     string    `json:"description,omitempty"`
-	ProfileImageURL string    `json:"profile_image_url,omitempty" db:"profile_image_url"`
-	Premium         *bool     `json:"premium,omitempty"`
-	Private         *bool     `json:"private,omitempty"`
-	VerifiedEmail   *bool     `json:"verified_email,omitempty"`
-	IsAdmin         *bool     `json:"is_admin,omitempty" db:"is_admin"`
-	Invitations     string    `json:"invitations,omitempty"`
-	FriendsCount    uint64    `json:"friends_count,omitempty"`
-	Reports         []Report  `json:"reports,omitempty"`
-	Payment         Payment   `json:"payment,omitempty"`
-	CreatedAt       time.Time `json:"created_at,omitempty" db:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at,omitempty" db:"updated_at"`
+	ID              string      `json:"id,omitempty"`
+	Name            string      `json:"name,omitempty"`
+	Username        string      `json:"username,omitempty"`
+	Email           string      `json:"email,omitempty"`
+	Password        string      `json:"password,omitempty"`
+	BirthDate       time.Time   `json:"birth_date,omitempty" db:"birth_date"`
+	Description     string      `json:"description,omitempty"`
+	ProfileImageURL string      `json:"profile_image_url,omitempty" db:"profile_image_url"`
+	Premium         *bool       `json:"premium,omitempty"`
+	Private         *bool       `json:"private,omitempty"`
+	VerifiedEmail   *bool       `json:"verified_email,omitempty"`
+	IsAdmin         *bool       `json:"is_admin,omitempty" db:"is_admin"`
+	Invitations     invitations `json:"invitations,omitempty"`
+	FriendsCount    uint64      `json:"friends_count,omitempty"`
+	Reports         []Report    `json:"reports,omitempty"`
+	Payment         Payment     `json:"payment,omitempty"`
+	CreatedAt       time.Time   `json:"created_at,omitempty" db:"created_at"`
+	UpdatedAt       time.Time   `json:"updated_at,omitempty" db:"updated_at"`
 }
 
-// CreateUser ..
+// CreateUser is the structure used for the creation of a user.
 type CreateUser struct {
 	Name            string     `json:"name,omitempty"`
 	Username        string     `json:"username,omitempty"`
@@ -78,19 +78,19 @@ func (c CreateUser) Validate() error {
 //
 // Use pointers to distinguish default values.
 type ListUser struct {
-	ID              string     `json:"id,omitempty"`
-	Name            string     `json:"name,omitempty"`
-	Username        string     `json:"username,omitempty"`
-	Email           string     `json:"email,omitempty"`
-	BirthDate       *time.Time `json:"birth_date,omitempty" db:"birth_date"`
-	Description     string     `json:"description,omitempty"`
-	Premium         *bool      `json:"premium,omitempty"`
-	Private         *bool      `json:"private,omitempty"`
-	VerifiedEmail   *bool      `json:"verified_email,omitempty" db:"verified_email"`
-	ProfileImageURL string     `json:"profile_image_url,omitempty" db:"profile_image_url"`
-	Invitations     string     `json:"invitations,omitempty"`
-	CreatedAt       *time.Time `json:"created_at,omitempty" db:"created_at"`
-	UpdatedAt       *time.Time `json:"updated_at,omitempty" db:"updated_at"`
+	ID              string      `json:"id,omitempty"`
+	Name            string      `json:"name,omitempty"`
+	Username        string      `json:"username,omitempty"`
+	Email           string      `json:"email,omitempty"`
+	BirthDate       *time.Time  `json:"birth_date,omitempty" db:"birth_date"`
+	Description     string      `json:"description,omitempty"`
+	Premium         *bool       `json:"premium,omitempty"`
+	Private         *bool       `json:"private,omitempty"`
+	VerifiedEmail   *bool       `json:"verified_email,omitempty" db:"verified_email"`
+	ProfileImageURL string      `json:"profile_image_url,omitempty" db:"profile_image_url"`
+	Invitations     invitations `json:"invitations,omitempty"`
+	CreatedAt       *time.Time  `json:"created_at,omitempty" db:"created_at"`
+	UpdatedAt       *time.Time  `json:"updated_at,omitempty" db:"updated_at"`
 }
 
 // Statistics contains statistics from a user.
@@ -143,24 +143,12 @@ type Report struct {
 }
 
 // Invitations settings
-// TODO: store invitations as integer in postgres or continue using enums?
 const (
 	Friends invitations = iota + 1
 	Nobody
 )
 
 type invitations uint8
-
-func (i invitations) String() string {
-	switch i {
-	case Friends:
-		return "friends"
-	case Nobody:
-		return "nobody"
-	default:
-		return ""
-	}
-}
 
 func (i invitations) Validate() error {
 	switch i {

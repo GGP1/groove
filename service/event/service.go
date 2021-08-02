@@ -135,14 +135,15 @@ func (s *service) BeginSQLTx(ctx context.Context, readOnly bool) *sql.Tx {
 func (s *service) CanInvite(ctx context.Context, tx *sql.Tx, userID, invitedID string) (bool, error) {
 	s.metrics.incMethodCalls("CanInvite")
 
+	var invitations int
 	q := "SELECT invitations FROM users WHERE id=$1"
-	invitations, err := postgres.QueryString(ctx, tx, q, userID)
-	if err != nil {
-		return false, err
+	if err := tx.QueryRowContext(ctx, q, userID).Scan(&invitations); err != nil {
+		return false, errors.Wrap(err, "scanning invitations")
 	}
 
 	switch invitations {
-	case "friends":
+	// TODO: shall use invitations types instead of raw numbers
+	case 1: // Friends
 		// user and invited must be friends
 		q := `query q($user_id: string, $target_user_id: string) {
 			user as var(func: eq(user_id, $user_id))
@@ -162,10 +163,10 @@ func (s *service) CanInvite(ctx context.Context, tx *sql.Tx, userID, invitedID s
 
 		ids := dgraph.ParseRDFULIDs(res.Rdf)
 		return len(ids) != 0, nil
-	case "nobody":
+	case 2: // Nobody
 		return false, nil
 	default:
-		return true, nil
+		return false, errors.New("invalid invitations value")
 	}
 }
 
