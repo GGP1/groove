@@ -1,0 +1,172 @@
+package validate
+
+import (
+	"strconv"
+
+	"github.com/GGP1/groove/internal/ulid"
+
+	"github.com/pkg/errors"
+)
+
+// Cursor returns an error if the cursor is not a ulid not a number.
+func Cursor(cursor string) error {
+	// The cursor must be a ulid or a number
+	if err := ULID(cursor); err != nil {
+		if _, err := strconv.Atoi(cursor); err != nil {
+			return errors.New("invalid cursor")
+		}
+	}
+
+	return nil
+}
+
+// EventFields validates the fields requested.
+func EventFields(fields []string) error {
+	if fields == nil {
+		return nil
+	}
+	for i, f := range fields {
+		switch f {
+		case "":
+			return errors.Errorf("invalid empty field at index %d", i)
+		case "id", "created_at", "updated_at", "name", "description",
+			"type", "public", "virtual", "ticket_cost", "slots", "start_time",
+			"end_time", "min_age", "url":
+			continue
+		default:
+			return errors.Errorf("unrecognized field (%s)", f)
+		}
+	}
+	return nil
+}
+
+// MediaFields validates all the fields correspond to the media table.
+func MediaFields(fields []string) error {
+	if fields == nil {
+		return nil
+	}
+	for i, f := range fields {
+		switch f {
+		case "":
+			return errors.Errorf("invalid empty field at index %d", i)
+		case "id", "event_id", "url", "created_at":
+			continue
+		default:
+			return errors.Errorf("unrecognized field %q", f)
+		}
+	}
+
+	return nil
+}
+
+// ProductFields validates all the fields correspond to the products table.
+func ProductFields(fields []string) error {
+	if fields == nil {
+		return nil
+	}
+	for i, f := range fields {
+		switch f {
+		case "":
+			return errors.Errorf("invalid empty field at index %d", i)
+		case "id", "event_id", "stock", "brand", "type", "description",
+			"discount", "taxes", "subtotal", "total", "created_at":
+			continue
+		default:
+			return errors.Errorf("unrecognized field %q", f)
+		}
+	}
+
+	return nil
+}
+
+// UserFields validates the correctness of the user fields passed.
+func UserFields(fields []string) error {
+	if fields == nil {
+		return nil
+	}
+	for i, f := range fields {
+		switch f {
+		case "":
+			return errors.Errorf("invalid empty field at index %d", i)
+		case "id", "created_at", "updated_at", "name", "user_id", "username",
+			"email", "description", "birth_date", "profile_image_url",
+			"premium", "private", "verified_email":
+			continue
+		default:
+			return errors.Errorf("unrecognized field %q", f)
+		}
+	}
+	return nil
+}
+
+// ULID returns an error if the id passed is not a ULID.
+func ULID(id string) error {
+	return validateULID(id)
+}
+
+// ULIDs returns an error if any of the ids passed is not a ULID.
+func ULIDs(ids ...string) error {
+	for i, id := range ids {
+		if err := validateULID(id); err != nil {
+			return errors.Wrapf(err, "id [%d]", i)
+		}
+	}
+	return nil
+}
+
+func validateULID(id string) error {
+	// Check if a base32 encoded ULID is the right length.
+	if len(id) != ulid.EncodedSize {
+		return errors.New("invalid ulid: length is not 26")
+	}
+
+	// Check if the first character in a base32 encoded ULID will overflow. This
+	// happens because the base32 representation encodes 130 bits, while the
+	// ULID is only 128 bits.
+	//
+	// See https://github.com/oklog/ulid/issues/9 for details.
+	if id[0] > '7' {
+		return errors.New("invalid ulid: first character causes overflow")
+	}
+
+	// Check if all the characters in a base32 encoded ULID are part of the
+	// expected base32 character set.
+	for _, v := range id {
+		if dec[v] == 0xFF {
+			return errors.New("invalid ulid: contains non base32 characters")
+		}
+	}
+
+	return nil
+}
+
+// Byte to index table for O(1) lookups when unmarshaling.
+// We use 0xFF as sentinel value for invalid indexes.
+var dec = [...]byte{
+	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x01,
+	0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0xFF, 0xFF,
+	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
+	0x0F, 0x10, 0x11, 0xFF, 0x12, 0x13, 0xFF, 0x14, 0x15, 0xFF,
+	0x16, 0x17, 0x18, 0x19, 0x1A, 0xFF, 0x1B, 0x1C, 0x1D, 0x1E,
+	0x1F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x0A, 0x0B, 0x0C,
+	0x0D, 0x0E, 0x0F, 0x10, 0x11, 0xFF, 0x12, 0x13, 0xFF, 0x14,
+	0x15, 0xFF, 0x16, 0x17, 0x18, 0x19, 0x1A, 0xFF, 0x1B, 0x1C,
+	0x1D, 0x1E, 0x1F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+}
