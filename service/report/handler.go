@@ -6,6 +6,7 @@ import (
 
 	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/internal/ulid"
+	"github.com/GGP1/groove/internal/validate"
 
 	"github.com/julienschmidt/httprouter"
 )
@@ -49,7 +50,7 @@ func (h *Handler) GetReports() http.HandlerFunc {
 		ctx := r.Context()
 
 		reportedID := httprouter.ParamsFromContext(ctx).ByName("reported_id")
-		if err := ulid.Validate(reportedID); err != nil {
+		if err := validate.ULID(reportedID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}

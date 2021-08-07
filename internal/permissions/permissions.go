@@ -6,23 +6,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-// ReservedKeys is a read-only map containing all reserved permissions keys.
-var ReservedKeys = romap.New(map[string]interface{}{
-	All:               struct{}{},
-	Access:            struct{}{},
-	BanUsers:          struct{}{},
-	ModifyMedia:       struct{}{},
-	ModifyPermissions: struct{}{},
-	ModifyProducts:    struct{}{},
-	ModifyRoles:       struct{}{},
-	ModifyZones:       struct{}{},
-	InviteUsers:       struct{}{},
-	SetUserRole:       struct{}{},
-	UpdateEvent:       struct{}{},
-	ViewEvent:         struct{}{},
-})
-
-// Pre-defined permission key.
+// Reserved permission key.
 const (
 	All               = "*"
 	Access            = "access"
@@ -37,6 +21,22 @@ const (
 	UpdateEvent       = "update_event"
 	ViewEvent         = "view_event"
 )
+
+// Reserved is a read-only map containing all reserved permissions keys.
+var Reserved = romap.New(map[string]interface{}{
+	All:               struct{}{},
+	Access:            struct{}{},
+	BanUsers:          struct{}{},
+	ModifyMedia:       struct{}{},
+	ModifyPermissions: struct{}{},
+	ModifyProducts:    struct{}{},
+	ModifyRoles:       struct{}{},
+	ModifyZones:       struct{}{},
+	InviteUsers:       struct{}{},
+	SetUserRole:       struct{}{},
+	UpdateEvent:       struct{}{},
+	ViewEvent:         struct{}{},
+})
 
 // Require makes sure the user has all the permissions required.
 func Require(userPermKeys map[string]struct{}, required ...string) error {

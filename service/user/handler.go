@@ -8,8 +8,8 @@ import (
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/response"
-	"github.com/GGP1/groove/internal/sanitize"
 	"github.com/GGP1/groove/internal/ulid"
+	"github.com/GGP1/groove/internal/validate"
 	"github.com/GGP1/groove/service/event"
 
 	"github.com/julienschmidt/httprouter"
@@ -50,7 +50,7 @@ func (h *Handler) AddFriend() http.HandlerFunc {
 		defer r.Body.Close()
 
 		userID := httprouter.ParamsFromContext(ctx).ByName("id")
-		if err := ulid.ValidateN(userID, reqBody.FriendID); err != nil {
+		if err := validate.ULIDs(userID, reqBody.FriendID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -83,7 +83,7 @@ func (h *Handler) Block() http.HandlerFunc {
 		defer r.Body.Close()
 
 		userID := httprouter.ParamsFromContext(ctx).ByName("id")
-		if err := ulid.ValidateN(userID, reqBody.BlockedID); err != nil {
+		if err := validate.ULIDs(userID, reqBody.BlockedID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -350,6 +350,86 @@ func (h *Handler) GetFriends() http.HandlerFunc {
 	}
 }
 
+// GetFriendsInCommon returns the friends in common between userID and friendID.
+func (h *Handler) GetFriendsInCommon() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		ctxParams := httprouter.ParamsFromContext(ctx)
+		userID := ctxParams.ByName("id")
+		friendID := ctxParams.ByName("friend_id")
+		if err := validate.ULIDs(userID, friendID); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		if params.Count {
+			count, err := h.service.GetFriendsInCommonCount(ctx, userID, friendID)
+			if err != nil {
+				response.Error(w, http.StatusInternalServerError, err)
+				return
+			}
+
+			response.JSONCount(w, http.StatusOK, count)
+			return
+		}
+
+		users, err := h.service.GetFriendsInCommon(ctx, userID, friendID, params)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		response.JSON(w, http.StatusOK, users)
+	}
+}
+
+// GetFriendsNotInCommon returns the friends that are not in common between userID and friendID.
+func (h *Handler) GetFriendsNotInCommon() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		ctxParams := httprouter.ParamsFromContext(ctx)
+		userID := ctxParams.ByName("id")
+		friendID := ctxParams.ByName("friend_id")
+		if err := validate.ULIDs(userID, friendID); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		if params.Count {
+			count, err := h.service.GetFriendsNotInCommonCount(ctx, userID, friendID)
+			if err != nil {
+				response.Error(w, http.StatusInternalServerError, err)
+				return
+			}
+
+			response.JSONCount(w, http.StatusOK, count)
+			return
+		}
+
+		users, err := h.service.GetFriendsNotInCommon(ctx, userID, friendID, params)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		response.JSON(w, http.StatusOK, users)
+	}
+}
+
 // GetHostedEvents gets the events hosted by the user.
 func (h *Handler) GetHostedEvents() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -450,13 +530,13 @@ func (h *Handler) GetStatistics() http.HandlerFunc {
 			return
 		}
 
-		counts, err := h.service.GetStatistics(ctx, userID)
+		stats, err := h.service.GetStatistics(ctx, userID)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		response.JSON(w, http.StatusOK, counts)
+		response.JSON(w, http.StatusOK, stats)
 	}
 }
 
@@ -473,7 +553,7 @@ func (h *Handler) RemoveFriend() http.HandlerFunc {
 		defer r.Body.Close()
 
 		userID := httprouter.ParamsFromContext(ctx).ByName("id")
-		if err := ulid.ValidateN(userID, reqBody.FriendID); err != nil {
+		if err := validate.ULIDs(userID, reqBody.FriendID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -497,11 +577,6 @@ func (h *Handler) Search() http.HandlerFunc {
 		ctx := r.Context()
 
 		query := httprouter.ParamsFromContext(ctx).ByName("query")
-		query = sanitize.Normalize(query)
-		if err := params.ValidateSearchQuery(query); err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
 
 		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
 		if err != nil {
@@ -541,7 +616,7 @@ func (h *Handler) Unblock() http.HandlerFunc {
 		defer r.Body.Close()
 
 		userID := httprouter.ParamsFromContext(ctx).ByName("id")
-		if err := ulid.ValidateN(userID, reqBody.BlockedID); err != nil {
+		if err := validate.ULIDs(userID, reqBody.BlockedID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}

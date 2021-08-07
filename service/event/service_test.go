@@ -10,9 +10,9 @@ import (
 
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
+	"github.com/GGP1/groove/internal/roles"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event"
-	"github.com/GGP1/groove/service/event/role"
 	"github.com/GGP1/groove/service/user"
 	"github.com/GGP1/groove/test"
 
@@ -305,7 +305,7 @@ func TestGetHosts(t *testing.T) {
 	err = test.CreateEvent(ctx, db, dc, eventID, "hosts")
 	assert.NoError(t, err)
 
-	err = eventSv.SetRoles(ctx, sqlTx, eventID, role.Host, userID)
+	err = eventSv.SetRoles(ctx, sqlTx, eventID, roles.Host, userID)
 	assert.NoError(t, err)
 
 	users, err := eventSv.GetHosts(ctx, sqlTx, eventID, params.Query{LookupID: userID})

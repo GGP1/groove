@@ -15,13 +15,13 @@ import (
 	"github.com/GGP1/groove/storage/dgraph"
 	"github.com/GGP1/groove/storage/memcached"
 	"github.com/GGP1/groove/storage/postgres"
-	"golang.org/x/crypto/bcrypt"
 
 	"github.com/dgraph-io/dgo/v210"
 	"github.com/dgraph-io/dgo/v210/protos/api"
 	"github.com/go-redis/redis/v8"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/encoding/gzip"
@@ -228,7 +228,7 @@ func RunPostgres() (*dockertest.Pool, *dockertest.Resource, *sql.DB, error) {
 		return nil, nil, nil, err
 	}
 
-	if err := postgres.CreateTables(context.Background(), db); err != nil {
+	if err := postgres.CreateTables(context.Background(), db, config.Postgres{Username: "postgres"}); err != nil {
 		return nil, nil, nil, err
 	}
 

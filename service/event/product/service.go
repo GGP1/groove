@@ -62,8 +62,8 @@ func (s service) DeleteProduct(ctx context.Context, sqlTx *sql.Tx, eventID, prod
 
 // GetProducts returns the products from an event.
 func (s service) GetProducts(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]Product, error) {
-	q := postgres.SelectWhereID(postgres.Products, "event_id", eventID, "id", params)
-	rows, err := sqlTx.QueryContext(ctx, q)
+	q := postgres.SelectWhere(postgres.Products, "event_id=$1", "id", params)
+	rows, err := sqlTx.QueryContext(ctx, q, eventID)
 	if err != nil {
 		return nil, err
 	}

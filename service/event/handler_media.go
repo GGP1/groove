@@ -8,7 +8,7 @@ import (
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/response"
-	"github.com/GGP1/groove/internal/ulid"
+	"github.com/GGP1/groove/internal/validate"
 	"github.com/GGP1/groove/service/event/media"
 
 	"github.com/julienschmidt/httprouter"
@@ -64,10 +64,10 @@ func (h *Handler) DeleteMedia() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		routerParams := httprouter.ParamsFromContext(ctx)
-		eventID := routerParams.ByName("id")
-		mediaID := routerParams.ByName("media_id")
-		if err := ulid.ValidateN(eventID, mediaID); err != nil {
+		ctxParams := httprouter.ParamsFromContext(ctx)
+		eventID := ctxParams.ByName("id")
+		mediaID := ctxParams.ByName("media_id")
+		if err := validate.ULIDs(eventID, mediaID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}

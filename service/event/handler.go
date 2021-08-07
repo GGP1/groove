@@ -11,9 +11,9 @@ import (
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/response"
-	"github.com/GGP1/groove/internal/sanitize"
+	"github.com/GGP1/groove/internal/roles"
 	"github.com/GGP1/groove/internal/ulid"
-	"github.com/GGP1/groove/service/event/role"
+	"github.com/GGP1/groove/internal/validate"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/pkg/errors"
@@ -72,7 +72,7 @@ func (h *Handler) AddBanned() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := ulid.Validate(reqBody.UserID); err != nil {
+		if err := validate.ULID(reqBody.UserID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -103,7 +103,7 @@ func (h *Handler) AddConfirmed() http.HandlerFunc {
 		defer r.Body.Close()
 
 		eventID := httprouter.ParamsFromContext(ctx).ByName("id")
-		if err := ulid.ValidateN(eventID, reqBody.UserID); err != nil {
+		if err := validate.ULIDs(eventID, reqBody.UserID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -126,7 +126,7 @@ func (h *Handler) AddConfirmed() http.HandlerFunc {
 				return http.StatusInternalServerError, err
 			}
 
-			if err := h.service.SetRoles(ctx, tx, eventID, role.Attendant, reqBody.UserID); err != nil {
+			if err := h.service.SetRoles(ctx, tx, eventID, roles.Attendant, reqBody.UserID); err != nil {
 				return http.StatusInternalServerError, err
 			}
 
@@ -181,7 +181,7 @@ func (h *Handler) AddInvited() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := ulid.Validate(reqBody.UserID); err != nil {
+		if err := validate.ULID(reqBody.UserID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -520,8 +520,8 @@ func (h *Handler) GetConfirmedFriends() http.HandlerFunc {
 	}
 }
 
-// GetCounts returns an event's predicates counts.
-func (h *Handler) GetCounts() http.HandlerFunc {
+// GetStatistics returns an event's predicates statistics.
+func (h *Handler) GetStatistics() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -531,13 +531,13 @@ func (h *Handler) GetCounts() http.HandlerFunc {
 			return
 		}
 
-		counts, err := h.service.GetStatistics(ctx, eventID)
+		stats, err := h.service.GetStatistics(ctx, eventID)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		response.JSON(w, http.StatusOK, counts)
+		response.JSON(w, http.StatusOK, stats)
 	}
 }
 
@@ -713,8 +713,8 @@ func (h *Handler) GetLikes() http.HandlerFunc {
 	}
 }
 
-// GetLikesFriends returns users liking the event that are friends of the user passed.
-func (h *Handler) GetLikesFriends() http.HandlerFunc {
+// GetLikedByFriends returns users liking the event that are friends of the user passed.
+func (h *Handler) GetLikedByFriends() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -778,7 +778,7 @@ func (h *Handler) RemoveBanned() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := ulid.Validate(reqBody.UserID); err != nil {
+		if err := validate.ULID(reqBody.UserID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -825,7 +825,7 @@ func (h *Handler) RemoveConfirmed() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := ulid.Validate(reqBody.UserID); err != nil {
+		if err := validate.ULID(reqBody.UserID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -872,7 +872,7 @@ func (h *Handler) RemoveInvited() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := ulid.Validate(reqBody.UserID); err != nil {
+		if err := validate.ULID(reqBody.UserID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -903,7 +903,7 @@ func (h *Handler) RemoveLike() http.HandlerFunc {
 		defer r.Body.Close()
 
 		eventID := httprouter.ParamsFromContext(ctx).ByName("id")
-		if err := ulid.ValidateN(eventID, reqBody.UserID); err != nil {
+		if err := validate.ULIDs(eventID, reqBody.UserID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -927,11 +927,6 @@ func (h *Handler) Search() http.HandlerFunc {
 		ctx := r.Context()
 
 		query := httprouter.ParamsFromContext(ctx).ByName("query")
-		query = sanitize.Normalize(query)
-		if err := params.ValidateSearchQuery(query); err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
 
 		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
 		if err != nil {

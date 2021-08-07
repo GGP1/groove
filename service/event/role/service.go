@@ -7,6 +7,7 @@ import (
 	"github.com/GGP1/groove/internal/bufferpool"
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/permissions"
+	"github.com/GGP1/groove/internal/roles"
 	"github.com/GGP1/groove/storage/postgres"
 
 	"github.com/pkg/errors"
@@ -120,7 +121,7 @@ func (s service) CreateRole(ctx context.Context, sqlTx *sql.Tx, eventID string, 
 
 	// Check for the existence of the keys used for the role
 	for _, key := range role.PermissionKeys {
-		if permissions.ReservedKeys.Exists(key) {
+		if permissions.Reserved.Exists(key) {
 			continue
 		}
 		row := stmt.QueryRowContext(ctx, eventID, key)
@@ -210,7 +211,7 @@ func (s service) GetPermissions(ctx context.Context, sqlTx *sql.Tx, eventID stri
 
 // GetRole returns a role in a given event.
 func (s service) GetRole(ctx context.Context, sqlTx *sql.Tx, eventID, name string) (Role, error) {
-	if keys, ok := ReservedRoles.GetStringSlice(name); ok {
+	if keys, ok := roles.Reserved.GetStringSlice(name); ok {
 		return Role{Name: name, PermissionKeys: keys}, nil
 	}
 
@@ -244,6 +245,8 @@ func (s service) GetRoles(ctx context.Context, sqlTx *sql.Tx, eventID string) ([
 
 		roles = append(roles, role)
 	}
+	// Prepend reserved roles
+	roles = append(reservedRoles, roles...)
 
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -260,7 +263,7 @@ func (s service) GetUserRole(ctx context.Context, sqlTx *sql.Tx, eventID, userID
 		return Role{}, errors.Errorf("user %q has no role in event %q", userID, eventID)
 	}
 
-	if keys, ok := ReservedRoles.GetStringSlice(roleName); ok {
+	if keys, ok := roles.Reserved.GetStringSlice(roleName); ok {
 		return Role{Name: roleName, PermissionKeys: keys}, nil
 	}
 
@@ -306,14 +309,14 @@ func (s service) SetRoles(ctx context.Context, sqlTx *sql.Tx, eventID, roleName 
 		// Verify that the users already have a role before assigning them other (ensuring they already take part in the event).
 		// The only exception is the creator's host role or when the event is public.
 		q1 := "SELECT EXISTS(SELECT 1 FROM events_users_roles WHERE event_id=$1 AND user_id=$2)"
-		stmt, err := sqlTx.PrepareContext(ctx, q1)
+		stmt1, err := sqlTx.PrepareContext(ctx, q1)
 		if err != nil {
 			return errors.Wrap(err, "prepraring statement")
 		}
 
 		var hasRole bool // Will be overwritten on each iteration
 		for _, userID := range userIDs {
-			if err := stmt.QueryRowContext(ctx, eventID, userID).Scan(&hasRole); err != nil {
+			if err := stmt1.QueryRowContext(ctx, eventID, userID).Scan(&hasRole); err != nil {
 				return err
 			}
 			if !hasRole {
@@ -322,11 +325,16 @@ func (s service) SetRoles(ctx context.Context, sqlTx *sql.Tx, eventID, roleName 
 		}
 	}
 
-	// TODO: use arguments or validate the role name to avoid sql injection.
-	q2 := "INSERT INTO events_users_roles (event_id, user_id, role_name) VALUES"
-	insert := postgres.BulkInsertRoles(q2, eventID, roleName, userIDs)
-	if _, err := sqlTx.ExecContext(ctx, insert); err != nil {
-		return errors.Wrap(err, "setting roles")
+	q2 := "INSERT INTO events_users_roles (event_id, user_id, role_name) VALUES ($1, $2, $3)"
+	stmt2, err := sqlTx.PrepareContext(ctx, q2)
+	if err != nil {
+		return errors.Wrap(err, "preparing insert statement")
+	}
+
+	for _, userID := range userIDs {
+		if _, err := stmt2.ExecContext(ctx, eventID, userID, roleName); err != nil {
+			return errors.Wrap(err, "setting roles")
+		}
 	}
 
 	return nil
@@ -335,7 +343,7 @@ func (s service) SetRoles(ctx context.Context, sqlTx *sql.Tx, eventID, roleName 
 // SetViewerRole assigns the viewer role to a user.
 func (s service) SetViewerRole(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) error {
 	q := "INSERT INTO events_users_roles (event_id, user_id, role_name) VALUES ($1, $2, $3)"
-	if _, err := sqlTx.ExecContext(ctx, q, eventID, userID, Viewer); err != nil {
+	if _, err := sqlTx.ExecContext(ctx, q, eventID, userID, roles.Viewer); err != nil {
 		return errors.Wrap(err, "setting viewer role")
 	}
 

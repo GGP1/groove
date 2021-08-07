@@ -7,6 +7,7 @@ import (
 	"github.com/GGP1/groove/internal/bufferpool"
 	"github.com/GGP1/groove/internal/cookie"
 	"github.com/GGP1/groove/internal/ulid"
+	"github.com/GGP1/groove/internal/validate"
 
 	"github.com/pkg/errors"
 )
@@ -83,7 +84,7 @@ func unparseSessionToken(token string) (Session, error) {
 		return Session{}, errCorruptedSession
 	}
 	id := token[:idLen]
-	if err := ulid.Validate(id); err != nil {
+	if err := validate.ULID(id); err != nil {
 		return Session{}, errCorruptedSession
 	}
 	last := len(token) - 1

@@ -10,6 +10,7 @@ import (
 
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/permissions"
+	"github.com/GGP1/groove/internal/roles"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event/role"
 	"github.com/GGP1/groove/test"
@@ -137,7 +138,7 @@ func TestRoles(t *testing.T) {
 	assert.NoError(t, err)
 
 	expectedRole := role.Role{
-		Name:           role.Attendant,
+		Name:           roles.Attendant,
 		PermissionKeys: pq.StringArray{permissions.InviteUsers},
 	}
 
@@ -192,7 +193,7 @@ func TestRoles(t *testing.T) {
 		gotRole, err := roleSv.GetUserRole(ctx, sqlTx, eventID, userID)
 		assert.NoError(t, err)
 
-		assert.Equal(t, role.Viewer, gotRole.Name)
+		assert.Equal(t, roles.Viewer, gotRole.Name)
 	})
 
 	t.Run("UserHasRole", func(t *testing.T) {

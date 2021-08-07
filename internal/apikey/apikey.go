@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/GGP1/groove/internal/log"
-	"github.com/GGP1/groove/internal/ulid"
+	"github.com/GGP1/groove/internal/validate"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/pkg/errors"
@@ -41,7 +41,7 @@ type Claims struct {
 
 // Valid validates the correctness of the token and satisfies jwt.Claims interface.
 func (c Claims) Valid() error {
-	if ulid.Validate(c.Key) != nil || len(c.Salt) != saltLen {
+	if validate.ULID(c.Key) != nil || len(c.Salt) != saltLen {
 		return ErrInvalidAPIKey
 	}
 	return nil

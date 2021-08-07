@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/GGP1/groove/internal/ulid"
+	"github.com/GGP1/groove/internal/validate"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/pkg/errors"
@@ -42,7 +42,7 @@ type Query struct {
 // IDFromCtx takes the id parameter from context and validates it.
 func IDFromCtx(ctx context.Context) (string, error) {
 	id := httprouter.ParamsFromContext(ctx).ByName("id")
-	if err := ulid.Validate(id); err != nil {
+	if err := validate.ULID(id); err != nil {
 		return "", err
 	}
 	return id, nil
@@ -71,7 +71,7 @@ func ParseQuery(rawQuery string, obj obj) (Query, error) {
 	}
 
 	if lookupID := values.Get("lookup.id"); lookupID != "" {
-		if err := ulid.Validate(lookupID); err != nil {
+		if err := validate.ULID(lookupID); err != nil {
 			return Query{}, err
 		}
 		// As the other fields won't be used, just return here
@@ -85,6 +85,10 @@ func ParseQuery(rawQuery string, obj obj) (Query, error) {
 	cursor := values.Get("cursor")
 	if cursor == "" {
 		cursor = DefaultCursor
+	} else {
+		if err := validate.Cursor(cursor); err != nil {
+			return Query{}, err
+		}
 	}
 
 	params := Query{
@@ -95,12 +99,17 @@ func ParseQuery(rawQuery string, obj obj) (Query, error) {
 	return params, nil
 }
 
-// ValidateSearchQuery returns an error if the query contains invalid characters.
-func ValidateSearchQuery(query string) error {
-	if strings.ContainsAny(query, ";-\\'\":*#$%/|@,¬<>_()[]}{¡~€^") {
-		return errors.New("query contains invalid characters")
+func parseBool(value string) (bool, error) {
+	if value == "" {
+		return false, nil
 	}
-	return nil
+
+	b, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, errors.Errorf("invalid boolean (%q)", value)
+	}
+
+	return b, nil
 }
 
 func parseFields(obj obj, values url.Values) ([]string, error) {
@@ -108,25 +117,25 @@ func parseFields(obj obj, values url.Values) ([]string, error) {
 	switch obj {
 	case User:
 		fields = split(values.Get("user.fields"))
-		if err := validateUserFields(fields); err != nil {
+		if err := validate.UserFields(fields); err != nil {
 			return nil, err
 		}
 
 	case Event:
 		fields = split(values.Get("event.fields"))
-		if err := validateEventFields(fields); err != nil {
+		if err := validate.EventFields(fields); err != nil {
 			return nil, err
 		}
 
 	case Media:
 		fields = split(values.Get("media.fields"))
-		if err := validateMediaFields(fields); err != nil {
+		if err := validate.MediaFields(fields); err != nil {
 			return nil, err
 		}
 
 	case Product:
 		fields = split(values.Get("product.fields"))
-		if err := validateProductFields(fields); err != nil {
+		if err := validate.ProductFields(fields); err != nil {
 			return nil, err
 		}
 
@@ -136,16 +145,6 @@ func parseFields(obj obj, values url.Values) ([]string, error) {
 	}
 
 	return fields, nil
-}
-
-func parseBool(value string) (bool, error) {
-	switch value {
-	case "true", "True", "TRUE", "t", "T", "1":
-		return true, nil
-	case "", "false", "False", "FALSE", "f", "F", "0":
-		return false, nil
-	}
-	return false, errors.Errorf("invalid boolean (%q)", value)
 }
 
 // parseLimit parses an integer from a url value and validates it.
@@ -168,83 +167,6 @@ func parseLimit(value string) (string, error) {
 		}
 		return value, nil
 	}
-}
-
-// validateEventFields validates the fields requested.
-func validateEventFields(fields []string) error {
-	if fields == nil {
-		return nil
-	}
-	for i, f := range fields {
-		switch f {
-		case "":
-			return errors.Errorf("invalid empty field at index %d", i)
-		case "id", "created_at", "updated_at", "name", "description",
-			"type", "public", "virtual", "ticket_cost", "slots", "start_time",
-			"end_time", "min_age", "url":
-			continue
-		default:
-			return errors.Errorf("unrecognized field (%s)", f)
-		}
-	}
-	return nil
-}
-
-func validateMediaFields(fields []string) error {
-	if fields == nil {
-		return nil
-	}
-	for i, f := range fields {
-		switch f {
-		case "":
-			return errors.Errorf("invalid empty field at index %d", i)
-		case "id", "event_id", "url", "created_at":
-			continue
-		default:
-			return errors.Errorf("unrecognized field %q", f)
-		}
-	}
-
-	return nil
-}
-
-func validateProductFields(fields []string) error {
-	if fields == nil {
-		return nil
-	}
-	for i, f := range fields {
-		switch f {
-		case "":
-			return errors.Errorf("invalid empty field at index %d", i)
-		case "id", "event_id", "stock", "brand", "type", "description",
-			"discount", "taxes", "subtotal", "total", "created_at":
-			continue
-		default:
-			return errors.Errorf("unrecognized field %q", f)
-		}
-	}
-
-	return nil
-}
-
-// validateUserFields validates the correctness of the user fields passed.
-func validateUserFields(fields []string) error {
-	if fields == nil {
-		return nil
-	}
-	for i, f := range fields {
-		switch f {
-		case "":
-			return errors.Errorf("invalid empty field at index %d", i)
-		case "id", "created_at", "updated_at", "name", "user_id", "username",
-			"email", "description", "birth_date", "profile_image_url",
-			"premium", "private", "verified_email":
-			continue
-		default:
-			return errors.Errorf("unrecognized field %q", f)
-		}
-	}
-	return nil
 }
 
 // split is like strings.Split but returns nil if the slice is empty

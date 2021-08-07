@@ -10,7 +10,7 @@ import (
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/response"
-	"github.com/GGP1/groove/internal/ulid"
+	"github.com/GGP1/groove/internal/validate"
 	"github.com/GGP1/groove/service/event/role"
 
 	"github.com/julienschmidt/httprouter"
@@ -31,7 +31,7 @@ func (h *Handler) ClonePermissions() http.HandlerFunc {
 		defer r.Body.Close()
 
 		importerEventID := httprouter.ParamsFromContext(ctx).ByName("id")
-		if err := ulid.ValidateN(importerEventID, req.ExporterEventID); err != nil {
+		if err := validate.ULIDs(importerEventID, req.ExporterEventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -72,7 +72,7 @@ func (h *Handler) CloneRoles() http.HandlerFunc {
 		defer r.Body.Close()
 
 		importerEventID := httprouter.ParamsFromContext(ctx).ByName("id")
-		if err := ulid.ValidateN(importerEventID, req.ExporterEventID); err != nil {
+		if err := validate.ULIDs(importerEventID, req.ExporterEventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -196,13 +196,13 @@ func (h *Handler) DeletePermission() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		routerParams := httprouter.ParamsFromContext(ctx)
-		eventID := routerParams.ByName("id")
-		if err := ulid.Validate(eventID); err != nil {
+		ctxParams := httprouter.ParamsFromContext(ctx)
+		eventID := ctxParams.ByName("id")
+		if err := validate.ULID(eventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
-		key := strings.ToLower(routerParams.ByName("key"))
+		key := strings.ToLower(ctxParams.ByName("key"))
 
 		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
 			if err := h.requirePermissions(ctx, r, tx, eventID, permissions.ModifyPermissions); err != nil {
@@ -227,13 +227,13 @@ func (h *Handler) DeleteRole() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		routerParams := httprouter.ParamsFromContext(ctx)
-		eventID := routerParams.ByName("id")
-		if err := ulid.Validate(eventID); err != nil {
+		ctxParams := httprouter.ParamsFromContext(ctx)
+		eventID := ctxParams.ByName("id")
+		if err := validate.ULID(eventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
-		roleName := strings.ToLower(routerParams.ByName("name"))
+		roleName := strings.ToLower(ctxParams.ByName("name"))
 
 		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
 			if err := h.requirePermissions(ctx, r, tx, eventID, permissions.ModifyRoles); err != nil {
@@ -258,13 +258,13 @@ func (h *Handler) GetPermission() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		routerParams := httprouter.ParamsFromContext(ctx)
-		eventID := routerParams.ByName("id")
-		if err := ulid.Validate(eventID); err != nil {
+		ctxParams := httprouter.ParamsFromContext(ctx)
+		eventID := ctxParams.ByName("id")
+		if err := validate.ULID(eventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
-		key := strings.ToLower(routerParams.ByName("key"))
+		key := strings.ToLower(ctxParams.ByName("key"))
 
 		sqlTx := h.service.BeginSQLTx(ctx, true)
 		defer sqlTx.Rollback()
@@ -324,13 +324,13 @@ func (h *Handler) GetRole() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		routerParams := httprouter.ParamsFromContext(ctx)
-		eventID := routerParams.ByName("id")
-		if err := ulid.Validate(eventID); err != nil {
+		ctxParams := httprouter.ParamsFromContext(ctx)
+		eventID := ctxParams.ByName("id")
+		if err := validate.ULID(eventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
-		name := strings.ToLower(routerParams.ByName("name"))
+		name := strings.ToLower(ctxParams.ByName("name"))
 
 		sqlTx := h.service.BeginSQLTx(ctx, true)
 		defer sqlTx.Rollback()
@@ -411,7 +411,7 @@ func (h *Handler) GetUserRole() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := ulid.Validate(reqBody.UserID); err != nil {
+		if err := validate.ULID(reqBody.UserID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -455,6 +455,11 @@ func (h *Handler) SetRoles() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
+		if err := validate.ULIDs(reqBody.UserIDs...); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
 		err = h.service.SetRoles(ctx, sqlTx, eventID, reqBody.RoleName, reqBody.UserIDs...)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
@@ -475,13 +480,13 @@ func (h *Handler) UpdatePermission() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		routerParams := httprouter.ParamsFromContext(ctx)
-		eventID := routerParams.ByName("id")
-		if err := ulid.Validate(eventID); err != nil {
+		ctxParams := httprouter.ParamsFromContext(ctx)
+		eventID := ctxParams.ByName("id")
+		if err := validate.ULID(eventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
-		key := strings.ToLower(routerParams.ByName("key"))
+		key := strings.ToLower(ctxParams.ByName("key"))
 
 		sqlTx := h.service.BeginSQLTx(ctx, false)
 		defer sqlTx.Rollback()
@@ -522,13 +527,13 @@ func (h *Handler) UpdateRole() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		routerParams := httprouter.ParamsFromContext(ctx)
-		eventID := routerParams.ByName("id")
-		if err := ulid.Validate(eventID); err != nil {
+		ctxParams := httprouter.ParamsFromContext(ctx)
+		eventID := ctxParams.ByName("id")
+		if err := validate.ULID(eventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
-		name := strings.ToLower(routerParams.ByName("name"))
+		name := strings.ToLower(ctxParams.ByName("name"))
 
 		sqlTx := h.service.BeginSQLTx(ctx, false)
 		defer sqlTx.Rollback()

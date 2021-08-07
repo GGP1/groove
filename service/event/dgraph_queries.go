@@ -108,10 +108,10 @@ var getQuery = map[query]string{
 	}`,
 }
 
+// TODO: add counts (invitedFriendsCount, etc)?
 const (
-	_ mixedQuery = iota
 	// get users banned from the event that a friend of user
-	bannedFriends
+	bannedFriends mixedQuery = iota + 1
 	// get users confirmed in the event that a friend of user
 	confirmedFriends
 	// get users invited to the event that a friend of user
@@ -125,7 +125,7 @@ type mixedQuery uint8
 
 // getMixedQuery is a list with queries that check two predicates.
 var getMixedQuery = map[mixedQuery]string{
-	bannedFriends: `query q($event_id: string, $user_id: string) {
+	bannedFriends: `query q($event_id: string, $user_id: string, $cursor: string, $limit: string) {
 		user as var(func: eq(user_id, $user_id))
 		event as var(func: eq(event_id, $event_id))
 
@@ -135,7 +135,7 @@ var getMixedQuery = map[mixedQuery]string{
 			}
 		}
 	}`,
-	confirmedFriends: `query q($event_id: string, $user_id: string) {
+	confirmedFriends: `query q($event_id: string, $user_id: string, $cursor: string, $limit: string) {
 		user as var(func: eq(user_id, $user_id))
 		event as var(func: eq(event_id, $event_id))
 

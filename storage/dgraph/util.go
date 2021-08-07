@@ -36,8 +36,7 @@ type dgraphType int
 //
 // CreateNode does not commit the transaction passed.
 func CreateNode(ctx context.Context, tx *dgo.Txn, dType dgraphType, id string) error {
-	predicate := ""
-	object := ""
+	var predicate, object string
 
 	switch dType {
 	case User:
@@ -54,23 +53,17 @@ func CreateNode(ctx context.Context, tx *dgo.Txn, dType dgraphType, id string) e
 
 	// _:1 <predicate> "id" .
 	buf.WriteString(createSubject)
-	buf.WriteByte(' ')
-	buf.WriteByte('<')
+	buf.WriteString(" <")
 	buf.WriteString(predicate)
-	buf.WriteByte('>')
-	buf.WriteByte('"')
+	buf.WriteString(">\"")
 	buf.WriteString(id)
-	buf.WriteByte('"')
-	buf.WriteByte('.')
-	buf.WriteByte('\n')
+	buf.WriteString("\".\n")
 
 	// _:1 <dgraph.type> "type" .
 	buf.WriteString(createSubject)
 	buf.WriteString(" <dgraph.type>\"")
 	buf.WriteString(object)
-	buf.WriteByte('"')
-	buf.WriteByte('.')
-	buf.WriteByte('\n')
+	buf.WriteString("\".\n")
 
 	mu := &api.Mutation{
 		Cond:      "@if(eq(len(node), 0))",
@@ -128,6 +121,16 @@ func GetCount(ctx context.Context, dc *dgo.Dgraph, query, id string) (*uint64, e
 	return ParseCount(res.Rdf)
 }
 
+// GetCountWithVars is like GetCount but it takes the variables as an argument.
+func GetCountWithVars(ctx context.Context, dc *dgo.Dgraph, query string, vars map[string]string) (*uint64, error) {
+	res, err := dc.NewReadOnlyTxn().QueryRDFWithVars(ctx, query, vars)
+	if err != nil {
+		return nil, errors.Wrap(err, "fetching count")
+	}
+
+	return ParseCount(res.Rdf)
+}
+
 // Mutation creates a new transaction, executes the function passed and commits the results.
 //
 // Request made inside this function shouldn't have CommitNow set to true.
@@ -156,20 +159,7 @@ func Query(ctx context.Context, dc *dgo.Dgraph, f func(tx *dgo.Txn) (*api.Respon
 //
 // As counts are encoded like pointers, return a pointer to uint64.
 func ParseCount(rdf []byte) (*uint64, error) {
-	// Sample rdf:
-	// <0x1> <count(predicate)> "15" .
-	r := string(rdf)
-	start := strings.IndexByte(r, '"') + 1
-	end := strings.LastIndexByte(r, '"')
-	if start == 0 || end == -1 {
-		return nil, errors.Errorf("invalid rdf: %q", r)
-	}
-	count, err := strconv.ParseUint(r[start:end], 10, 64)
-	if err != nil {
-		return nil, errors.Wrap(err, "invalid number")
-	}
-
-	return &count, nil
+	return parseCount(string(rdf))
 }
 
 // ParseCountWithMap is like ParseCount but it parses the predicates as well.
@@ -192,25 +182,17 @@ func ParseCountWithMap(rdf []byte) (map[string]*uint64, error) {
 		}
 		pred := line[startPred:endPred]
 
-		startCount := strings.IndexByte(line, '"') + 1
-		endCount := strings.LastIndexByte(line, '"')
-		if startCount == 0 || endCount == -1 {
-			return nil, errors.Errorf("invalid rdf: %q", line)
-		}
-
-		count, err := strconv.ParseUint(line[startCount:endCount], 10, 64)
+		count, err := parseCount(line[endPred:])
 		if err != nil {
-			return nil, errors.Wrap(err, "invalid count")
+			return nil, err
 		}
-		mp[pred] = &count
+		mp[pred] = count
 	}
 
 	return mp, nil
 }
 
 // ParseRDFULIDs returns a slice of ULIDs parsed from a RDF reponse.
-//
-// One order of magnitude faster than using json.
 func ParseRDFULIDs(rdf []byte) []string {
 	if rdf == nil || len(rdf) == 0 {
 		return nil
@@ -233,8 +215,6 @@ func ParseRDFULIDs(rdf []byte) []string {
 }
 
 // ParseRDFULIDsWithMap returns a map with ULIDs keys parsed from a RDF reponse.
-//
-// One order of magnitude faster than using json.
 func ParseRDFULIDsWithMap(rdf []byte) map[string]struct{} {
 	if rdf == nil || len(rdf) == 0 {
 		return nil
@@ -257,6 +237,8 @@ func ParseRDFULIDsWithMap(rdf []byte) map[string]struct{} {
 }
 
 // ParseRDFWithMap works like ParseRDFReponse but it parses the predicates as well.
+//
+// One order of magnitude faster than using json.
 func ParseRDFWithMap(rdf []byte) (map[string][]string, error) {
 	if rdf == nil || len(rdf) == 0 {
 		return nil, nil
@@ -394,4 +376,20 @@ func UserEdgeRequest(userID, predicate, targetID string, set bool) *api.Request 
 		Mutations: []*api.Mutation{mu},
 		CommitNow: true,
 	}
+}
+
+func parseCount(line string) (*uint64, error) {
+	// Sample line:
+	// <0x1> <count(predicate)> "15" .\n
+	start := strings.IndexByte(line, '"') + 1
+	end := len(line) - 4
+	if start == 0 || end < 1 {
+		return nil, errors.Errorf("invalid rdf: %q", line)
+	}
+	count, err := strconv.ParseUint(line[start:end], 10, 64)
+	if err != nil {
+		return nil, errors.Wrap(err, "invalid number")
+	}
+
+	return &count, nil
 }

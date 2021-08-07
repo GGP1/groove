@@ -11,7 +11,7 @@ import (
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/response"
-	"github.com/GGP1/groove/internal/ulid"
+	"github.com/GGP1/groove/internal/validate"
 	"github.com/GGP1/groove/service/event/zone"
 
 	"github.com/julienschmidt/httprouter"
@@ -22,13 +22,13 @@ func (h *Handler) AccessZone() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		routerParams := httprouter.ParamsFromContext(ctx)
-		eventID := routerParams.ByName("id")
-		if err := ulid.Validate(eventID); err != nil {
+		ctxParams := httprouter.ParamsFromContext(ctx)
+		eventID := ctxParams.ByName("id")
+		if err := validate.ULID(eventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
-		name := strings.ToLower(routerParams.ByName("name"))
+		name := strings.ToLower(ctxParams.ByName("name"))
 
 		session, err := auth.GetSession(ctx, r)
 		if err != nil {
@@ -115,13 +115,13 @@ func (h *Handler) DeleteZone() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		routerParams := httprouter.ParamsFromContext(ctx)
-		eventID := routerParams.ByName("id")
-		if err := ulid.Validate(eventID); err != nil {
+		ctxParams := httprouter.ParamsFromContext(ctx)
+		eventID := ctxParams.ByName("id")
+		if err := validate.ULID(eventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
-		name := strings.ToLower(routerParams.ByName("name"))
+		name := strings.ToLower(ctxParams.ByName("name"))
 
 		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
 			if err := h.requirePermissions(ctx, r, tx, eventID, permissions.ModifyZones); err != nil {
@@ -146,11 +146,11 @@ func (h *Handler) GetZone() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		routerParams := httprouter.ParamsFromContext(ctx)
-		eventID := routerParams.ByName("id")
-		name := strings.ToLower(routerParams.ByName("name"))
+		ctxParams := httprouter.ParamsFromContext(ctx)
+		eventID := ctxParams.ByName("id")
+		name := strings.ToLower(ctxParams.ByName("name"))
 
-		if err := ulid.Validate(eventID); err != nil {
+		if err := validate.ULID(eventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
@@ -213,13 +213,13 @@ func (h *Handler) UpdateZone() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		routerParams := httprouter.ParamsFromContext(ctx)
-		eventID := routerParams.ByName("id")
-		if err := ulid.Validate(eventID); err != nil {
+		ctxParams := httprouter.ParamsFromContext(ctx)
+		eventID := ctxParams.ByName("id")
+		if err := validate.ULID(eventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
-		name := strings.ToLower(routerParams.ByName("name"))
+		name := strings.ToLower(ctxParams.ByName("name"))
 
 		sqlTx := h.service.BeginSQLTx(ctx, false)
 		defer sqlTx.Rollback()

@@ -54,8 +54,8 @@ func (s service) DeleteMedia(ctx context.Context, sqlTx *sql.Tx, eventID, mediaI
 }
 
 func (s service) GetMedia(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]Media, error) {
-	q := postgres.SelectWhereID(postgres.Media, "event_id", eventID, "id", params)
-	rows, err := sqlTx.QueryContext(ctx, q)
+	q := postgres.SelectWhere(postgres.Media, "event_id=$1", "id", params)
+	rows, err := sqlTx.QueryContext(ctx, q, eventID)
 	if err != nil {
 		return nil, err
 	}

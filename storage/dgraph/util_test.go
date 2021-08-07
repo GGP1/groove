@@ -11,11 +11,20 @@ func TestParseCount(t *testing.T) {
 	t.Run("Valid", func(t *testing.T) {
 		expected := new(uint64)
 		*expected = 470
-		rdf := []byte("<0x8> <invited> \"470\" .")
+		rdf := []byte("<0x8> <invited> \"470\" .\n")
 
 		got, err := ParseCount(rdf)
 		assert.NoError(t, err)
 		assert.Equal(t, expected, got)
+	})
+
+	t.Run("Invalid", func(t *testing.T) {
+		expected := new(uint64)
+		*expected = 470
+		rdf := []byte("<0x8> <invited> .")
+
+		_, err := ParseCount(rdf)
+		assert.Error(t, err)
 	})
 
 	t.Run("Error", func(t *testing.T) {
@@ -45,7 +54,7 @@ func TestParseCountWithMap(t *testing.T) {
 	})
 }
 
-func TestParseRDF(t *testing.T) {
+func TestParseRDFULIDs(t *testing.T) {
 	expected := []string{"01FATYNXRDPTPSJNEJ0DQ5KBAB", "01FATYMXV9M5K093CK5NX0Y4K9"}
 	rdf := []byte(`<0x2> <~invited> <0x1> .
 <0x1> <event_id> "01FATYNXRDPTPSJNEJ0DQ5KBAB" .
@@ -80,7 +89,21 @@ func TestTriple(t *testing.T) {
 	})
 }
 
-func BenchmarkParseRDFResponse(b *testing.B) {
+func BenchmarkParseCount(b *testing.B) {
+	rdf := []byte(`<0x1> <count(predicate)> "15" .`)
+	for i := 0; i < b.N; i++ {
+		_, _ = ParseCount(rdf)
+	}
+}
+
+func BenchmarkParseCountWithMap(b *testing.B) {
+	rdf := []byte(`<0x1> <count(predicate)> "15" .`)
+	for i := 0; i < b.N; i++ {
+		_, _ = ParseCountWithMap(rdf)
+	}
+}
+
+func BenchmarkParseRDFULIDs(b *testing.B) {
 	rdf := []byte(`<0x2> <~invited> <0x1> .
 <0x1> <event_id> "01FATYNXRDPTPSJNEJ0DQ5KBAB" .
 <0x1> <event_id> "01FATYMXV9M5K093CK5NX0Y4K9" .
@@ -118,7 +141,7 @@ func BenchmarkParseJSON(b *testing.B) {
 	}
 }
 
-func BenchmarkParseRDFResponseWithMap(b *testing.B) {
+func BenchmarkParseRDFWithMap(b *testing.B) {
 	rdf := []byte(`<0x2> <~invited> <0x1> .
 <0x1> <event_id> "01FATYNXRDPTPSJNEJ0DQ5KBAB" .
 <0x1> <event_id> "01FATYMXV9M5K093CK5NX0Y4K9" .

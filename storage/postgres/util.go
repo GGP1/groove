@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/GGP1/groove/internal/bufferpool"
 	"github.com/GGP1/groove/internal/params"
@@ -14,13 +13,13 @@ import (
 )
 
 const (
-	// Events table
+	// Events table name
 	Events table = "events"
-	// Media table
+	// Media table name
 	Media table = "events_media"
-	// Products table
+	// Products table name
 	Products table = "events_products"
-	// Users table
+	// Users table name
 	Users table = "users"
 
 	eventDefaultFields   = "id, name, description, virtual, type, public, start_time, end_time, ticket_cost, min_age, slots"
@@ -39,30 +38,6 @@ func AddPagination(query, paginationField string, params params.Query) string {
 	q := buf.String()
 	bufferpool.Put(buf)
 
-	return q
-}
-
-// BulkInsertRoles adds the values to roles' insert query.
-func BulkInsertRoles(query, eventID, roleName string, userIDs []string) string {
-	buf := bufferpool.Get()
-
-	buf.WriteString(query)
-	for i, userID := range userIDs {
-		// query ... ('eventID','userID','roleName'), (...)
-		buf.WriteString(" ('")
-		buf.WriteString(eventID)
-		buf.WriteString("','")
-		buf.WriteString(userID)
-		buf.WriteString("','")
-		buf.WriteString(roleName)
-		buf.WriteString("')")
-		if i != len(userIDs)-1 {
-			buf.WriteByte(',')
-		}
-	}
-
-	q := buf.String()
-	bufferpool.Put(buf)
 	return q
 }
 
@@ -128,18 +103,16 @@ func ScanStringSlice(rows *sql.Rows) ([]string, error) {
 }
 
 // FullTextSearch returns an SQL query implementing FTS.
-func FullTextSearch(table table, query string, params params.Query) string {
+//
+//	SELECT [fields] FROM [table] WHERE search @@ to_tsquery($1) [pagination].
+func FullTextSearch(table table, params params.Query) string {
 	buf := bufferpool.Get()
 
 	buf.WriteString("SELECT ")
 	writeFields(buf, table, params.Fields)
 	buf.WriteString(" FROM ")
 	buf.WriteString(string(table))
-	buf.WriteString(" WHERE search @@ to_tsquery('")
-	// FTS operators: "&" (AND), "<->" (FOLLOWED BY)
-	// See https://www.postgresql.org/docs/13/textsearch-controls.html
-	replaceAll(buf, strings.TrimSpace(query), " ", "&")
-	buf.WriteString(":*')")
+	buf.WriteString(" WHERE search @@ to_tsquery($1)")
 	addPagination(buf, "id", params)
 
 	q := buf.String()
@@ -148,7 +121,16 @@ func FullTextSearch(table table, query string, params params.Query) string {
 	return q
 }
 
+// ToTSQuery formats the string passed to a tsquery-like syntax.
+func ToTSQuery(s string) string {
+	// FTS operators: "&" (AND), "<->" (FOLLOWED BY)
+	// See https://www.postgresql.org/docs/13/textsearch-controls.html
+	// ":*" is used to match prefixes as well
+	return strings.ReplaceAll(strings.TrimSpace(s), " ", "&") + ":*"
+}
+
 // SelectInID builds a postgres select from in statement.
+// [ids] mustn't be a user input.
 //
 // 	SELECT fields FROM table WHERE id IN ('id1','id2',...) ORDER BY id DESC
 func SelectInID(table table, ids, fields []string) string {
@@ -177,12 +159,15 @@ func SelectInID(table table, ids, fields []string) string {
 	return query
 }
 
-// SelectWhereID builds a postgres select from statement.
+// SelectWhere builds a select statement while receiving parameterized arguments.
 //
-// 	Standard: "SELECT params.Fields FROM table WHERE idField='id' ORDER BY paginationField DESC LIMIT params.Limit"
-//	LookupID: "SELECT params.Fields FROM table WHERE idField='id' AND paginationField='params.LookupID'"
-//	Cursor: "SELECT params.Fields FROM table WHERE idField='id' AND paginationField < 'params.Cursor' ORDER BY paginationField DESC LIMIT params.Limit"
-func SelectWhereID(table table, idField, id, paginationField string, params params.Query) string {
+// 	Format: "SELECT [fields] FROM [table] WHERE [whereCond] [pagination]"
+//
+// Pagination:
+//	Standard: "ORDER BY paginationField DESC LIMIT params.Limit"
+//	LookupID: "AND paginationField='params.LookupID'"
+//	Cursor: "AND paginationField < 'params.Cursor' ORDER BY paginationField DESC LIMIT params.Limit"
+func SelectWhere(table table, whereCond, paginationField string, params params.Query) string {
 	buf := bufferpool.Get()
 
 	buf.WriteString("SELECT ")
@@ -190,16 +175,13 @@ func SelectWhereID(table table, idField, id, paginationField string, params para
 	buf.WriteString(" FROM ")
 	buf.WriteString(string(table))
 	buf.WriteString(" WHERE ")
-	buf.WriteString(idField)
-	buf.WriteString("='")
-	buf.WriteString(id)
-	buf.WriteByte('\'')
+	buf.WriteString(whereCond)
 	addPagination(buf, paginationField, params)
 
-	query := buf.String()
+	q := buf.String()
 	bufferpool.Put(buf)
 
-	return query
+	return q
 }
 
 func addPagination(buf *bytes.Buffer, paginationField string, p params.Query) {
@@ -245,40 +227,4 @@ func writeFields(buf *bytes.Buffer, table table, fields []string) {
 			buf.WriteString(f)
 		}
 	}
-}
-
-// replaceAll is like strings.ReplaceAll but it writes the new string
-// directly to the buffer passed to save an allocation.
-func replaceAll(b *bytes.Buffer, s, old, new string) {
-	if old == new {
-		b.WriteString(s)
-		return
-	}
-
-	// Compute number of replacements.
-	m := strings.Count(s, old)
-	if m == 0 {
-		b.WriteString(s)
-		return
-	}
-
-	if len(new) > len(old) {
-		b.Grow(m * (len(new) - len(old)))
-	}
-	start := 0
-	for i := 0; i < m; i++ {
-		j := start
-		if len(old) == 0 {
-			if i > 0 {
-				_, wid := utf8.DecodeRuneInString(s[start:])
-				j += wid
-			}
-		} else {
-			j += strings.Index(s[start:], old)
-		}
-		b.WriteString(s[start:j])
-		b.WriteString(new)
-		start = j + len(old)
-	}
-	b.WriteString(s[start:])
 }

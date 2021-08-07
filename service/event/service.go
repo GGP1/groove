@@ -8,7 +8,7 @@ import (
 
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
-	"github.com/GGP1/groove/internal/permissions"
+	"github.com/GGP1/groove/internal/roles"
 	"github.com/GGP1/groove/service/event/media"
 	"github.com/GGP1/groove/service/event/product"
 	"github.com/GGP1/groove/service/event/role"
@@ -18,7 +18,6 @@ import (
 
 	"github.com/dgraph-io/dgo/v210"
 	"github.com/dgraph-io/dgo/v210/protos/api"
-	"github.com/lib/pq"
 	"github.com/pkg/errors"
 )
 
@@ -200,22 +199,8 @@ func (s *service) Create(ctx context.Context, eventID string, event CreateEvent)
 		return errors.Wrap(err, "creating event")
 	}
 
-	// Create host, attendant and viewer roles
-	q2 := `INSERT INTO events_roles 
-	(event_id, name, permission_keys) 
-	VALUES 
-	($1, $2, $3), ($1, $4, $5), ($1, $6, $7)`
-	_, err = sqlTx.ExecContext(ctx, q2, eventID,
-		role.Host, pq.StringArray{permissions.All},
-		role.Attendant, pq.StringArray{permissions.Access},
-		role.Viewer, pq.StringArray{permissions.ViewEvent},
-	)
-	if err != nil {
-		return errors.Wrap(err, "creating event roles")
-	}
-
 	q3 := "INSERT INTO events_users_roles (event_id, user_id, role_name) VALUES ($1, $2, $3)"
-	if _, err := sqlTx.ExecContext(ctx, q3, eventID, event.HostID, role.Host); err != nil {
+	if _, err := sqlTx.ExecContext(ctx, q3, eventID, event.HostID, roles.Host); err != nil {
 		return errors.Wrap(err, "setting host role")
 	}
 
@@ -522,8 +507,8 @@ func (s *service) RemoveEdge(ctx context.Context, eventID string, predicate pred
 func (s *service) Search(ctx context.Context, query string, params params.Query) ([]Event, error) {
 	s.metrics.incMethodCalls("Search")
 
-	q := postgres.FullTextSearch(postgres.Events, query, params)
-	rows, err := s.db.QueryContext(ctx, q)
+	q := postgres.FullTextSearch(postgres.Events, params)
+	rows, err := s.db.QueryContext(ctx, q, postgres.ToTSQuery(query))
 	if err != nil {
 		return nil, errors.Wrap(err, "events searching")
 	}
@@ -563,7 +548,6 @@ func (s *service) Update(ctx context.Context, sqlTx *sql.Tx, eventID string, eve
 	if err := sqlTx.QueryRowContext(ctx, "SELECT start_time FROM events WHERE id=$1", eventID).Scan(&startTime); err != nil {
 		return errors.Wrap(err, "scanning start time")
 	}
-	// TODO: Only the description or details of the event should be modifiable after the event started
 	if startTime.Before(time.Now()) {
 		return errors.New("cannot modify an event that has already started")
 	}

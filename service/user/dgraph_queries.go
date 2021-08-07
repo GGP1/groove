@@ -2,8 +2,7 @@ package user
 
 // Query
 const (
-	_ query = iota
-	banned
+	banned query = iota + 1
 	bannedCount
 	bannedLookup
 	blocked
@@ -166,11 +165,12 @@ var getQuery = map[query]string{
 }
 
 const (
-	// Blocked queries are not implemented as they information is irrelevant for the user that blocked them.
-	_ mixedQuery = iota
-	// get users friends of user that are friends of target as well
-	friendsOfFriend
-	friendsOfFriendLookup
+	friendsInCommon mixedQuery = iota + 1
+	friendsInCommonCount
+	friendsInCommonLookup
+	friendsNotInCommon
+	friendsNotInCommonCount
+	friendsNotInCommonLookup
 )
 
 // mixedQuery looks for matches in two predicates (one from a user and one from an event) instead of one.
@@ -178,20 +178,58 @@ type mixedQuery uint8
 
 // getMixedQuery is a list with queries that check two predicates.
 var getMixedQuery = map[mixedQuery]string{
-	friendsOfFriend: `query q($user_id: string, $target_user_id: string) {
-		target as var(func: eq(user_id, $target_user_id))
+	friendsInCommon: `query q($id: string, $friend_id: string, $cursor: string, $limit: string) {
+		user as var(func: eq(user_id, $id))
+		target as var(func: eq(user_id, $friend_id))
 
-		q(func: eq(user_id, $user_id)) {
-			friend @filter(uid_in(friend, uid(target))) (orderasc: user_id) (first: $limit, offset: $cursor) {
+		q(func: uid(user)) {
+			friend @filter(uid_in(friend, uid(target)) AND uid_in(friend, uid(user))) (orderasc: user_id) (first: $limit, offset: $cursor) {
 				user_id
 			}
 		}
 	}`,
-	friendsOfFriendLookup: `query q($user_id: string, $target_user_id: string, $lookup_id: string) {
-		target as var(func: eq(user_id, $target_user_id))
+	friendsInCommonCount: `query q($id: string, $friend_id: string) {
+		user as var(func: eq(user_id, $id))
+		target as var(func: eq(user_id, $friend_id))
 
-		q(func: eq(user_id, $user_id)) {
-			friend @filter(uid_in(friend, uid(target)) AND (eq(user_id, $lookup_id))) {
+		q(func: uid(user)) {
+			count(friend) @filter(uid_in(friend, uid(target)) AND uid_in(friend, uid(user)))
+		}
+	}`,
+	friendsInCommonLookup: `query q($id: string, $friend_id: string, $lookup_id: string) {
+		user as var(func: eq(user_id, $id))
+		target as var(func: eq(user_id, $friend_id))
+
+		q(func: uid(user)) {
+			friend @filter(uid_in(friend, uid(target)) AND uid_in(friend, uid(user)) AND eq(user_id, $lookup_id)) {
+				user_id
+			}
+		}
+	}`,
+	friendsNotInCommon: `query q($id: string, $friend_id: string, $cursor: string, $limit: string) {
+		user as var(func: eq(user_id, $id))
+		target as var(func: eq(user_id, $friend_id))
+
+		q(func: uid(user)) {
+			friend @filter((NOT uid_in(friend, uid(target))) AND (NOT uid(target))) (orderasc: user_id) (first: $limit, offset: $cursor) {
+				user_id
+			}
+		}
+	}`,
+	friendsNotInCommonCount: `query q($id: string, $friend_id: string) {
+		user as var(func: eq(user_id, $id))
+		target as var(func: eq(user_id, $friend_id))
+
+		q(func: uid(user)) {
+			count(friend) @filter((NOT uid_in(friend, uid(target))) AND (NOT uid(target)))
+		}
+	}`,
+	friendsNotInCommonLookup: `query q($id: string, $friend_id: string, $lookup_id: string) {
+		user as var(func: eq(user_id, $id))
+		target as var(func: eq(user_id, $friend_id))
+
+		q(func: uid(user)) {
+			friend @filter((NOT uid_in(friend, uid(target))) AND (NOT uid(target)) AND  eq(user_id, $lookup_id)) {
 				user_id
 			}
 		}

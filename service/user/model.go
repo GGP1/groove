@@ -97,8 +97,8 @@ type ListUser struct {
 type Statistics struct {
 	Blocked         *uint64 `json:"blocked_count,omitempty"`
 	BlockedBy       *uint64 `json:"blocked_by_count,omitempty"`
-	ConfirmedEvents *uint64 `json:"confirmed_events_count,omitempty"`
 	Friends         *uint64 `json:"friends_count,omitempty"`
+	ConfirmedEvents *uint64 `json:"confirmed_events_count,omitempty"`
 	HostedEvents    *uint64 `json:"hosted_events_count,omitempty"`
 	InvitedEvents   *uint64 `json:"invited_events_count,omitempty"`
 }

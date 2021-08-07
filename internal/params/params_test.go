@@ -2,7 +2,6 @@ package params
 
 import (
 	"context"
-	"strconv"
 	"testing"
 
 	"github.com/GGP1/groove/internal/ulid"
@@ -90,7 +89,7 @@ func TestParseQuery(t *testing.T) {
 			obj:      User,
 			expected: Query{
 				Count:  false,
-				Cursor: "",
+				Cursor: DefaultCursor,
 				Limit:  "20",
 			},
 		},
@@ -122,49 +121,10 @@ func TestParseQuery(t *testing.T) {
 		_, err := ParseQuery(rawQuery, Event)
 		assert.Error(t, err)
 	})
-}
+	t.Run("Invalid cursor", func(t *testing.T) {
+		rawQuery := "cursor=4691-ab99-d744f8febbc4"
 
-func TestValidateSearchQuery(t *testing.T) {
-	t.Run("Valid", func(t *testing.T) {
-		query := "searching for values"
-		err := ValidateSearchQuery(query)
-		assert.NoError(t, err)
-	})
-	t.Run("Invalid", func(t *testing.T) {
-		query := "'; DROP TABLE users; --"
-		err := ValidateSearchQuery(query)
-		assert.Error(t, err)
-	})
-}
-
-func TestParseBool(t *testing.T) {
-	cases := []struct {
-		desc     string
-		expected bool
-		input    string
-	}{
-		{
-			desc:     "True",
-			expected: true,
-			input:    "t",
-		},
-		{
-			desc:     "False",
-			expected: false,
-			input:    "0",
-		},
-	}
-
-	for i, tc := range cases {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			got, err := parseBool(tc.input)
-			assert.NoError(t, err)
-			assert.Equal(t, tc.expected, got)
-		})
-	}
-
-	t.Run("Invalid", func(t *testing.T) {
-		_, err := parseBool("abcdefg")
+		_, err := ParseQuery(rawQuery, User)
 		assert.Error(t, err)
 	})
 }
@@ -219,101 +179,6 @@ func TestSplit(t *testing.T) {
 			assert.Equal(t, tc.expected, got)
 		})
 	}
-}
-
-func TestValidateEventFields(t *testing.T) {
-	t.Run("Valid", func(t *testing.T) {
-		fields := []string{"id", "name", "type", "public", "start_time", "end_time", "created_at", "updated_at"}
-		err := validateEventFields(fields)
-		assert.NoError(t, err)
-	})
-
-	t.Run("Nil", func(t *testing.T) {
-		err := validateEventFields(nil)
-		assert.NoError(t, err)
-	})
-
-	t.Run("Invalid", func(t *testing.T) {
-		err := validateEventFields([]string{"username"})
-		assert.Error(t, err, "Expected an error and got nil")
-	})
-
-	t.Run("Empty field", func(t *testing.T) {
-		err := validateEventFields([]string{"created_at", ""})
-		assert.Error(t, err, "Expected an error and got nil")
-	})
-}
-
-func TestValidateMediaFields(t *testing.T) {
-	t.Run("Valid", func(t *testing.T) {
-		fields := []string{"id", "event_id", "url", "created_at"}
-		err := validateMediaFields(fields)
-		assert.NoError(t, err)
-	})
-
-	t.Run("Nil", func(t *testing.T) {
-		err := validateMediaFields(nil)
-		assert.NoError(t, err)
-	})
-
-	t.Run("Invalid", func(t *testing.T) {
-		err := validateMediaFields([]string{"username"})
-		assert.Error(t, err, "Expected an error and got nil")
-	})
-
-	t.Run("Empty field", func(t *testing.T) {
-		err := validateMediaFields([]string{"created_at", ""})
-		assert.Error(t, err, "Expected an error and got nil")
-	})
-}
-
-func TestValidateProductFields(t *testing.T) {
-	t.Run("Valid", func(t *testing.T) {
-		fields := []string{"id", "event_id", "stock", "brand", "type", "description",
-			"discount", "taxes", "subtotal", "total", "created_at"}
-		err := validateProductFields(fields)
-		assert.NoError(t, err)
-	})
-
-	t.Run("Nil", func(t *testing.T) {
-		err := validateProductFields(nil)
-		assert.NoError(t, err)
-	})
-
-	t.Run("Invalid", func(t *testing.T) {
-		err := validateProductFields([]string{"username"})
-		assert.Error(t, err, "Expected an error and got nil")
-	})
-
-	t.Run("Empty field", func(t *testing.T) {
-		err := validateProductFields([]string{"created_at", ""})
-		assert.Error(t, err, "Expected an error and got nil")
-	})
-}
-
-func TestValidateUserFields(t *testing.T) {
-	t.Run("Valid", func(t *testing.T) {
-		fields := []string{"id", "created_at", "updated_at", "name", "user_id", "username",
-			"email", "description", "birth_date", "profile_image_url",
-			"premium", "private", "verified_email"}
-		err := validateUserFields(fields)
-		assert.NoError(t, err)
-	})
-
-	t.Run("Nil", func(t *testing.T) {
-		err := validateUserFields(nil)
-		assert.NoError(t, err)
-	})
-
-	t.Run("Invalid", func(t *testing.T) {
-		err := validateUserFields([]string{"type"})
-		assert.Error(t, err, "Expected an error and got nil")
-	})
-
-	t.Run("Empty field", func(t *testing.T) {
-		err := validateUserFields([]string{"created_at", ""})
-		assert.Error(t, err, "Expected an error and got nil")
-	})
 }
 
 func BenchmarkParseQuery(b *testing.B) {

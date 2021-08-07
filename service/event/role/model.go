@@ -4,31 +4,31 @@ import (
 	"time"
 
 	"github.com/GGP1/groove/internal/permissions"
-	"github.com/GGP1/groove/internal/romap"
+	"github.com/GGP1/groove/internal/roles"
 
 	"github.com/lib/pq"
 	"github.com/pkg/errors"
 )
 
-// ReservedRoles is a read-only map that contains reserved roles
-// and its permission keys applying to all events.
-var ReservedRoles = romap.New(map[string]interface{}{
-	Host:      []string{permissions.All},
-	Attendant: []string{permissions.Access},
-	Moderator: []string{permissions.Access, permissions.BanUsers},
-	Viewer:    []string{permissions.ViewEvent},
-})
-
-const (
-	// Host is the default role used when creating an event
-	Host = "host"
-	// Attendant is the default role used when a user is attending an event
-	Attendant = "attendant"
-	// Moderator is in charge of banning problematic users
-	Moderator = "moderator"
-	// Viewer can see the content's of an event's page
-	Viewer = "viewer"
-)
+// reservedRoles should be kept in sync with the roles.Reserved map.
+var reservedRoles = []Role{
+	{
+		Name:           roles.Host,
+		PermissionKeys: []string{permissions.All},
+	},
+	{
+		Name:           roles.Attendant,
+		PermissionKeys: []string{permissions.Access},
+	},
+	{
+		Name:           roles.Moderator,
+		PermissionKeys: []string{permissions.Access, permissions.BanUsers},
+	},
+	{
+		Name:           roles.Viewer,
+		PermissionKeys: []string{permissions.ViewEvent},
+	},
+}
 
 // Role represents a set of permissions inside the event.
 type Role struct {
@@ -44,7 +44,7 @@ func (r Role) Validate() error {
 	if len(r.Name) > 20 {
 		return errors.New("invalid name length, maximum is 20")
 	}
-	if ReservedRoles.Exists(r.Name) {
+	if roles.Reserved.Exists(r.Name) {
 		return errors.New("reserved name")
 	}
 	if len(r.PermissionKeys) == 0 {
@@ -79,7 +79,7 @@ func (p Permission) Validate() error {
 	if p.Key == "" {
 		return errors.New("key required")
 	}
-	if permissions.ReservedKeys.Exists(p.Key) {
+	if permissions.Reserved.Exists(p.Key) {
 		return errors.New("reserved key")
 	}
 	if len(p.Key) > 20 {
@@ -103,7 +103,7 @@ type UpdatePermission struct {
 	Description *string `json:"description,omitempty"`
 }
 
-// Validate ..
+// Validate validates the correctness of struct fields.
 func (p UpdatePermission) Validate() error {
 	if p.Name != nil {
 		if *p.Name == "" {

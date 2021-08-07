@@ -109,7 +109,7 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, ca
 		id := ev.group("/:id")
 		{
 			id.get("/", events.GetByID())
-			id.get("/stats", events.GetCounts())
+			id.get("/stats", events.GetStatistics())
 			id.delete("/delete", events.Delete(), requireLogin)
 			id.get("/hosts", events.GetHosts())
 			id.put("/update", events.Update(), requireLogin)
@@ -150,7 +150,7 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, ca
 				likes.use(requireLogin)
 				likes.get("/", events.GetLikes())
 				likes.post("/add", events.AddLike())
-				likes.get("/friends", events.GetLikesFriends())
+				likes.get("/friends", events.GetLikedByFriends())
 				likes.post("/remove", events.RemoveLike())
 			}
 
@@ -250,6 +250,8 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, ca
 				friends.get("/", users.GetFriends())
 				friends.post("/add", users.AddFriend(), ownUserOnly)
 				friends.post("/remove", users.RemoveFriend(), ownUserOnly)
+				friends.get("/common/:friend_id", users.GetFriendsInCommon(), ownUserOnly)
+				friends.get("/notcommon/:friend_id", users.GetFriendsNotInCommon(), ownUserOnly)
 			}
 		}
 	}

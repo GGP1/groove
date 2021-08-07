@@ -36,6 +36,10 @@ type Service interface {
 	GetConfirmedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
 	GetFriends(ctx context.Context, userID string, params params.Query) ([]ListUser, error)
 	GetFriendsCount(ctx context.Context, userID string) (*uint64, error)
+	GetFriendsInCommon(ctx context.Context, userID, friendID string, params params.Query) ([]ListUser, error)
+	GetFriendsInCommonCount(ctx context.Context, userID, friendID string) (*uint64, error)
+	GetFriendsNotInCommon(ctx context.Context, userID, friendID string, params params.Query) ([]ListUser, error)
+	GetFriendsNotInCommonCount(ctx context.Context, userID, friendID string) (*uint64, error)
 	GetInvitedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
 	GetHostedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
 	GetLikedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
@@ -320,6 +324,46 @@ func (s *service) GetFriendsCount(ctx context.Context, userID string) (*uint64, 
 	return dgraph.GetCount(ctx, s.dc, getQuery[friendsCount], userID)
 }
 
+// GetFriendsInCommon returns the friends in common between userID and friendID.
+func (s *service) GetFriendsInCommon(ctx context.Context, userID, friendID string, params params.Query) ([]ListUser, error) {
+	s.metrics.incMethodCalls("GetFriendsInCommon")
+
+	predicate := friendsInCommon
+	if params.LookupID != "" {
+		predicate = friendsInCommonLookup
+	}
+
+	return s.getUsersEdgeMixed(ctx, userID, friendID, predicate, params)
+}
+
+// GetFriendsInCommonCount returns the number of matching friends between userID and friendID.
+func (s *service) GetFriendsInCommonCount(ctx context.Context, userID, friendID string) (*uint64, error) {
+	s.metrics.incMethodCalls("GetFriendsInCommonCount")
+
+	vars := map[string]string{"$id": userID, "$friend_id": friendID}
+	return dgraph.GetCountWithVars(ctx, s.dc, getMixedQuery[friendsInCommonCount], vars)
+}
+
+// GetFriendsNotInCommon returns the friends that are not in common between userID and friendID.
+func (s *service) GetFriendsNotInCommon(ctx context.Context, userID, friendID string, params params.Query) ([]ListUser, error) {
+	s.metrics.incMethodCalls("GetFriendsNotInCommon")
+
+	predicate := friendsNotInCommon
+	if params.LookupID != "" {
+		predicate = friendsNotInCommonLookup
+	}
+
+	return s.getUsersEdgeMixed(ctx, userID, friendID, predicate, params)
+}
+
+// GetFriendsNotInCommonCount returns the number of non-matching friends between userID and friendID.
+func (s *service) GetFriendsNotInCommonCount(ctx context.Context, userID, friendID string) (*uint64, error) {
+	s.metrics.incMethodCalls("GetFriendsNotInCommonCount")
+
+	vars := map[string]string{"$id": userID, "$friend_id": friendID}
+	return dgraph.GetCountWithVars(ctx, s.dc, getMixedQuery[friendsNotInCommonCount], vars)
+}
+
 // GetHostedEvents returns the events hosted by the user with the given id.
 func (s *service) GetHostedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error) {
 	s.metrics.incMethodCalls("GetHostedEvents")
@@ -412,8 +456,8 @@ func (s *service) GetStatistics(ctx context.Context, userID string) (Statistics,
 	return Statistics{
 		Blocked:         mp["blocked"],
 		BlockedBy:       mp["~blocked"],
-		ConfirmedEvents: mp["~confirmed"],
 		Friends:         mp["friend"],
+		ConfirmedEvents: mp["~confirmed"],
 		InvitedEvents:   mp["~invited"],
 	}, nil
 }
@@ -474,8 +518,8 @@ func (s *service) RemoveFriend(ctx context.Context, userID string, friendID stri
 func (s *service) Search(ctx context.Context, query string, params params.Query) ([]ListUser, error) {
 	s.metrics.incMethodCalls("Search")
 
-	q := postgres.FullTextSearch(postgres.Users, query, params)
-	rows, err := s.db.QueryContext(ctx, q)
+	q := postgres.FullTextSearch(postgres.Users, params)
+	rows, err := s.db.QueryContext(ctx, q, postgres.ToTSQuery(query))
 	if err != nil {
 		return nil, errors.Wrap(err, "users searching")
 	}
@@ -568,7 +612,22 @@ func (s *service) getUsersEdge(ctx context.Context, userID string, query query, 
 		return nil, errors.Wrap(err, "dgraph: fetching user ids")
 	}
 
-	userIDs := dgraph.ParseRDFULIDs(res.Rdf)
+	return s.parseIDsAndScan(ctx, res.Rdf, params)
+}
+
+func (s *service) getUsersEdgeMixed(ctx context.Context, userID, friendID string, query mixedQuery, params params.Query) ([]ListUser, error) {
+	vars := dgraph.QueryVars(userID, params)
+	vars["$friend_id"] = friendID
+	res, err := s.dc.NewReadOnlyTxn().QueryRDFWithVars(ctx, getMixedQuery[query], vars)
+	if err != nil {
+		return nil, errors.Wrap(err, "dgraph: fetching user ids")
+	}
+
+	return s.parseIDsAndScan(ctx, res.Rdf, params)
+}
+
+func (s *service) parseIDsAndScan(ctx context.Context, rdf []byte, params params.Query) ([]ListUser, error) {
+	userIDs := dgraph.ParseRDFULIDs(rdf)
 	if len(userIDs) == 0 {
 		return nil, nil
 	}

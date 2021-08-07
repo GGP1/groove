@@ -1,7 +1,6 @@
 package postgres
 
 import (
-	"bytes"
 	"fmt"
 	"testing"
 
@@ -44,26 +43,20 @@ func TestAddPagination(t *testing.T) {
 	})
 }
 
-func TestBulkInsert(t *testing.T) {
-	q := "INSERT INTO events_staff (event_id, role_name, user_id) VALUES"
-	eventID := "1234"
-	userIDs := []string{"1", "2"}
-
-	expected := "INSERT INTO events_staff (event_id, role_name, user_id) VALUES ('1234','1','staff'), ('1234','2','staff')"
-	got := BulkInsertRoles(q, eventID, "staff", userIDs)
-
-	assert.Equal(t, expected, got)
-}
-
 func TestFullTextSearch(t *testing.T) {
-	expected := "SELECT testing,full,text,search FROM events WHERE search @@ to_tsquery('query&text:*') ORDER BY id DESC LIMIT 7"
-	query := "query text"
-	got := FullTextSearch(Events, query, params.Query{
+	expected := "SELECT testing,full,text,search FROM events WHERE search @@ to_tsquery($1) ORDER BY id DESC LIMIT 7"
+	got := FullTextSearch(Events, params.Query{
 		Cursor: params.DefaultCursor,
 		Fields: []string{"testing", "full", "text", "search"},
 		Limit:  "7",
 	})
 
+	assert.Equal(t, expected, got)
+}
+
+func TestToTSQuery(t *testing.T) {
+	expected := "test&query:*"
+	got := ToTSQuery(" test query  ")
 	assert.Equal(t, expected, got)
 }
 
@@ -109,9 +102,9 @@ func TestSelectInID(t *testing.T) {
 	})
 }
 
-func TestSelectWhereID(t *testing.T) {
+func TestSelectWhere(t *testing.T) {
 	t.Run("Standard", func(t *testing.T) {
-		expected := "SELECT id, name FROM events WHERE event_id='123456' ORDER BY id DESC LIMIT 20"
+		expected := "SELECT id,name FROM events WHERE event_id=$1 ORDER BY id DESC LIMIT 20"
 
 		params := params.Query{
 			Fields: []string{"id", "name"},
@@ -119,40 +112,34 @@ func TestSelectWhereID(t *testing.T) {
 			Limit:  "20",
 		}
 
-		got := SelectWhereID(Events, "event_id", "123456", "id", params)
+		got := SelectWhere(Events, "event_id=$1", "id", params)
 		assert.Equal(t, expected, got)
 	})
 	t.Run("Lookup ID", func(t *testing.T) {
-		expected := "SELECT email, username, birth_date FROM users WHERE user_id='012345' AND id='abcdefgh'"
+		id := ulid.NewString()
+		expected := "SELECT email,username,birth_date FROM users WHERE user_id=$1 AND id='" + id + "'"
 		params := params.Query{
 			Fields:   []string{"email", "username", "birth_date"},
-			LookupID: "abcdefgh",
+			LookupID: id,
 			Limit:    "20",
 		}
 
-		got := SelectWhereID(Users, "user_id", "012345", "id", params)
+		got := SelectWhere(Users, "user_id=$1", "id", params)
 		assert.Equal(t, expected, got)
 	})
 
 	t.Run("Cursor", func(t *testing.T) {
-		expected := "SELECT id, url FROM events_media WHERE event_id='qwertyu' AND id < 'asdfghj' ORDER BY id DESC LIMIT 5"
+		cursor := ulid.NewString()
+		expected := "SELECT id,url FROM events_media WHERE event_id=$1 AND id < '" + cursor + "' ORDER BY id DESC LIMIT 5"
 		params := params.Query{
 			Fields: []string{"id", "url"},
-			Cursor: "asdfghj",
+			Cursor: cursor,
 			Limit:  "5",
 		}
 
-		got := SelectWhereID(Media, "event_id", "qwertyu", "id", params)
+		got := SelectWhere(Media, "event_id=$1", "id", params)
 		assert.Equal(t, expected, got)
 	})
-}
-
-func TestReplaceAllWithBuf(t *testing.T) {
-	var buf bytes.Buffer
-	buf.WriteString("SELECT * FROM users WHERE search @@ to_tsquery('")
-	replaceAll(&buf, "replace all strings')", " ", " & ")
-
-	assert.Equal(t, "SELECT * FROM users WHERE search @@ to_tsquery('replace & all & strings')", buf.String())
 }
 
 func BenchmarkSelectInID(b *testing.B) {
@@ -164,16 +151,15 @@ func BenchmarkSelectInID(b *testing.B) {
 	}
 }
 
-func BenchmarkSelectWhereID(b *testing.B) {
+func BenchmarkSelectWhere(b *testing.B) {
 	params := params.Query{
 		LookupID: ulid.NewString(),
 		Fields:   []string{"id", "name", "type", "public", "premium", "created_at", "slots", "ticket_cost"},
 	}
-	idField := "event_id"
-	id := ulid.NewString()
+	whereCond := "event_id=$1"
 	paginationField := "id"
 
 	for i := 0; i < b.N; i++ {
-		SelectWhereID(Events, idField, id, paginationField, params)
+		SelectWhere(Events, whereCond, paginationField, params)
 	}
 }
