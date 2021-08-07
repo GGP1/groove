@@ -7,6 +7,10 @@ import (
 
 	"github.com/GGP1/groove/config"
 	"github.com/GGP1/groove/internal/log"
+	"github.com/GGP1/groove/internal/permissions"
+	"github.com/GGP1/groove/internal/roles"
+
+	"github.com/lib/pq"
 
 	"github.com/pkg/errors"
 )
@@ -21,7 +25,11 @@ func Connect(ctx context.Context, c config.Postgres) (*sql.DB, error) {
 		return nil, errors.Wrap(err, "connecting with postgres")
 	}
 
-	if err := CreateTables(ctx, db); err != nil {
+	if err := db.PingContext(ctx); err != nil {
+		return nil, errors.Wrap(err, "ping error")
+	}
+
+	if err := CreateTables(ctx, db, c); err != nil {
 		return nil, err
 	}
 
@@ -30,11 +38,49 @@ func Connect(ctx context.Context, c config.Postgres) (*sql.DB, error) {
 }
 
 // CreateTables creates postgres tables.
-func CreateTables(ctx context.Context, db *sql.DB) error {
+func CreateTables(ctx context.Context, db *sql.DB, c config.Postgres) error {
 	if _, err := db.ExecContext(ctx, tables); err != nil {
 		return errors.Wrap(err, "creating tables")
 	}
-	return nil
+	return createReservedRolesTable(ctx, db, c)
+}
+
+func createReservedRolesTable(ctx context.Context, db *sql.DB, c config.Postgres) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// TODO: use a different connection with a user with read only access to the table
+	q := `CREATE TABLE IF NOT EXISTS events_reserved_roles
+	(
+		name varchar(20) NOT NULL,
+		permission_keys text[] NOT NULL,
+		created_at timestamp with time zone DEFAULT NOW()
+	);
+	
+	CREATE INDEX ON events_reserved_roles (name);`
+	if _, err := tx.ExecContext(ctx, q); err != nil {
+		return errors.Wrap(err, "creating readonly schema")
+	}
+
+	// Create host, attendant, viewer and moderator roles
+	insert := `INSERT INTO events_reserved_roles 
+	(name, permission_keys) 
+	VALUES 
+	($1, $2), ($3, $4), ($5, $6), ($7, $8);`
+	_, err = tx.ExecContext(ctx, insert,
+		roles.Host, pq.StringArray{permissions.All},
+		roles.Attendant, pq.StringArray{permissions.Access},
+		roles.Viewer, pq.StringArray{permissions.ViewEvent},
+		roles.Moderator, pq.StringArray{permissions.Access, permissions.BanUsers},
+	)
+	if err != nil {
+		return errors.Wrap(err, "creating roles")
+	}
+
+	return tx.Commit()
 }
 
 const tables = `
@@ -141,7 +187,7 @@ CREATE TABLE IF NOT EXISTS events_users_roles
 	event_id varchar(26),
 	user_id varchar(26),
  	role_name varchar(20),
-	FOREIGN KEY (event_id, role_name) REFERENCES events_roles (event_id, name) ON UPDATE CASCADE ON DELETE CASCADE,
+	FOREIGN KEY (event_id) REFERENCES events (id) ON UPDATE CASCADE ON DELETE CASCADE,
  	FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );
 
