@@ -391,13 +391,24 @@ func (h *Handler) GetBannedFriends() http.HandlerFunc {
 		}
 
 		sqlTx := h.service.BeginSQLTx(ctx, true)
+		defer sqlTx.Rollback()
+
+		if params.Count {
+			count, err := h.service.GetBannedFriendsCount(ctx, sqlTx, eventID, session.ID)
+			if err != nil {
+				response.Error(w, http.StatusInternalServerError, err)
+				return
+			}
+
+			response.JSONCount(w, http.StatusOK, count)
+			return
+		}
+
 		users, err := h.service.GetBannedFriends(ctx, sqlTx, eventID, session.ID, params)
 		if err != nil {
-			_ = sqlTx.Rollback()
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
-		_ = sqlTx.Rollback()
 
 		response.JSON(w, http.StatusOK, users)
 	}
@@ -508,13 +519,24 @@ func (h *Handler) GetConfirmedFriends() http.HandlerFunc {
 		}
 
 		sqlTx := h.service.BeginSQLTx(ctx, true)
+		defer sqlTx.Rollback()
+
+		if params.Count {
+			count, err := h.service.GetConfirmedFriendsCount(ctx, sqlTx, eventID, session.ID)
+			if err != nil {
+				response.Error(w, http.StatusInternalServerError, err)
+				return
+			}
+
+			response.JSONCount(w, http.StatusOK, count)
+			return
+		}
+
 		users, err := h.service.GetConfirmedFriends(ctx, sqlTx, eventID, session.ID, params)
 		if err != nil {
-			_ = sqlTx.Rollback()
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
-		_ = sqlTx.Rollback()
 
 		response.JSON(w, http.StatusOK, users)
 	}
@@ -655,13 +677,24 @@ func (h *Handler) GetInvitedFriends() http.HandlerFunc {
 		}
 
 		sqlTx := h.service.BeginSQLTx(ctx, true)
+		defer sqlTx.Rollback()
+
+		if params.Count {
+			count, err := h.service.GetInvitedFriendsCount(ctx, sqlTx, eventID, session.ID)
+			if err != nil {
+				response.Error(w, http.StatusInternalServerError, err)
+				return
+			}
+
+			response.JSONCount(w, http.StatusOK, count)
+			return
+		}
+
 		users, err := h.service.GetInvitedFriends(ctx, sqlTx, eventID, session.ID, params)
 		if err != nil {
-			_ = sqlTx.Rollback()
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
-		_ = sqlTx.Rollback()
 
 		response.JSON(w, http.StatusOK, users)
 	}
@@ -737,13 +770,24 @@ func (h *Handler) GetLikedByFriends() http.HandlerFunc {
 		}
 
 		sqlTx := h.service.BeginSQLTx(ctx, true)
+		defer sqlTx.Rollback()
+
+		if params.Count {
+			count, err := h.service.GetLikedByFriendsCount(ctx, sqlTx, eventID, session.ID)
+			if err != nil {
+				response.Error(w, http.StatusInternalServerError, err)
+				return
+			}
+
+			response.JSONCount(w, http.StatusOK, count)
+			return
+		}
+
 		users, err := h.service.GetLikedByFriends(ctx, sqlTx, eventID, session.ID, params)
 		if err != nil {
-			_ = sqlTx.Rollback()
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
-		_ = sqlTx.Rollback()
 
 		response.JSON(w, http.StatusOK, users)
 	}

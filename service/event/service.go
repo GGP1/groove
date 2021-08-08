@@ -32,17 +32,21 @@ type Service interface {
 	GetBanned(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]User, error)
 	GetBannedCount(ctx context.Context, eventID string) (*uint64, error)
 	GetBannedFriends(ctx context.Context, sqlTx *sql.Tx, eventID, userID string, params params.Query) ([]User, error)
+	GetBannedFriendsCount(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) (*uint64, error)
 	GetByID(ctx context.Context, sqlTx *sql.Tx, eventID string) (Event, error)
 	GetConfirmed(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]User, error)
 	GetConfirmedCount(ctx context.Context, eventID string) (*uint64, error)
 	GetConfirmedFriends(ctx context.Context, sqlTx *sql.Tx, eventID, userID string, params params.Query) ([]User, error)
+	GetConfirmedFriendsCount(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) (*uint64, error)
 	GetHosts(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]User, error)
 	GetInvited(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]User, error)
 	GetInvitedCount(ctx context.Context, eventID string) (*uint64, error)
 	GetInvitedFriends(ctx context.Context, sqlTx *sql.Tx, eventID, userID string, params params.Query) ([]User, error)
+	GetInvitedFriendsCount(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) (*uint64, error)
 	GetLikedBy(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]User, error)
 	GetLikedByCount(ctx context.Context, eventID string) (*uint64, error)
 	GetLikedByFriends(ctx context.Context, sqlTx *sql.Tx, eventID, userID string, params params.Query) ([]User, error)
+	GetLikedByFriendsCount(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) (*uint64, error)
 	GetStatistics(ctx context.Context, eventID string) (Statistics, error)
 	IsPublic(ctx context.Context, sqlTx *sql.Tx, eventID string) (bool, error)
 	RemoveEdge(ctx context.Context, eventID string, predicate predicate, userID string) error
@@ -283,14 +287,24 @@ func (s *service) GetBannedCount(ctx context.Context, eventID string) (*uint64, 
 func (s *service) GetBannedFriends(ctx context.Context, sqlTx *sql.Tx, eventID, userID string, params params.Query) ([]User, error) {
 	s.metrics.incMethodCalls("GetBannedFriends")
 
+	query := bannedFriends
+	if params.LookupID != "" {
+		query = bannedFriendsLookup
+	}
+
+	vars := mixedQueryVars(eventID, userID, params)
+	return s.queryUsers(ctx, sqlTx, getMixedQuery[query], vars, params)
+}
+
+// GetBannedFriendsCount returns event's banned friends count.
+func (s *service) GetBannedFriendsCount(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) (*uint64, error) {
+	s.metrics.incMethodCalls("GetBannedFriendsCount")
+
 	vars := map[string]string{
 		"$event_id": eventID,
 		"$user_id":  userID,
-		"$cursor":   params.Cursor,
-		"$limit":    params.Limit,
 	}
-
-	return s.queryUsers(ctx, sqlTx, getMixedQuery[bannedFriends], vars, params)
+	return dgraph.GetCountWithVars(ctx, s.dc, getMixedQuery[bannedFriendsCount], vars)
 }
 
 // GetByID returns the event with the id passed.
@@ -331,14 +345,24 @@ func (s *service) GetConfirmedCount(ctx context.Context, eventID string) (*uint6
 func (s *service) GetConfirmedFriends(ctx context.Context, sqlTx *sql.Tx, eventID, userID string, params params.Query) ([]User, error) {
 	s.metrics.incMethodCalls("GetConfirmedFriends")
 
+	query := confirmedFriends
+	if params.LookupID != "" {
+		query = confirmedFriendsLookup
+	}
+
+	vars := mixedQueryVars(eventID, userID, params)
+	return s.queryUsers(ctx, sqlTx, getMixedQuery[query], vars, params)
+}
+
+// GetConfirmedFriendsCount returns event's confirmed friends count.
+func (s *service) GetConfirmedFriendsCount(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) (*uint64, error) {
+	s.metrics.incMethodCalls("GetConfirmedFriendsCount")
+
 	vars := map[string]string{
 		"$event_id": eventID,
 		"$user_id":  userID,
-		"$cursor":   params.Cursor,
-		"$limit":    params.Limit,
 	}
-
-	return s.queryUsers(ctx, sqlTx, getMixedQuery[confirmedFriends], vars, params)
+	return dgraph.GetCountWithVars(ctx, s.dc, getMixedQuery[confirmedFriendsCount], vars)
 }
 
 // GetHosts returns event's hosts.
@@ -397,14 +421,24 @@ func (s *service) GetInvitedCount(ctx context.Context, eventID string) (*uint64,
 func (s *service) GetInvitedFriends(ctx context.Context, sqlTx *sql.Tx, eventID, userID string, params params.Query) ([]User, error) {
 	s.metrics.incMethodCalls("GetInvitedFriends")
 
+	query := invitedFriends
+	if params.LookupID != "" {
+		query = invitedFriendsLookup
+	}
+
+	vars := mixedQueryVars(eventID, userID, params)
+	return s.queryUsers(ctx, sqlTx, getMixedQuery[query], vars, params)
+}
+
+// GetInvitedFriendsCount returns event's invited friends count.
+func (s *service) GetInvitedFriendsCount(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) (*uint64, error) {
+	s.metrics.incMethodCalls("GetInvitedFriendsCount")
+
 	vars := map[string]string{
 		"$event_id": eventID,
 		"$user_id":  userID,
-		"$cursor":   params.Cursor,
-		"$limit":    params.Limit,
 	}
-
-	return s.queryUsers(ctx, sqlTx, getMixedQuery[invitedFriends], vars, params)
+	return dgraph.GetCountWithVars(ctx, s.dc, getMixedQuery[invitedFriendsCount], vars)
 }
 
 // GetLikedBy returns users liking the event.
@@ -430,14 +464,24 @@ func (s *service) GetLikedByCount(ctx context.Context, eventID string) (*uint64,
 func (s *service) GetLikedByFriends(ctx context.Context, sqlTx *sql.Tx, eventID, userID string, params params.Query) ([]User, error) {
 	s.metrics.incMethodCalls("GetLikedByFriends")
 
+	query := likedByFriends
+	if params.LookupID != "" {
+		query = likedByFriendsLookup
+	}
+
+	vars := mixedQueryVars(eventID, userID, params)
+	return s.queryUsers(ctx, sqlTx, getMixedQuery[query], vars, params)
+}
+
+// GetLikedByFriendsCount returns event's liked by friends count.
+func (s *service) GetLikedByFriendsCount(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) (*uint64, error) {
+	s.metrics.incMethodCalls("GetLikedByFriendsCount")
+
 	vars := map[string]string{
 		"$event_id": eventID,
 		"$user_id":  userID,
-		"$cursor":   params.Cursor,
-		"$limit":    params.Limit,
 	}
-
-	return s.queryUsers(ctx, sqlTx, getMixedQuery[likedByFriends], vars, params)
+	return dgraph.GetCountWithVars(ctx, s.dc, getMixedQuery[likedByFriendsCount], vars)
 }
 
 // GetStatistics returns events' predicates statistics.

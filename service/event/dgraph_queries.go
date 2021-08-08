@@ -1,5 +1,9 @@
 package event
 
+import (
+	"github.com/GGP1/groove/internal/params"
+)
+
 // Predicate
 const (
 	Banned    predicate = "banned"
@@ -10,8 +14,7 @@ const (
 
 // Query
 const (
-	_ query = iota
-	banned
+	banned query = iota + 1
 	bannedCount
 	bannedLookup
 	confirmed
@@ -108,16 +111,23 @@ var getQuery = map[query]string{
 	}`,
 }
 
-// TODO: add counts (invitedFriendsCount, etc)?
 const (
-	// get users banned from the event that a friend of user
+	// get users banned from the event that are friend of user
 	bannedFriends mixedQuery = iota + 1
-	// get users confirmed in the event that a friend of user
+	bannedFriendsCount
+	bannedFriendsLookup
+	// get users confirmed in the event that are friend of user
 	confirmedFriends
-	// get users invited to the event that a friend of user
+	confirmedFriendsCount
+	confirmedFriendsLookup
+	// get users invited to the event that are friend of user
 	invitedFriends
-	// get users liking the event that a friend of user
+	invitedFriendsCount
+	invitedFriendsLookup
+	// get users liking the event that are friend of user
 	likedByFriends
+	likedByFriendsCount
+	likedByFriendsLookup
 )
 
 // mixedQuery looks for matches in two predicates (one from a user and one from an event) instead of one.
@@ -135,12 +145,48 @@ var getMixedQuery = map[mixedQuery]string{
 			}
 		}
 	}`,
+	bannedFriendsCount: `query q($event_id: string, $user_id: string) {
+		user as var(func: eq(user_id, $user_id))
+		event as var(func: eq(event_id, $event_id))
+
+		q(func: uid(user)) {
+			count(friend) @filter(uid_in(~banned, uid(event)))
+		}
+	}`,
+	bannedFriendsLookup: `query q($event_id: string, $user_id: string, $lookup_id: string) {
+		user as var(func: eq(user_id, $user_id))
+		event as var(func: eq(event_id, $event_id))
+
+		q(func: uid(user)) {
+			friend @filter(uid_in(~banned, uid(event)) AND eq(user_id, $lookup_id)) {
+				user_id
+			}
+		}
+	}`,
 	confirmedFriends: `query q($event_id: string, $user_id: string, $cursor: string, $limit: string) {
 		user as var(func: eq(user_id, $user_id))
 		event as var(func: eq(event_id, $event_id))
 
 		q(func: uid(user)) {
 			friend @filter(uid_in(~confirmed, uid(event))) (orderasc: user_id) (first: $limit, offset: $cursor) {
+				user_id
+			}
+		}
+	}`,
+	confirmedFriendsCount: `query q($event_id: string, $user_id: string) {
+		user as var(func: eq(user_id, $user_id))
+		event as var(func: eq(event_id, $event_id))
+
+		q(func: uid(user)) {
+			count(friend) @filter(uid_in(~confirmed, uid(event)))
+		}
+	}`,
+	confirmedFriendsLookup: `query q($event_id: string, $user_id: string, $lookup_id: string) {
+		user as var(func: eq(user_id, $user_id))
+		event as var(func: eq(event_id, $event_id))
+
+		q(func: uid(user)) {
+			friend @filter(uid_in(~confirmed, uid(event)) AND eq(user_id, $lookup_id)) {
 				user_id
 			}
 		}
@@ -155,6 +201,24 @@ var getMixedQuery = map[mixedQuery]string{
 			}
 		}
 	}`,
+	invitedFriendsCount: `query q($event_id: string, $user_id: string) {
+		user as var(func: eq(user_id, $user_id))
+		event as var(func: eq(event_id, $event_id))
+
+		q(func: uid(user)) {
+			count(friend) @filter(uid_in(~invited, uid(event)))
+		}
+	}`,
+	invitedFriendsLookup: `query q($event_id: string, $user_id: string, $lookup_id: string) {
+		user as var(func: eq(user_id, $user_id))
+		event as var(func: eq(event_id, $event_id))
+
+		q(func: uid(user)) {
+			friend @filter(uid_in(~invited, uid(event)) AND eq(user_id, $lookup_id)) {
+				user_id
+			}
+		}
+	}`,
 	likedByFriends: `query q($event_id: string, $user_id: string) {
 		user as var(func: eq(user_id, $user_id))
 		event as var(func: eq(event_id, $event_id))
@@ -165,4 +229,38 @@ var getMixedQuery = map[mixedQuery]string{
 			}
 		}
 	}`,
+	likedByFriendsCount: `query q($event_id: string, $user_id: string) {
+		user as var(func: eq(user_id, $user_id))
+		event as var(func: eq(event_id, $event_id))
+
+		q(func: uid(user)) {
+			count(friend) @filter(uid_in(~liked_by, uid(event)))
+		}
+	}`,
+	likedByFriendsLookup: `query q($event_id: string, $user_id: string, $lookup_id: string) {
+		user as var(func: eq(user_id, $user_id))
+		event as var(func: eq(event_id, $event_id))
+
+		q(func: uid(user)) {
+			friend @filter(uid_in(~liked_by, uid(event)) AND eq(user_id, $lookup_id)) {
+				user_id
+			}
+		}
+	}`,
+}
+
+func mixedQueryVars(eventID, userID string, params params.Query) map[string]string {
+	vars := map[string]string{
+		"$event_id": eventID,
+		"$user_id":  userID,
+	}
+	if params.LookupID != "" {
+		vars["$lookup_id"] = params.LookupID
+		return vars
+	}
+
+	vars["$cursor"] = params.Cursor
+	vars["$limit"] = params.Limit
+
+	return vars
 }
