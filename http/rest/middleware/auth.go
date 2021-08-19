@@ -126,7 +126,7 @@ func (a *Auth) RequirePremium(next http.Handler) http.Handler {
 		ctx := r.Context()
 
 		session, ok := a.authService.AlreadyLoggedIn(ctx, r)
-		if ok {
+		if !ok {
 			response.Error(w, http.StatusUnauthorized, errLoginToAccess)
 			return
 		}
