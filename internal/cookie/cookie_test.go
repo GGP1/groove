@@ -126,21 +126,20 @@ func TestSet(t *testing.T) {
 	assert.Equal(t, http.SameSiteLaxMode, c.SameSite)
 }
 
-func TestSetSecure(t *testing.T) {
+func TestSetHost(t *testing.T) {
 	viper.Reset()
 	viper.Set("secrets.encryption", "test")
 
 	w := httptest.NewRecorder()
 	name := "test-set"
 	value := "groove"
-	path := "/"
-	err := SetSecure(w, name, value, path)
+	err := SetHost(w, name, value)
 	assert.NoError(t, err)
 
 	c := w.Result().Cookies()[0]
 
-	assert.Equal(t, c.Name, "__Secure-"+name)
-	assert.Equal(t, c.Path, path)
+	assert.Equal(t, c.Name, "__Host-"+name)
+	assert.Equal(t, c.Path, "/")
 	assert.Equal(t, c.MaxAge, maxAge*2)
 	assert.True(t, c.Secure)
 	assert.True(t, c.HttpOnly)
@@ -169,4 +168,13 @@ func BenchmarkSet(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		Set(w, "bench", "@*s6%C>USkyaip8~ I7/P_!jAl&JZ45W", "/")
 	}
+}
+
+func BenchmarkSetHost(b *testing.B) {
+	w := httptest.NewRecorder()
+
+	for i := 0; i < b.N; i++ {
+		SetHost(w, "bench", "@*s6%C>USkyaip8~ I7/P_!jAl&JZ45W")
+	}
+
 }

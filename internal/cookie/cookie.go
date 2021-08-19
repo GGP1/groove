@@ -18,6 +18,7 @@ const (
 
 // Considerations before choosing between standard (Set) and secure (SetSecure) cookies.
 // https://tools.ietf.org/html/draft-ietf-httpbis-cookie-same-site-00#section-5.2
+// Always use either lax or strict modes to avoid being vulnerable to csrf attacks
 
 // Delete a cookie.
 func Delete(w http.ResponseWriter, name string) {
@@ -79,7 +80,7 @@ func Set(w http.ResponseWriter, name, value, path string) error {
 		Name:     name,
 		Value:    hex.EncodeToString(ciphertext),
 		Path:     path,
-		Secure:   false, // Only https (set to true when in production)
+		Secure:   false, // Only https (TODO PRODUCTION: set to true)
 		HttpOnly: true,  // True means no scripts, http requests only. It does not refer to http(s)
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   maxAge,
@@ -88,17 +89,20 @@ func Set(w http.ResponseWriter, name, value, path string) error {
 	return nil
 }
 
-// SetSecure is like Set but with more restrictions and security.
-func SetSecure(w http.ResponseWriter, name, value, path string) error {
+// SetHost sets a cookie that is accepted only if comes from a secure origin.
+// It is domain-locked and has the path set to "/".
+//
+// See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies
+func SetHost(w http.ResponseWriter, name, value string) error {
 	ciphertext, err := crypt.Encrypt([]byte(value))
 	if err != nil {
 		return err
 	}
 
 	http.SetCookie(w, &http.Cookie{
-		Name:     "__Secure-" + name,
+		Name:     "__Host-" + name,
 		Value:    hex.EncodeToString(ciphertext),
-		Path:     path,
+		Path:     "/",
 		Secure:   true,
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
