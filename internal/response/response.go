@@ -120,3 +120,8 @@ func JSONMessage(w http.ResponseWriter, status int, message interface{}) {
 		Message: message,
 	})
 }
+
+// NoContent writes a response with no content.
+func NoContent(w http.ResponseWriter) {
+	w.WriteHeader(http.StatusNoContent)
+}

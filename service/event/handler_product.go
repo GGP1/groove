@@ -86,7 +86,7 @@ func (h *Handler) DeleteProduct() http.HandlerFunc {
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, eventID)
+		response.NoContent(w)
 	}
 }
 

@@ -137,7 +137,7 @@ func (h *Handler) DeleteZone() http.HandlerFunc {
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, eventID)
+		response.NoContent(w)
 	}
 }
 

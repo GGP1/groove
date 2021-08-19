@@ -154,7 +154,7 @@ func (h *Handler) Delete() http.HandlerFunc {
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, userID)
+		response.NoContent(w)
 	}
 }
 

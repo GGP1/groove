@@ -111,6 +111,14 @@ func TestJSONText(t *testing.T) {
 	assert.Equal(t, expectedRes, buf.String())
 }
 
+func TestNoContent(t *testing.T) {
+	expectedStatus := 204
+	rec := httptest.NewRecorder()
+
+	response.NoContent(rec)
+	assert.Equal(t, expectedStatus, rec.Code)
+}
+
 var benchMessage = struct {
 	Name      string
 	Username  string
@@ -138,5 +146,12 @@ func BenchmarkJSON(b *testing.B) {
 	rec := httptest.NewRecorder()
 	for i := 0; i < b.N; i++ {
 		response.JSON(rec, 200, benchMessage)
+	}
+}
+
+func BenchmarkNoContent(b *testing.B) {
+	rec := httptest.NewRecorder()
+	for i := 0; i < b.N; i++ {
+		response.NoContent(rec)
 	}
 }

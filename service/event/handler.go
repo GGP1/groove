@@ -317,7 +317,7 @@ func (h *Handler) Delete() http.HandlerFunc {
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, eventID)
+		response.NoContent(w)
 	}
 }
 
@@ -1072,9 +1072,11 @@ func (h *Handler) UserJoin() http.HandlerFunc {
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, "Joined event")
+		response.NoContent(w)
 	}
 }
+
+// TODO: try to cache the two methods below as they will be called several times even when the object requested is already cached.
 
 // privacyFilter lets through only users that can fetch the event data if it's private,
 // if it's public it lets anyone in.

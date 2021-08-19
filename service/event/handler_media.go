@@ -86,7 +86,7 @@ func (h *Handler) DeleteMedia() http.HandlerFunc {
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, eventID)
+		response.NoContent(w)
 	}
 }
 

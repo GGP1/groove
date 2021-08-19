@@ -53,7 +53,7 @@ func (h *Handler) ClonePermissions() http.HandlerFunc {
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, "Permissions cloned successfully")
+		response.NoContent(w)
 	}
 }
 
@@ -95,7 +95,7 @@ func (h *Handler) CloneRoles() http.HandlerFunc {
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, "Roles cloned successfully")
+		response.NoContent(w)
 	}
 }
 
@@ -218,7 +218,7 @@ func (h *Handler) DeletePermission() http.HandlerFunc {
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, eventID)
+		response.NoContent(w)
 	}
 }
 
@@ -249,7 +249,7 @@ func (h *Handler) DeleteRole() http.HandlerFunc {
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, eventID)
+		response.NoContent(w)
 	}
 }
 
@@ -471,7 +471,7 @@ func (h *Handler) SetRoles() http.HandlerFunc {
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, eventID)
+		response.NoContent(w)
 	}
 }
 
