@@ -21,7 +21,7 @@ import (
 // Service provides auth operations.
 type Service interface {
 	AlreadyLoggedIn(ctx context.Context, r *http.Request) (Session, bool)
-	Login(ctx context.Context, w http.ResponseWriter, r *http.Request, email, password string) error
+	Login(ctx context.Context, w http.ResponseWriter, r *http.Request, username, password string) (userSession, error)
 	Logout(ctx context.Context, w http.ResponseWriter, r *http.Request) error
 }
 
@@ -59,52 +59,59 @@ func (s *service) AlreadyLoggedIn(ctx context.Context, r *http.Request) (Session
 }
 
 // Login attempts to log a user in.
-func (s *service) Login(ctx context.Context, w http.ResponseWriter, r *http.Request, email, password string) error {
+func (s *service) Login(ctx context.Context, w http.ResponseWriter, r *http.Request, username, password string) (userSession, error) {
 	// Won't collide with the rate limiter as this last has the prefix "rate:"
 	ip := userip.Get(ctx, r)
 	attempts, err := s.rdb.Get(ctx, ip).Int64()
 	if err != nil && err != redis.Nil {
-		return errors.Wrap(err, "retrieving client attempts")
+		return userSession{}, errors.Wrap(err, "retrieving client attempts")
 	}
 
 	if attempts > 4 {
-		return errors.Errorf("please wait %v before trying again", delay(attempts))
+		return userSession{}, errors.Errorf("please wait %v before trying again", delay(attempts))
 	}
 
-	query := "SELECT id, email, password, premium, verified_email FROM users WHERE email=$1"
-	row := s.db.QueryRowContext(ctx, query, email)
+	query := `SELECT 
+	id, email, username, password, premium, private, verified_email 
+	FROM users 
+	WHERE username=$1 OR email=$1`
+	row := s.db.QueryRowContext(ctx, query, username)
 	var user userSession
-	err = row.Scan(&user.ID, &user.Email, &user.Password, &user.Premium, &user.VerifiedEmail)
+	err = row.Scan(
+		&user.ID, &user.Email, &user.Username, &user.Password,
+		&user.Premium, &user.Private, &user.VerifiedEmail,
+	)
 	if err != nil {
 		_ = s.addDelay(ctx, ip)
 		log.Debug("database error", zap.Error(err))
-		return errors.New("invalid email or password")
+		return userSession{}, errors.New("invalid email or password")
 	}
 
 	if s.verifyEmails && !user.VerifiedEmail {
-		return errors.New("please verify your email before logging in")
+		return userSession{}, errors.New("please verify your email before logging in")
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
 		_ = s.addDelay(ctx, ip)
 		log.Debug("password mismatch", zap.Error(err))
-		return errors.New("invalid email or password")
+		return userSession{}, errors.New("invalid email or password")
 	}
 
 	salt := make([]byte, saltLen)
 	if _, err := rand.Read(salt); err != nil {
-		return errors.Wrap(err, "generating salt")
+		return userSession{}, errors.Wrap(err, "generating salt")
 	}
 
 	id := user.ID.String()
 	if err := s.rdb.Set(ctx, id, salt, s.expiration).Err(); err != nil {
-		return errors.Wrap(err, "storing session")
+		return userSession{}, errors.Wrap(err, "storing session")
 	}
 	cookieValue := parseSessionToken(id, salt, user.Premium)
 	if err := cookie.Set(w, cookie.Session, cookieValue, "/"); err != nil {
-		return errors.Wrap(err, "setting cookie")
+		return userSession{}, errors.Wrap(err, "setting cookie")
 	}
-	return nil
+
+	return user, nil
 }
 
 func (s *service) addDelay(ctx context.Context, key string) error {
@@ -114,6 +121,7 @@ func (s *service) addDelay(ctx context.Context, key string) error {
 
 // Logout removes the user session and its cookies.
 func (s *service) Logout(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+	// Ignore error as the session is already loaded in context
 	sessionInfo, _ := GetSession(ctx, r)
 	cookie.Delete(w, cookie.Session)
 	if err := s.rdb.Del(ctx, sessionInfo.ID).Err(); err != nil {

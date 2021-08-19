@@ -3,32 +3,32 @@ package auth
 import (
 	"errors"
 
-	"github.com/GGP1/groove/internal/email"
-
 	"github.com/oklog/ulid/v2"
 )
 
 // userSession is used when logging a user in.
 type userSession struct {
-	ID            ulid.ULID `json:"id,omitempty"`
-	Email         string    `json:"email,omitempty"`
-	Password      string    `json:"password,omitempty"`
-	Premium       bool      `json:"premium,omitempty"`
-	VerifiedEmail bool      `json:"verified_email,omitempty" db:"verified_email"`
+	ID            ulid.ULID `json:"id"`
+	Email         string    `json:"email"`
+	Username      string    `json:"username"`
+	Password      string    `json:"-"`
+	Premium       bool      `json:"premium"`
+	Private       bool      `json:"private"`
+	VerifiedEmail bool      `json:"verified_email" db:"verified_email"`
 }
 
 // userLogin is used to decode the input received on a login attempt.
 type userLogin struct {
-	Email    string `json:"email,omitempty"`
+	Username string `json:"username,omitempty"`
 	Password string `json:"password,omitempty"`
 }
 
 func (u userLogin) Valid() error {
-	if u.Email == "" {
-		return errors.New("email required")
+	if u.Username == "" {
+		return errors.New("username required")
 	}
-	if len(u.Email) < 3 || len(u.Email) > 254 || !email.IsValid(u.Email) {
-		return errors.New("invalid email")
+	if len(u.Username) < 3 || len(u.Username) > 254 {
+		return errors.New("invalid username")
 	}
 	if u.Password == "" {
 		return errors.New("password required")

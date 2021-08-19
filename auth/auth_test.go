@@ -28,8 +28,9 @@ func TestAuth(t *testing.T) {
 	err := test.CreateUser(ctx, db, dc, ulid.NewString(), email, "username", password)
 	assert.NoError(t, err)
 
-	err = session.Login(ctx, w, r, email, password)
+	user, err := session.Login(ctx, w, r, email, password)
 	assert.NoError(t, err)
+	assert.Equal(t, email, user.Email)
 
 	// Add cookies from the recorder to the request
 	for _, c := range w.Result().Cookies() {

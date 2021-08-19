@@ -16,7 +16,7 @@ func BasicAuth(s Service) http.HandlerFunc {
 		ctx := r.Context()
 
 		if _, ok := s.AlreadyLoggedIn(ctx, r); ok {
-			http.Redirect(w, r, "/", http.StatusSeeOther)
+			response.NoContent(w)
 			return
 		}
 
@@ -27,13 +27,14 @@ func BasicAuth(s Service) http.HandlerFunc {
 			return
 		}
 
-		if err := s.Login(ctx, w, r, username, password); err != nil {
+		user, err := s.Login(ctx, w, r, username, password)
+		if err != nil {
 			r.Header["Www-Authenticate"] = []string{`Basic realm="restricted", charset="UTF-8"`}
 			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, "logged in")
+		response.JSON(w, http.StatusOK, user)
 	}
 }
 
@@ -42,7 +43,7 @@ func Login(s Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		if _, ok := s.AlreadyLoggedIn(ctx, r); ok {
-			http.Redirect(w, r, "/", http.StatusSeeOther)
+			response.NoContent(w)
 			return
 		}
 
@@ -58,15 +59,16 @@ func Login(s Service) http.HandlerFunc {
 			return
 		}
 
-		email := sanitize.Normalize(user.Email)
+		username := sanitize.Normalize(user.Username)
 		password := sanitize.Normalize(user.Password)
 
-		if err := s.Login(ctx, w, r, email, password); err != nil {
+		userSession, err := s.Login(ctx, w, r, username, password)
+		if err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, "logged in")
+		response.JSON(w, http.StatusOK, userSession)
 	}
 }
 
@@ -79,6 +81,6 @@ func Logout(s Service) http.HandlerFunc {
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, "logged out")
+		response.NoContent(w)
 	}
 }
