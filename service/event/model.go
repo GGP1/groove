@@ -49,6 +49,7 @@ type Event struct {
 	Type        eventType         `json:"type,omitempty"`
 	Public      *bool             `json:"public,omitempty"`
 	Virtual     *bool             `json:"virtual,omitempty"`
+	Location    Location          `json:"location,omitempty"`
 	URL         *string           `json:"url,omitempty"`
 	StartTime   time.Time         `json:"start_time,omitempty" db:"start_time"`
 	EndTime     time.Time         `json:"end_time,omitempty" db:"end_time"`
@@ -79,7 +80,7 @@ type CreateEvent struct {
 	Public      *bool     `json:"public,omitempty"`
 	Virtual     *bool     `json:"virtual,omitempty"`
 	URL         *string   `json:"url,omitempty"`
-	LocationID  *int      `json:"location_id,omitempty"`
+	Location    *Location `json:"location,omitempty"`
 	StartTime   time.Time `json:"start_time,omitempty" db:"start_time"`
 	EndTime     time.Time `json:"end_time,omitempty" db:"end_time"`
 	MinAge      uint16    `json:"min_age,omitempty" db:"min_age"`
@@ -101,8 +102,21 @@ func (c CreateEvent) Validate() error {
 	if c.Virtual == nil {
 		return errors.New("virtual required")
 	}
-	if c.LocationID == nil {
-		return errors.New("location_id required")
+	if c.Location != nil {
+		if c.Location.Address == "" {
+			return errors.New("location address required")
+		}
+		if len(c.Location.Address) > 480 {
+			return errors.New("maximum characters for an address is 480")
+		}
+		if c.Location.Coordinates.Latitude == 0 {
+			return errors.New("invalid latitude")
+		}
+		if c.Location.Coordinates.Longitude == 0 {
+			return errors.New("invalid longitude")
+		}
+	} else if !*c.Virtual {
+		return errors.New("location required")
 	}
 	if c.StartTime.IsZero() {
 		return errors.New("start_time required")
@@ -132,6 +146,7 @@ type UpdateEvent struct {
 	Name        *string    `json:"name,omitempty"`
 	Description *string    `json:"description,omitempty"`
 	Type        *eventType `json:"type,omitempty"`
+	Location    *Location  `json:"location,omitempty"`
 	StartTime   *time.Time `json:"start_time,omitempty" db:"start_time"`
 	EndTime     *time.Time `json:"end_time,omitempty" db:"end_time"`
 	MinAge      *uint16    `json:"min_age,omitempty" db:"min_age"`
@@ -182,6 +197,19 @@ func (u UpdateEvent) Validate() error {
 		}
 	}
 	return nil
+}
+
+// Location represents the location of an event.
+type Location struct {
+	// Address is a text-based description of a location, typically derived from the coordinates
+	Address     string      `json:"address,omitempty"`
+	Coordinates Coordinates `json:"coordinates,omitempty"`
+}
+
+// Coordinates represents a latitude/longitude pair.
+type Coordinates struct {
+	Latitude  float32 `json:"latitude,omitempty"`
+	Longitude float32 `json:"longitude,omitempty"`
 }
 
 // User represents a user in the context of an event.

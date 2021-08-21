@@ -28,6 +28,14 @@ func eventColumns(e *event.Event, columns []string) []interface{} {
 			result = append(result, &e.Type)
 		case "public":
 			result = append(result, &e.Public)
+		case "virtual":
+			result = append(result, &e.Virtual)
+		case "address":
+			result = append(result, &e.Location.Address)
+		case "latitude":
+			result = append(result, &e.Location.Coordinates.Latitude)
+		case "longitude":
+			result = append(result, &e.Location.Coordinates.Longitude)
 		case "start_time":
 			result = append(result, &e.StartTime)
 		case "end_time":

@@ -147,11 +147,11 @@ func (s *service) Create(ctx context.Context, userID string, user CreateUser) er
 	}
 
 	q3 := `INSERT INTO users 
-	(id, name, username, email, password, birth_date, location_id, description, profile_image_url, is_admin, updated_at) 
+	(id, name, username, email, password, birth_date, description, profile_image_url, is_admin, updated_at) 
 	VALUES 
 	($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 	_, err = psqlTx.ExecContext(ctx, q3, userID, user.Name, user.Username,
-		user.Email, hash, user.BirthDate, user.LocationID, user.Description,
+		user.Email, hash, user.BirthDate, user.Description,
 		user.ProfileImageURL, isAdmin, time.Time{})
 	if err != nil {
 		return errors.Wrap(err, "creating user")
@@ -267,7 +267,7 @@ func (s *service) GetByEmail(ctx context.Context, email string) (ListUser, error
 	s.metrics.incMethodCalls("GetByEmail")
 
 	q := `SELECT 
-	id, name, username, email, birth_date, location_id, description, premium, private, 
+	id, name, username, email, birth_date, description, premium, private, 
 	verified_email, profile_image_url, invitations, created_at, updated_at
 	FROM users WHERE email=$1`
 	return s.getBy(ctx, q, email)
@@ -277,7 +277,7 @@ func (s *service) GetByID(ctx context.Context, userID string) (ListUser, error) 
 	s.metrics.incMethodCalls("GetByID")
 
 	q := `SELECT 
-	id, name, username, email, birth_date, location_id, description, premium, private, 
+	id, name, username, email, birth_date, description, premium, private, 
 	verified_email, profile_image_url, invitations, created_at, updated_at
 	FROM users WHERE id=$1`
 	return s.getBy(ctx, q, userID)
@@ -287,7 +287,7 @@ func (s *service) GetByUsername(ctx context.Context, username string) (ListUser,
 	s.metrics.incMethodCalls("GetByUsername")
 
 	q := `SELECT 
-	id, name, username, email, birth_date, location_id, description, premium, private, 
+	id, name, username, email, birth_date, description, premium, private, 
 	verified_email, profile_image_url, invitations, created_at, updated_at
 	FROM users WHERE username=$1`
 	return s.getBy(ctx, q, username)
@@ -658,11 +658,10 @@ func (s *service) getBy(ctx context.Context, query, value string) (ListUser, err
 		// Use NullString to scan the values that can be null
 		profileImageURL sql.NullString
 		description     sql.NullString
-		locationID      int64
 	)
 	err = tx.QueryRowContext(ctx, query, value).Scan(
 		&user.ID, &user.Name, &user.Username, &user.Email,
-		&user.BirthDate, &locationID, &description, &user.Premium,
+		&user.BirthDate, &description, &user.Premium,
 		&user.Private, &user.VerifiedEmail, &profileImageURL,
 		&user.Invitations, &user.CreatedAt, &user.UpdatedAt,
 	)
@@ -671,11 +670,6 @@ func (s *service) getBy(ctx context.Context, query, value string) (ListUser, err
 	}
 	user.Description = description.String
 	user.ProfileImageURL = profileImageURL.String
-
-	if locationID != 0 {
-		// TODO: fetch location from location service
-		// locationID
-	}
 
 	return user, nil
 }

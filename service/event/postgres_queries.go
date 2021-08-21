@@ -24,6 +24,14 @@ func eventColumns(e *Event, columns []string) []interface{} {
 			result = append(result, &e.Type)
 		case "public":
 			result = append(result, &e.Public)
+		case "virtual":
+			result = append(result, &e.Virtual)
+		case "address":
+			result = append(result, &e.Location.Address)
+		case "latitude":
+			result = append(result, &e.Location.Coordinates.Latitude)
+		case "longitude":
+			result = append(result, &e.Location.Coordinates.Longitude)
 		case "start_time":
 			result = append(result, &e.StartTime)
 		case "end_time":
@@ -50,6 +58,7 @@ func scanEvent(row *sql.Row) (Event, error) {
 		URL   sql.NullString
 	)
 	err := row.Scan(&event.ID, &event.Name, &event.Description, &event.Virtual, &URL,
+		&event.Location.Address, &event.Location.Coordinates.Latitude, &event.Location.Coordinates.Longitude,
 		&event.Type, &event.Public, &event.StartTime, &event.EndTime, &event.Slots,
 		&event.MinAge, &event.TicketCost, &event.CreatedAt, &event.UpdatedAt)
 	if err != nil {
@@ -57,10 +66,6 @@ func scanEvent(row *sql.Row) (Event, error) {
 	}
 
 	event.URL = &URL.String
-	if !*event.Virtual {
-		// TODO: fetch location from location service
-		// event.LocationID
-	}
 
 	return event, nil
 }

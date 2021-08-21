@@ -37,7 +37,6 @@ type CreateUser struct {
 	Email           string     `json:"email,omitempty"`
 	Password        string     `json:"password,omitempty"`
 	BirthDate       *time.Time `json:"birth_date,omitempty"`
-	LocationID      *int       `json:"location_id,omitempty"`
 	Description     string     `json:"description,omitempty"`
 	ProfileImageURL string     `json:"profile_image_url,omitempty"`
 }
@@ -64,9 +63,6 @@ func (c CreateUser) Validate() error {
 	}
 	if c.BirthDate == nil {
 		return errors.New("birth_date required")
-	}
-	if c.LocationID == nil {
-		return errors.New("location_id required")
 	}
 	if len(c.Description) > 144 {
 		return errors.New("invalid description length, must be lower than 144 characters")
