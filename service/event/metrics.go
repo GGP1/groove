@@ -11,7 +11,7 @@ type metrics struct {
 }
 
 func initMetrics() metrics {
-	const ns, sub = "groove", "events"
+	const ns, sub = "groove", "event"
 	return metrics{
 		registeredEvents: promauto.NewGauge(prometheus.GaugeOpts{
 			Namespace: ns,
