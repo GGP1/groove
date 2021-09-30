@@ -12,10 +12,11 @@ const (
 	Access            = "access"
 	BanUsers          = "ban_users"
 	InviteUsers       = "invite_users"
-	ModifyMedia       = "modify_media"
 	ModifyPermissions = "modify_permissions"
+	ModifyPosts       = "modify_posts"
 	ModifyProducts    = "modify_products"
 	ModifyRoles       = "modify_roles"
+	ModifyTickets     = "modify_tickets"
 	ModifyZones       = "modify_zones"
 	SetUserRole       = "set_user_role"
 	UpdateEvent       = "update_event"
@@ -27,10 +28,11 @@ var Reserved = romap.New(map[string]interface{}{
 	All:               struct{}{},
 	Access:            struct{}{},
 	BanUsers:          struct{}{},
-	ModifyMedia:       struct{}{},
 	ModifyPermissions: struct{}{},
+	ModifyPosts:       struct{}{},
 	ModifyProducts:    struct{}{},
 	ModifyRoles:       struct{}{},
+	ModifyTickets:     struct{}{},
 	ModifyZones:       struct{}{},
 	InviteUsers:       struct{}{},
 	SetUserRole:       struct{}{},

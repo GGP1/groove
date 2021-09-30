@@ -7,20 +7,23 @@ import (
 
 const (
 	// Host is the default role used when creating an event
-	Host = "host"
+	Host Name = "host"
 	// Attendant is the default role used when a user is attending an event
-	Attendant = "attendant"
+	Attendant Name = "attendant"
 	// Moderator is in charge of banning problematic users
-	Moderator = "moderator"
+	Moderator Name = "moderator"
 	// Viewer can see the content's of an event's page
-	Viewer = "viewer"
+	Viewer Name = "viewer"
 )
+
+// Name represents a reserved role name.
+type Name string
 
 // Reserved is a read-only map that contains reserved roles
 // and its permission keys applying to all events.
 var Reserved = romap.New(map[string]interface{}{
-	Host:      []string{permissions.All},
-	Attendant: []string{permissions.Access},
-	Moderator: []string{permissions.Access, permissions.BanUsers},
-	Viewer:    []string{permissions.ViewEvent},
+	string(Host):      []string{permissions.All},
+	string(Attendant): []string{permissions.Access},
+	string(Moderator): []string{permissions.Access, permissions.BanUsers},
+	string(Viewer):    []string{permissions.ViewEvent},
 })

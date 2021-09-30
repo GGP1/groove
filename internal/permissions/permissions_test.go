@@ -22,7 +22,7 @@ func TestRequire(t *testing.T) {
 	})
 
 	t.Run("Fail", func(t *testing.T) {
-		err := Require(userPermsKeys, ModifyMedia)
+		err := Require(userPermsKeys, ModifyPosts)
 		assert.Error(t, err)
 
 		err = Require(userPermsKeys, Access, BanUsers, ModifyPermissions)
@@ -38,7 +38,7 @@ func BenchmarkRequire(b *testing.B) {
 		ModifyRoles:       {},
 		ModifyZones:       {},
 		InviteUsers:       {},
-		ModifyMedia:       {},
+		ModifyPosts:       {},
 		ModifyProducts:    {},
 		SetUserRole:       {},
 		UpdateEvent:       {},
@@ -50,7 +50,7 @@ func BenchmarkRequire(b *testing.B) {
 		ModifyRoles,
 		ModifyZones,
 		InviteUsers,
-		ModifyMedia,
+		ModifyPosts,
 		ModifyProducts,
 		SetUserRole,
 		UpdateEvent,
