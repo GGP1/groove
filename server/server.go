@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -92,37 +93,30 @@ func (srv *Server) Run(ctx context.Context) error {
 }
 
 func (srv *Server) listenAndServe(serverErr chan error) {
-	if len(srv.TLSConfig.Certificates) < 1 {
-		// Do not use TLS
-		l, err := net.Listen("tcp", srv.Addr)
-		if err != nil {
-			serverErr <- err
-			return
-		}
-
-		log.Sugar().Infof("[HTTP] Listening on http://" + srv.Addr)
-		serverErr <- srv.Serve(l)
-		return
-	}
-
-	if srv.letsEncrypt.enabled {
-		// TODO: Test implementation
-		certManager := autocert.Manager{
-			Prompt:     func(tosURL string) bool { return srv.letsEncrypt.acceptTOS },
-			HostPolicy: autocert.HostWhitelist(srv.letsEncrypt.hosts...),
-			Cache:      autocert.DirCache(srv.letsEncrypt.cache),
-		}
-
-		srv.Handler = certManager.HTTPHandler(srv.Handler)
-		srv.TLSConfig.GetCertificate = certManager.GetCertificate
-	}
-
-	l, err := tls.Listen("tcp", srv.Addr, srv.TLSConfig)
+	scheme := "http"
+	l, err := net.Listen("tcp", srv.Addr)
 	if err != nil {
 		serverErr <- err
 		return
 	}
 
-	log.Sugar().Infof("[HTTPS] Listening on https://" + srv.Addr)
+	if len(srv.TLSConfig.Certificates) > 0 || srv.TLSConfig.GetCertificate != nil {
+		if srv.letsEncrypt.enabled {
+			// TODO: Test implementation
+			certManager := autocert.Manager{
+				Prompt:     func(tosURL string) bool { return srv.letsEncrypt.acceptTOS },
+				HostPolicy: autocert.HostWhitelist(srv.letsEncrypt.hosts...),
+				Cache:      autocert.DirCache(srv.letsEncrypt.cache),
+			}
+
+			srv.Handler = certManager.HTTPHandler(srv.Handler)
+			srv.TLSConfig.GetCertificate = certManager.GetCertificate
+		}
+
+		scheme = "https"
+		l = tls.NewListener(l, srv.TLSConfig)
+	}
+
+	log.Sugar().Infof("[%s] Listening on %s://%s", strings.ToUpper(scheme), scheme, srv.Addr)
 	serverErr <- srv.Serve(l)
 }

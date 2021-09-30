@@ -22,6 +22,9 @@ var (
 	finalHash []byte
 )
 
+// A potential performance improvement would be using AES-256 as the
+// cloud instances (almost certainly) have hardware acceleration for it.
+
 // Encrypt ciphers data with the given key.
 func Encrypt(data []byte) ([]byte, error) {
 	hash := createHash()
