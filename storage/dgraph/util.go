@@ -8,60 +8,58 @@ import (
 	"github.com/GGP1/groove/internal/bufferpool"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/ulid"
+	"github.com/GGP1/groove/model"
 
 	"github.com/dgraph-io/dgo/v210"
 	"github.com/dgraph-io/dgo/v210/protos/api"
 	"github.com/pkg/errors"
 )
 
-// Careful: functions from this file shouldn't be called
-// multiple times in a sequence (except Triple), otherwise the buffer from the pool
-// will get messed up.
-
+// Predicate
 const (
-	// User dgraph type
-	User dgraphType = iota
-	// Event dgraph type
-	Event
-
-	// Are collisions possible?
-	// Two users creating a node at the same time and hence referring to the same one,
-	// in that case, assing a 4 letter random word to avoid collisions
-	createSubject = "_:1"
+	Banned  Predicate = "banned"
+	Invited Predicate = "invited"
+	LikedBy Predicate = "liked_by"
+	Friend  Predicate = "friend"
+	Follows Predicate = "follows"
 )
 
-type dgraphType int
+// Predicate represents a dgraph's predicate
+type Predicate string
+
+// AddEventEdge creates an edge between an event and a user.
+func AddEventEdge(ctx context.Context, dc *dgo.Dgraph, eventID string, predicate Predicate, userID string) error {
+	return Mutation(ctx, dc, func(tx *dgo.Txn) error {
+		req := EventEdgeRequest(eventID, predicate, userID, true)
+		if _, err := tx.Do(ctx, req); err != nil {
+			return errors.Wrapf(err, "adding %s edge", predicate)
+		}
+		return nil
+	})
+}
 
 // CreateNode creates a node of the given type in dgraph.
 //
 // CreateNode does not commit the transaction passed.
-func CreateNode(ctx context.Context, tx *dgo.Txn, dType dgraphType, id string) error {
-	var predicate, object string
-
-	switch dType {
-	case User:
-		predicate = "user_id"
-		object = "User"
-	case Event:
-		predicate = "event_id"
-		object = "Event"
-	}
+func CreateNode(ctx context.Context, tx *dgo.Txn, model model.Model, id string) error {
+	predicate, object := model.DgraphRDF()
 
 	buf := bufferpool.Get()
-	// 24 is the length of the literal strings
-	buf.Grow((len(createSubject) * 2) + len(predicate) + len(id) + len(object) + 24)
+	// 30 is the length of the literal strings
+	buf.Grow(len(predicate) + len(id) + len(object) + 30)
 
+	// Are "_:1" collisions possible?
+	// Two users creating a node at the same time and hence referring to the same one,
+	// in that case, assing a 4 letter pseudo-random word to avoid collisions
 	// _:1 <predicate> "id" .
-	buf.WriteString(createSubject)
-	buf.WriteString(" <")
+	buf.WriteString("_:1 <")
 	buf.WriteString(predicate)
 	buf.WriteString(">\"")
 	buf.WriteString(id)
 	buf.WriteString("\".\n")
 
 	// _:1 <dgraph.type> "type" .
-	buf.WriteString(createSubject)
-	buf.WriteString(" <dgraph.type>\"")
+	buf.WriteString("_:1 <dgraph.type>\"")
 	buf.WriteString(object)
 	buf.WriteString("\".\n")
 
@@ -87,7 +85,7 @@ func CreateNode(ctx context.Context, tx *dgo.Txn, dType dgraphType, id string) e
 }
 
 // EventEdgeRequest returns a new request creating an edge using upsert.
-func EventEdgeRequest(eventID, predicate, userID string, set bool) *api.Request {
+func EventEdgeRequest(eventID string, predicate Predicate, userID string, set bool) *api.Request {
 	vars := map[string]string{"$event_id": eventID, "$user_id": userID}
 	q := `
 	query q($event_id: string, $user_id: string) {
@@ -97,7 +95,7 @@ func EventEdgeRequest(eventID, predicate, userID string, set bool) *api.Request 
 	mu := &api.Mutation{
 		Cond: "@if(eq(len(event), 1) AND eq(len(user), 1))",
 	}
-	triple := TripleUID("uid(event)", predicate, "uid(user)")
+	triple := TripleUID("uid(event)", string(predicate), "uid(user)")
 	if set {
 		mu.SetNquads = triple
 	} else {
@@ -140,7 +138,7 @@ func Mutation(ctx context.Context, dc *dgo.Dgraph, f func(tx *dgo.Txn) error) er
 		_ = tx.Discard(ctx)
 		return err
 	}
-	if err := tx.Commit(ctx); err != nil && err != dgo.ErrFinished {
+	if err := tx.Commit(ctx); err != nil && !errors.Is(err, dgo.ErrFinished) {
 		return errors.Wrap(err, "dgraph: committing transaction")
 	}
 	return nil
@@ -159,6 +157,10 @@ func Query(ctx context.Context, dc *dgo.Dgraph, f func(tx *dgo.Txn) (*api.Respon
 //
 // As counts are encoded like pointers, return a pointer to uint64.
 func ParseCount(rdf []byte) (*uint64, error) {
+	if rdf == nil || len(rdf) == 0 {
+		count := uint64(0)
+		return &count, nil
+	}
 	return parseCount(string(rdf))
 }
 
@@ -311,11 +313,9 @@ func Triple(subject, predicate, object string) []byte {
 	buf := bufferpool.Get()
 	buf.Grow(len(subject) + len(predicate) + len(object) + literalStrings)
 	buf.WriteString(subject)
-	buf.WriteByte(' ')
-	buf.WriteByte('<')
+	buf.WriteString(" <")
 	buf.WriteString(predicate)
-	buf.WriteByte('>')
-	buf.WriteByte(' ')
+	buf.WriteString("> ")
 	if !isUID {
 		buf.WriteByte('"')
 	}
@@ -323,8 +323,7 @@ func Triple(subject, predicate, object string) []byte {
 	if !isUID {
 		buf.WriteByte('"')
 	}
-	buf.WriteByte(' ')
-	buf.WriteByte('.')
+	buf.WriteString(" .")
 
 	triple := buf.Bytes()
 	bufferpool.Put(buf)
@@ -337,14 +336,11 @@ func TripleUID(subjectUID, predicate, objectUID string) []byte {
 	buf := bufferpool.Get()
 	buf.Grow(len(subjectUID) + len(predicate) + len(objectUID) + 6)
 	buf.WriteString(subjectUID)
-	buf.WriteByte(' ')
-	buf.WriteByte('<')
+	buf.WriteString(" <")
 	buf.WriteString(predicate)
-	buf.WriteByte('>')
-	buf.WriteByte(' ')
+	buf.WriteString("> ")
 	buf.WriteString(objectUID)
-	buf.WriteByte(' ')
-	buf.WriteByte('.')
+	buf.WriteString(" .")
 
 	triple := buf.Bytes()
 	bufferpool.Put(buf)
@@ -353,7 +349,7 @@ func TripleUID(subjectUID, predicate, objectUID string) []byte {
 }
 
 // UserEdgeRequest returns a new request creating an edge using upsert.
-func UserEdgeRequest(userID, predicate, targetID string, set bool) *api.Request {
+func UserEdgeRequest(userID string, predicate Predicate, targetID string, set bool) *api.Request {
 	vars := map[string]string{"$user_id": userID, "$target_id": targetID}
 	q := `
 	query q($user_id: string, $target_id: string) {
@@ -363,7 +359,7 @@ func UserEdgeRequest(userID, predicate, targetID string, set bool) *api.Request 
 	mu := &api.Mutation{
 		Cond: "@if(eq(len(user), 1) AND eq(len(target), 1))",
 	}
-	triple := TripleUID("uid(user)", predicate, "uid(target)")
+	triple := TripleUID("uid(user)", string(predicate), "uid(target)")
 	if set {
 		mu.SetNquads = triple
 	} else {
@@ -382,10 +378,11 @@ func parseCount(line string) (*uint64, error) {
 	// Sample line:
 	// <0x1> <count(predicate)> "15" .\n
 	start := strings.IndexByte(line, '"') + 1
-	end := len(line) - 4
+	end := len(line) - 3
 	if start == 0 || end < 1 {
 		return nil, errors.Errorf("invalid rdf: %q", line)
 	}
+
 	count, err := strconv.ParseUint(line[start:end], 10, 64)
 	if err != nil {
 		return nil, errors.Wrap(err, "invalid number")

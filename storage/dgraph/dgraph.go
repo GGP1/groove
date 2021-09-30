@@ -53,22 +53,36 @@ type Event {
 	event_id
 	liked_by
 	invited
-	confirmed
 	banned
 }
 
 type User {
 	user_id
 	friend
+	follows
 	blocked
 }
 
-event_id: string @index(hash) .
+type Post {
+	post_id
+	liked_by
+}
+
+type Comment {
+	comment_id
+	liked_by
+}
+
 liked_by: [uid] @reverse .
+
+event_id: string @index(hash) .
 invited: [uid] @reverse .
-confirmed: [uid] @reverse .
 banned: [uid] @reverse .
+
+post_id: string @index(hash) .
+comment_id: string @index(hash) .
 
 user_id: string @index(hash) .
 friend: [uid] .
+follows: [uid] .
 blocked: [uid] @reverse .`

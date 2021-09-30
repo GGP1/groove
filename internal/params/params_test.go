@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/GGP1/groove/internal/ulid"
+	"github.com/GGP1/groove/model"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/stretchr/testify/assert"
@@ -22,16 +23,16 @@ func TestIDFromCtx(t *testing.T) {
 	assert.Equal(t, id, got)
 }
 
-func TestParseQuery(t *testing.T) {
+func TestParse(t *testing.T) {
 	cases := []struct {
 		desc     string
-		obj      obj
+		model    model.Model
 		rawQuery string
 		expected Query
 	}{
 		{
 			desc:     "User",
-			obj:      User,
+			model:    model.User,
 			rawQuery: "cursor=2&limit=20&user.fields=id,username,email,birth_date",
 			expected: Query{
 				Cursor: "2",
@@ -41,7 +42,7 @@ func TestParseQuery(t *testing.T) {
 		},
 		{
 			desc:     "Event",
-			obj:      Event,
+			model:    model.Event,
 			rawQuery: "cursor=15&limit=3&event.fields=id,name,created_at",
 			expected: Query{
 				Cursor: "15",
@@ -50,18 +51,18 @@ func TestParseQuery(t *testing.T) {
 			},
 		},
 		{
-			desc:     "Media",
-			obj:      Media,
+			desc:     "Post",
+			model:    model.Post,
 			rawQuery: "cursor=39&limit=8&media.fields=id,url,created_at",
 			expected: Query{
 				Cursor: "39",
-				Fields: []string{"id", "url", "created_at"},
+				Fields: []string{"id", "event_id", "created_at"},
 				Limit:  "8",
 			},
 		},
 		{
 			desc:     "Product",
-			obj:      Product,
+			model:    model.Product,
 			rawQuery: "cursor=2&limit=50&product.fields=stock,brand,type",
 			expected: Query{
 				Cursor: "2",
@@ -71,7 +72,7 @@ func TestParseQuery(t *testing.T) {
 		},
 		{
 			desc:     "Lookup ID",
-			obj:      User,
+			model:    model.User,
 			rawQuery: "lookup.id=01FATW8S0BMJ053XZ779Q025PC",
 			expected: Query{
 				Fields:   nil,
@@ -86,7 +87,7 @@ func TestParseQuery(t *testing.T) {
 		{
 			desc:     "Count false",
 			rawQuery: "count=false",
-			obj:      User,
+			model:    model.User,
 			expected: Query{
 				Count:  false,
 				Cursor: DefaultCursor,
@@ -97,7 +98,7 @@ func TestParseQuery(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
-			got, err := ParseQuery(tc.rawQuery, tc.obj)
+			got, err := Parse(tc.rawQuery, tc.model)
 			assert.NoError(t, err)
 			assert.Equal(t, tc.expected, got)
 		})
@@ -106,25 +107,25 @@ func TestParseQuery(t *testing.T) {
 	t.Run("Invalid boolean", func(t *testing.T) {
 		rawQuery := "count=invalid"
 
-		_, err := ParseQuery(rawQuery, User)
+		_, err := Parse(rawQuery, model.User)
 		assert.Error(t, err)
 	})
 	t.Run("Invalid lookup ID", func(t *testing.T) {
 		rawQuery := "lookup.id=4691-ab99-d744f8febbc4"
 
-		_, err := ParseQuery(rawQuery, User)
+		_, err := Parse(rawQuery, model.User)
 		assert.Error(t, err)
 	})
 	t.Run("Maximum exceeded", func(t *testing.T) {
 		rawQuery := "limit=100"
 
-		_, err := ParseQuery(rawQuery, Event)
+		_, err := Parse(rawQuery, model.Event)
 		assert.Error(t, err)
 	})
 	t.Run("Invalid cursor", func(t *testing.T) {
 		rawQuery := "cursor=4691-ab99-d744f8febbc4"
 
-		_, err := ParseQuery(rawQuery, User)
+		_, err := Parse(rawQuery, model.User)
 		assert.Error(t, err)
 	})
 }
@@ -155,36 +156,10 @@ func TestParseLimit(t *testing.T) {
 	})
 }
 
-func TestSplit(t *testing.T) {
-	cases := []struct {
-		desc     string
-		expected []string
-		input    string
-	}{
-		{
-			desc:     "Non-nil",
-			expected: []string{"name", "username", "email", "birth_date"},
-			input:    "name,username,email,birth_date",
-		},
-		{
-			desc:     "Nil",
-			expected: nil,
-			input:    "",
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.desc, func(t *testing.T) {
-			got := split(tc.input)
-			assert.Equal(t, tc.expected, got)
-		})
-	}
-}
-
-func BenchmarkParseQuery(b *testing.B) {
+func BenchmarkParse(b *testing.B) {
 	rawQuery := "cursor=2&limit=20&user.fields=id,username,email,birth_date"
 	for i := 0; i < b.N; i++ {
-		ParseQuery(rawQuery, User)
+		Parse(rawQuery, model.User)
 	}
 }
 

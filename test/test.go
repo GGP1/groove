@@ -11,6 +11,7 @@ import (
 
 	"github.com/GGP1/groove/config"
 	"github.com/GGP1/groove/internal/cache"
+	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/event"
 	"github.com/GGP1/groove/storage/dgraph"
 	"github.com/GGP1/groove/storage/memcached"
@@ -26,7 +27,8 @@ import (
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/encoding/gzip"
 
-	// Used to open a connection with postgres database
+	// Used to force the driver registration in order to establish a
+	// connection with postgres
 	_ "github.com/lib/pq"
 )
 
@@ -35,26 +37,21 @@ func CreateEvent(ctx context.Context, db *sql.DB, dc *dgo.Dgraph, id, name strin
 	typ := event.GrandPrix
 	public := true
 	virtual := false
-	ticketCost := 10
 	slots := 100
 	startTime := 150000
 	endTime := 320000
 	q := `INSERT INTO events 
-	(id, name, type, public, virtual, ticket_cost, slots, start_time, end_Time) 
-	VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`
+	(id, name, type, public, virtual, slots, start_time, end_Time) 
+	VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`
 	_, err := db.ExecContext(ctx, q, id, name, typ, public, virtual,
-		ticketCost, slots, startTime, endTime)
+		slots, startTime, endTime)
 	if err != nil {
 		return err
 	}
 
-	dcTx := dc.NewTxn()
-	if err := dgraph.CreateNode(ctx, dcTx, dgraph.Event, id); err != nil {
-		dcTx.Discard(ctx)
-		return err
-	}
-
-	return dcTx.Commit(ctx)
+	return dgraph.Mutation(ctx, dc, func(tx *dgo.Txn) error {
+		return dgraph.CreateNode(ctx, tx, model.Event, id)
+	})
 }
 
 // CreateUser creates a new user for testing purposes.
@@ -64,19 +61,15 @@ func CreateUser(ctx context.Context, db *sql.DB, dc *dgo.Dgraph, id, email, user
 		return err
 	}
 	password = string(pwd)
-	q := "INSERT INTO users (id, name, email, username, password, birth_date) VALUES ($1,$2,$3,$4,$5,$6)"
-	_, err = db.ExecContext(ctx, q, id, "test", email, username, password, time.Now())
+	q := "INSERT INTO users (id, name, email, username, password, birth_date, type) VALUES ($1,$2,$3,$4,$5,$6,$7)"
+	_, err = db.ExecContext(ctx, q, id, "test", email, username, password, time.Now(), model.Standard)
 	if err != nil {
 		return err
 	}
 
-	dcTx := dc.NewTxn()
-	if err := dgraph.CreateNode(ctx, dcTx, dgraph.User, id); err != nil {
-		dcTx.Discard(ctx)
-		return err
-	}
-
-	return dcTx.Commit(ctx)
+	return dgraph.Mutation(ctx, dc, func(tx *dgo.Txn) error {
+		return dgraph.CreateNode(ctx, tx, model.User, id)
+	})
 }
 
 // NewResource returns a new pool, a docker container and handles its purge.
