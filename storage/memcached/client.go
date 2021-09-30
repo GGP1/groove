@@ -50,7 +50,7 @@ func (c client) Get(key string) (*memcache.Item, error) {
 
 // Miss returns if the error is a cache miss or not.
 func (c client) Miss(err error) bool {
-	return err == memcache.ErrCacheMiss
+	return errors.Is(err, memcache.ErrCacheMiss)
 }
 
 // Set saves an item into the cache.
