@@ -2,7 +2,6 @@ package role_test
 
 import (
 	"context"
-	"database/sql"
 	"log"
 	"os"
 	"testing"
@@ -11,22 +10,29 @@ import (
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/roles"
+	"github.com/GGP1/groove/internal/sqltx"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event/role"
 	"github.com/GGP1/groove/test"
 
+	"github.com/dgraph-io/dgo/v210"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 )
 
 var (
 	roleSv      role.Service
-	sqlTx       *sql.Tx
+	dc          *dgo.Dgraph
+	ctx         context.Context
 	cacheClient cache.Client
 )
 
 func TestMain(m *testing.M) {
-	poolPg, resourcePg, db, err := test.RunPostgres()
+	poolPg, resourcePg, postgres, err := test.RunPostgres()
+	if err != nil {
+		log.Fatal(err)
+	}
+	poolDc, resourceDc, dgraph, conn, err := test.RunDgraph()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -35,13 +41,14 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 
-	sqlTx, err = db.BeginTx(context.Background(), nil)
+	sqlTx, err := postgres.BeginTx(context.Background(), nil)
 	if err != nil {
 		log.Fatal(err)
 	}
+	ctx = sqltx.NewContext(ctx, sqlTx)
 	cacheClient = memcached
 
-	roleSv = role.NewService(db, cacheClient)
+	roleSv = role.NewService(postgres, dgraph, cacheClient)
 
 	code := m.Run()
 
@@ -52,6 +59,12 @@ func TestMain(m *testing.M) {
 	if err := poolPg.Purge(resourcePg); err != nil {
 		log.Fatal(err)
 	}
+	if err := poolDc.Purge(resourceDc); err != nil {
+		log.Fatal(err)
+	}
+	if err := conn.Close(); err != nil {
+		log.Fatal(err)
+	}
 	if err := poolMc.Purge(resourceMc); err != nil {
 		log.Fatal(err)
 	}
@@ -60,10 +73,9 @@ func TestMain(m *testing.M) {
 }
 
 func TestCreatePermission(t *testing.T) {
-	ctx := context.Background()
 	eventID := ulid.NewString()
 
-	err := createEvent(ctx, eventID, "create_permission")
+	err := createEvent(eventID, "create_permission")
 	assert.NoError(t, err)
 
 	permission := role.Permission{
@@ -71,15 +83,14 @@ func TestCreatePermission(t *testing.T) {
 		Key:         "create_permission",
 		Description: "TestCreatePermission",
 	}
-	err = roleSv.CreatePermission(ctx, sqlTx, eventID, permission)
+	err = roleSv.CreatePermission(ctx, eventID, permission)
 	assert.NoError(t, err)
 }
 
 func TestGetPermissions(t *testing.T) {
-	ctx := context.Background()
 	eventID := ulid.NewString()
 
-	err := createEvent(ctx, eventID, "permissions")
+	err := createEvent(eventID, "permissions")
 	assert.NoError(t, err)
 
 	expectedKey := "create_permission"
@@ -89,12 +100,12 @@ func TestGetPermissions(t *testing.T) {
 			Key:         expectedKey,
 			Description: "TestCreatePermission",
 		}
-		err = roleSv.CreatePermission(ctx, sqlTx, eventID, permission)
+		err = roleSv.CreatePermission(ctx, eventID, permission)
 		assert.NoError(t, err)
 	})
 
 	t.Run("GetPermissions", func(t *testing.T) {
-		permissions, err := roleSv.GetPermissions(ctx, sqlTx, eventID)
+		permissions, err := roleSv.GetPermissions(ctx, eventID)
 		assert.NoError(t, err)
 
 		assert.Equal(t, expectedKey, permissions[0].Key)
@@ -105,20 +116,20 @@ func TestGetPermissions(t *testing.T) {
 		uptPermission := role.UpdatePermission{
 			Name: &name,
 		}
-		err := roleSv.UpdatePermission(ctx, sqlTx, eventID, expectedKey, uptPermission)
+		err := roleSv.UpdatePermission(ctx, eventID, expectedKey, uptPermission)
 		assert.NoError(t, err)
 
-		permissions, err := roleSv.GetPermissions(ctx, sqlTx, eventID)
+		permissions, err := roleSv.GetPermissions(ctx, eventID)
 		assert.NoError(t, err)
 
 		assert.Equal(t, name, permissions[0].Name)
 	})
 
 	t.Run("DeletePermission", func(t *testing.T) {
-		err := roleSv.DeletePermission(ctx, sqlTx, eventID, expectedKey)
+		err := roleSv.DeletePermission(ctx, eventID, expectedKey)
 		assert.NoError(t, err)
 
-		permissions, err := roleSv.GetPermissions(ctx, sqlTx, eventID)
+		permissions, err := roleSv.GetPermissions(ctx, eventID)
 		assert.NoError(t, err)
 
 		assert.Equal(t, 0, len(permissions))
@@ -126,46 +137,45 @@ func TestGetPermissions(t *testing.T) {
 }
 
 func TestRoles(t *testing.T) {
-	ctx := context.Background()
 	eventID := ulid.NewString()
 	userID := ulid.NewString()
 
 	email := "role@email.com"
-	err := createUser(ctx, userID, email, "role")
+	err := createUser(userID, email, "role")
 	assert.NoError(t, err)
 
-	err = createEvent(ctx, eventID, "roles")
+	err = createEvent(eventID, "roles")
 	assert.NoError(t, err)
 
 	expectedRole := role.Role{
-		Name:           roles.Attendant,
+		Name:           string(roles.Attendant),
 		PermissionKeys: pq.StringArray{permissions.InviteUsers},
 	}
 
 	t.Run("CreateRole", func(t *testing.T) {
-		err = roleSv.CreateRole(ctx, sqlTx, eventID, expectedRole)
+		err = roleSv.CreateRole(ctx, eventID, expectedRole)
 		assert.NoError(t, err)
 	})
 
 	t.Run("DeleteRole", func(t *testing.T) {
 		name := "delete"
-		err := roleSv.CreateRole(ctx, sqlTx, eventID, role.Role{Name: name, PermissionKeys: pq.StringArray{"abc"}})
+		err := roleSv.CreateRole(ctx, eventID, role.Role{Name: name, PermissionKeys: pq.StringArray{"abc"}})
 		assert.NoError(t, err)
 
-		err = roleSv.DeleteRole(ctx, sqlTx, eventID, name)
+		err = roleSv.DeleteRole(ctx, eventID, name)
 		assert.NoError(t, err)
 
-		_, err = roleSv.GetRole(ctx, sqlTx, eventID, name)
+		_, err = roleSv.GetRole(ctx, eventID, name)
 		assert.Error(t, err)
 	})
 
 	t.Run("SetRoles", func(t *testing.T) {
-		err = roleSv.SetRoles(ctx, sqlTx, eventID, expectedRole.Name, userID)
+		err = roleSv.SetRoles(ctx, eventID, expectedRole.Name, userID)
 		assert.NoError(t, err)
 	})
 
 	t.Run("GetRoles", func(t *testing.T) {
-		roles, err := roleSv.GetRoles(ctx, sqlTx, eventID)
+		roles, err := roleSv.GetRoles(ctx, eventID)
 		assert.NoError(t, err)
 
 		assert.Equal(t, 1, len(roles))
@@ -173,39 +183,40 @@ func TestRoles(t *testing.T) {
 	})
 
 	t.Run("GetRole", func(t *testing.T) {
-		role, err := roleSv.GetRole(ctx, sqlTx, eventID, expectedRole.Name)
+		role, err := roleSv.GetRole(ctx, eventID, expectedRole.Name)
 		assert.NoError(t, err)
 
 		assert.Equal(t, expectedRole, role)
 	})
 
 	t.Run("GetUserRole", func(t *testing.T) {
-		gotRole, err := roleSv.GetUserRole(ctx, sqlTx, eventID, userID)
+		gotRole, err := roleSv.GetUserRole(ctx, eventID, userID)
 		assert.NoError(t, err)
 
 		assert.Equal(t, expectedRole, gotRole)
 	})
 
-	t.Run("SetViewerRole", func(t *testing.T) {
-		err := roleSv.SetViewerRole(ctx, sqlTx, eventID, userID)
+	t.Run("SetReservedRole", func(t *testing.T) {
+		expectedRole := roles.Viewer
+		err := roleSv.SetReservedRole(ctx, eventID, userID, expectedRole)
 		assert.NoError(t, err)
 
-		gotRole, err := roleSv.GetUserRole(ctx, sqlTx, eventID, userID)
+		gotRole, err := roleSv.GetUserRole(ctx, eventID, userID)
 		assert.NoError(t, err)
 
-		assert.Equal(t, roles.Viewer, gotRole.Name)
+		assert.Equal(t, expectedRole, gotRole.Name)
 	})
 
 	t.Run("UserHasRole", func(t *testing.T) {
 		t.Run("True", func(t *testing.T) {
-			ok, err := roleSv.UserHasRole(ctx, sqlTx, eventID, userID)
+			ok, err := roleSv.HasRole(ctx, eventID, userID)
 			assert.NoError(t, err)
 
 			assert.True(t, ok)
 		})
 
 		t.Run("False", func(t *testing.T) {
-			ok, err := roleSv.UserHasRole(ctx, sqlTx, eventID, ulid.NewString())
+			ok, err := roleSv.HasRole(ctx, eventID, ulid.NewString())
 			assert.NoError(t, err)
 
 			assert.False(t, ok)
@@ -213,15 +224,17 @@ func TestRoles(t *testing.T) {
 	})
 }
 
-func createEvent(ctx context.Context, id, name string) error {
+func createEvent(id, name string) error {
+	sqlTx := sqltx.FromContext(ctx)
 	q := `INSERT INTO events 
-	(id, name, type, public, virtual, ticket_cost, slots, start_time, end_Time) 
-	VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`
-	_, err := sqlTx.ExecContext(ctx, q, id, name, 1, true, false, 10, 100, 15000, 320000)
+	(id, name, type, public, virtual, slots, start_time, end_Time) 
+	VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`
+	_, err := sqlTx.ExecContext(ctx, q, id, name, 1, true, false, 100, 15000, 320000)
 	return err
 }
 
-func createUser(ctx context.Context, id, email, username string) error {
+func createUser(id, email, username string) error {
+	sqlTx := sqltx.FromContext(ctx)
 	q := "INSERT INTO users (id, name, email, username, password, birth_date) VALUES ($1,$2,$3,$4,$5,$6)"
 	_, err := sqlTx.ExecContext(ctx, q, id, "test", email, username, "password", time.Now())
 

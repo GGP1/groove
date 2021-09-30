@@ -11,12 +11,10 @@ const (
 	blockedBy
 	blockedByCount
 	blockedByLookup
-	confirmed
-	confirmedLookup
-	confirmedCount
 	friends
 	friendsLookup
 	friendsCount
+	areFriends
 	invited
 	invitedLookup
 	invitedCount
@@ -86,25 +84,6 @@ var getQuery = map[query]string{
 			}
 		}
 	}`,
-	confirmed: `query q($id: string, $cursor: string, $limit: string) {
-		q(func: eq(user_id, $id)) {
-			~confirmed (orderasc: event_id) (first: $limit, offset: $cursor) {
-				event_id
-			}
-		}
-	}`,
-	confirmedCount: `query q($id: string) {
-		q(func: eq(user_id, $id)) {
-			count(~confirmed)
-		}
-	}`,
-	confirmedLookup: `query q($id: string, $lookup_id: string) {
-		q(func: eq(user_id, $id)) {
-			~confirmed @filter(eq(event_id, $lookup_id)) {
-				event_id
-			}
-		}
-	}`,
 	friends: `query q($id: string, $cursor: string, $limit: string) {
 		q(func: eq(user_id, $id)) {
 			friend (orderasc: user_id) (first: $limit, offset: $cursor) {
@@ -121,6 +100,13 @@ var getQuery = map[query]string{
 		q(func: eq(user_id, $id)) {
 			friend @filter(eq(user_id, $lookup_id)) {
 				user_id
+			}
+		}
+	}`,
+	areFriends: `query q($id: string, $lookup_id: string) {
+		q(func: eq(user_id, $id)) {
+			friend @filter(eq(user_id, $lookup_id)) {
+				count(user_id)
 			}
 		}
 	}`,

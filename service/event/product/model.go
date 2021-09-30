@@ -23,6 +23,7 @@ type Product struct {
 	Subtotal    uint64     `json:"subtotal,omitempty"`
 	Total       uint64     `json:"total,omitempty"`
 	CreatedAt   *time.Time `json:"created_at,omitempty" db:"created_at"`
+	UpdatedAt   *time.Time `json:"updated_at,omitempty" db:"updated_at"`
 }
 
 // Validate ..
@@ -44,7 +45,6 @@ func (p Product) Validate() error {
 
 // UpdateProduct is the structure used to update products.
 type UpdateProduct struct {
-	ID          string  `json:"id,omitempty"`
 	Stock       *uint64 `json:"stock,omitempty"`
 	Brand       *string `json:"brand,omitempty"`
 	Type        *string `json:"type,omitempty"`
@@ -57,9 +57,6 @@ type UpdateProduct struct {
 
 // Validate ..
 func (p UpdateProduct) Validate() error {
-	if p.ID == "" {
-		return errors.New("id required")
-	}
 	if p.Discount != nil && *p.Discount < 0 {
 		return errors.New("invalid discount, minimum is 0")
 	}

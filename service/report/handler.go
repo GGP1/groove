@@ -23,8 +23,8 @@ func NewHandler(service Service) Handler {
 	}
 }
 
-// CreateReport creates a new report inside an event.
-func (h *Handler) CreateReport() http.HandlerFunc {
+// Create creates a new report inside an event.
+func (h *Handler) Create() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -35,7 +35,7 @@ func (h *Handler) CreateReport() http.HandlerFunc {
 		}
 
 		report.ID = ulid.NewString()
-		if err := h.service.CreateReport(ctx, report); err != nil {
+		if err := h.service.Create(ctx, report); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -44,8 +44,8 @@ func (h *Handler) CreateReport() http.HandlerFunc {
 	}
 }
 
-// GetReports gets an event's reports.
-func (h *Handler) GetReports() http.HandlerFunc {
+// Get gets an event's reports.
+func (h *Handler) Get() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -55,7 +55,7 @@ func (h *Handler) GetReports() http.HandlerFunc {
 			return
 		}
 
-		reports, err := h.service.GetReports(ctx, reportedID)
+		reports, err := h.service.Get(ctx, reportedID)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return

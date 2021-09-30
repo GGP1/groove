@@ -9,8 +9,8 @@ import (
 
 // Service interface for the reports service.
 type Service interface {
-	CreateReport(ctx context.Context, report Report) error
-	GetReports(ctx context.Context, reportedID string) ([]Report, error)
+	Create(ctx context.Context, report Report) error
+	Get(ctx context.Context, reportedID string) ([]Report, error)
 }
 
 type service struct {
@@ -22,8 +22,8 @@ func NewService(db *sql.DB) Service {
 	return service{db: db}
 }
 
-// CreateReport adds a report to the event.
-func (s service) CreateReport(ctx context.Context, report Report) error {
+// Create adds a report to the event.
+func (s service) Create(ctx context.Context, report Report) error {
 	q := `INSERT INTO events_reports
 	(id, reported_id, reporter_id, type, details)
 	VALUES
@@ -36,8 +36,8 @@ func (s service) CreateReport(ctx context.Context, report Report) error {
 	return nil
 }
 
-// GetReports returns an event/user reports.
-func (s service) GetReports(ctx context.Context, reportedID string) ([]Report, error) {
+// Get returns an event/user reports.
+func (s service) Get(ctx context.Context, reportedID string) ([]Report, error) {
 	q := "SELECT id, reporter_id, type, details FROM events_reports WHERE reported_id=$1"
 	rows, err := s.db.QueryContext(ctx, q, reportedID)
 	if err != nil {
@@ -45,18 +45,14 @@ func (s service) GetReports(ctx context.Context, reportedID string) ([]Report, e
 	}
 
 	var reports []Report
-	var id, reporterID, typ, details string
+	report := Report{
+		ReportedID: reportedID,
+	}
 	for rows.Next() {
-		if err := rows.Scan(&id, &reporterID, &typ, &details); err != nil {
+		if err := rows.Scan(&report.ID, &report.ReporterID, &report.Type, &report.Details); err != nil {
 			return nil, errors.Wrap(err, "scanning rows")
 		}
-		reports = append(reports, Report{
-			ID:         id,
-			ReportedID: reportedID,
-			ReporterID: reporterID,
-			Type:       typ,
-			Details:    details,
-		})
+		reports = append(reports, report)
 	}
 
 	if err := rows.Err(); err != nil {

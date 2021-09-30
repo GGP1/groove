@@ -57,12 +57,12 @@ func TestReports(t *testing.T) {
 			Type:       expectedType,
 			Details:    "-",
 		}
-		err = reportSv.CreateReport(ctx, report)
+		err = reportSv.Create(ctx, report)
 		assert.NoError(t, err)
 	})
 
 	t.Run("GetReports", func(t *testing.T) {
-		reports, err := reportSv.GetReports(ctx, eventID)
+		reports, err := reportSv.Get(ctx, eventID)
 		assert.NoError(t, err)
 
 		assert.Equal(t, 1, len(reports))
@@ -72,9 +72,9 @@ func TestReports(t *testing.T) {
 
 func createEvent(ctx context.Context, id, name string) error {
 	q := `INSERT INTO events 
-	(id, name, type, public, virtual, ticket_cost, slots, start_time, end_Time) 
-	VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`
-	_, err := db.ExecContext(ctx, q, id, name, 1, true, false, 10, 100, 15000, 320000)
+	(id, name, type, public, virtual, slots, start_time, end_Time) 
+	VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`
+	_, err := db.ExecContext(ctx, q, id, name, 1, true, false, 100, 15000, 320000)
 	return err
 }
 

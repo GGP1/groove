@@ -3,12 +3,14 @@ package product
 import (
 	"context"
 	"database/sql"
-	"strconv"
+	"time"
 
-	"github.com/GGP1/groove/internal/bufferpool"
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
+	"github.com/GGP1/groove/internal/scan"
+	"github.com/GGP1/groove/internal/sqltx"
 	"github.com/GGP1/groove/internal/ulid"
+	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/storage/postgres"
 
 	"github.com/pkg/errors"
@@ -16,10 +18,10 @@ import (
 
 // Service interface for the products service.
 type Service interface {
-	CreateProduct(ctx context.Context, sqlTx *sql.Tx, eventID string, product Product) error
-	DeleteProduct(ctx context.Context, sqlTx *sql.Tx, eventID, productID string) error
-	GetProducts(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]Product, error)
-	UpdateProduct(ctx context.Context, sqlTx *sql.Tx, eventID string, product UpdateProduct) error
+	Create(ctx context.Context, eventID string, product Product) error
+	Delete(ctx context.Context, eventID, productID string) error
+	Get(ctx context.Context, eventID string, params params.Query) ([]Product, error)
+	Update(ctx context.Context, eventID, productID string, product UpdateProduct) error
 }
 
 type service struct {
@@ -35,8 +37,10 @@ func NewService(db *sql.DB, cache cache.Client) Service {
 	}
 }
 
-// CreateProduct adds a product to the event.
-func (s service) CreateProduct(ctx context.Context, sqlTx *sql.Tx, eventID string, product Product) error {
+// Create adds a product to the event.
+func (s service) Create(ctx context.Context, eventID string, product Product) error {
+	sqlTx := sqltx.FromContext(ctx)
+
 	q := `INSERT INTO events_products 
 	(id, event_id, stock, brand, type, description, discount, taxes, subtotal, total) 
 	VALUES 
@@ -51,8 +55,10 @@ func (s service) CreateProduct(ctx context.Context, sqlTx *sql.Tx, eventID strin
 	return nil
 }
 
-// DeleteProduct removes a product from an event.
-func (s service) DeleteProduct(ctx context.Context, sqlTx *sql.Tx, eventID, productID string) error {
+// Delete removes a product from an event.
+func (s service) Delete(ctx context.Context, eventID, productID string) error {
+	sqlTx := sqltx.FromContext(ctx)
+
 	q := "DELETE FROM events_products WHERE event_id=$1 AND id=$2"
 	if _, err := sqlTx.ExecContext(ctx, q, eventID, productID); err != nil {
 		return errors.Wrap(err, "deleting product")
@@ -60,140 +66,45 @@ func (s service) DeleteProduct(ctx context.Context, sqlTx *sql.Tx, eventID, prod
 	return nil
 }
 
-// GetProducts returns the products from an event.
-func (s service) GetProducts(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]Product, error) {
-	q := postgres.SelectWhere(postgres.Products, "event_id=$1", "id", params)
+// Get returns the products from an event.
+func (s service) Get(ctx context.Context, eventID string, params params.Query) ([]Product, error) {
+	sqlTx := sqltx.FromContext(ctx)
+
+	q := postgres.SelectWhere(model.Product, "event_id=$1", "id", params)
 	rows, err := sqlTx.QueryContext(ctx, q, eventID)
 	if err != nil {
 		return nil, err
 	}
 
-	products, err := scanProducts(rows)
-	if err != nil {
+	var products []Product
+	if err := scan.Rows(&products, rows); err != nil {
 		return nil, err
 	}
 
 	return products, nil
 }
 
-// UpdateProduct updates an event product.
-func (s service) UpdateProduct(ctx context.Context, sqlTx *sql.Tx, eventID string, product UpdateProduct) error {
-	q := updateProductQuery(eventID, product)
-	if _, err := sqlTx.ExecContext(ctx, q); err != nil {
-		return errors.Wrap(err, "updating products")
+// Update updates an event product.
+func (s service) Update(ctx context.Context, eventID, productID string, product UpdateProduct) error {
+	sqlTx := sqltx.FromContext(ctx)
+
+	q := `UPDATE events_products SET
+	brand = COALESCE($3,brand),
+	type = COALESCE($4,type),
+	description = COALESCE($5,description),
+	stock = COALESCE($6,stock),
+	discount = COALESCE($7,discount),
+	taxes = COALESCE($8,taxes),
+	subtotal = COALESCE($9,subtotal),
+	total = COALESCE($10,total),
+	updated_at = $11
+	WHERE event_id=$1 AND id=$2`
+	_, err := sqlTx.ExecContext(ctx, q, eventID, productID, product.Brand, product.Type,
+		product.Description, product.Stock, product.Discount, product.Taxes, product.Subtotal,
+		product.Total, time.Now())
+	if err != nil {
+		return errors.Wrap(err, "updating product")
 	}
 
 	return nil
-}
-
-func scanProducts(rows *sql.Rows) ([]Product, error) {
-	var (
-		// Reuse object, there's no need to reset fields as they will be always overwritten
-		product  Product
-		products []Product
-	)
-
-	cols, _ := rows.Columns()
-	if len(cols) > 0 {
-		columns := productColumns(&product, cols)
-
-		for rows.Next() {
-			if err := rows.Scan(columns...); err != nil {
-				return nil, errors.Wrap(err, "scanning rows")
-			}
-
-			products = append(products, product)
-		}
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return products, nil
-}
-
-func productColumns(p *Product, columns []string) []interface{} {
-	result := make([]interface{}, 0, len(columns))
-
-	for _, c := range columns {
-		switch c {
-		case "id":
-			result = append(result, &p.ID)
-		case "event_id":
-			result = append(result, &p.EventID)
-		case "stock":
-			result = append(result, &p.Stock)
-		case "brand":
-			result = append(result, &p.Brand)
-		case "description":
-			result = append(result, &p.Description)
-		case "discount":
-			result = append(result, &p.Discount)
-		case "taxes":
-			result = append(result, &p.Taxes)
-		case "subtotal":
-			result = append(result, &p.Subtotal)
-		case "total":
-			result = append(result, &p.Total)
-		}
-	}
-
-	return result
-}
-
-func updateProductQuery(eventID string, p UpdateProduct) string {
-	buf := bufferpool.Get()
-	buf.WriteString("UPDATE events_products SET")
-
-	if p.Brand != nil {
-		buf.WriteString(" brand='")
-		buf.WriteString(*p.Brand)
-		buf.WriteString("',")
-	}
-	if p.Type != nil {
-		buf.WriteString(" type='")
-		buf.WriteString(*p.Type)
-		buf.WriteString("',")
-	}
-	if p.Description != nil {
-		buf.WriteString(" description='")
-		buf.WriteString(*p.Description)
-		buf.WriteString("',")
-	}
-	if p.Stock != nil {
-		buf.WriteString(" stock=")
-		buf.WriteString(strconv.FormatUint(*p.Stock, 10))
-		buf.WriteByte(',')
-	}
-	if p.Discount != nil {
-		buf.WriteString(" discount=")
-		buf.WriteString(strconv.FormatUint(*p.Discount, 10))
-		buf.WriteByte(',')
-	}
-	if p.Taxes != nil {
-		buf.WriteString(" taxes=")
-		buf.WriteString(strconv.FormatUint(*p.Taxes, 10))
-		buf.WriteByte(',')
-	}
-	if p.Subtotal != nil {
-		buf.WriteString(" subtotal=")
-		buf.WriteString(strconv.FormatUint(*p.Subtotal, 10))
-		buf.WriteByte(',')
-	}
-	if p.Total != nil {
-		buf.WriteString(" total=")
-		buf.WriteString(strconv.FormatUint(*p.Total, 10))
-	}
-
-	buf.WriteString(" WHERE event_id='")
-	buf.WriteString(eventID)
-	buf.WriteString("' AND id='")
-	buf.WriteString(p.ID)
-	buf.WriteByte('\'')
-
-	q := buf.String()
-	bufferpool.Put(buf)
-
-	return q
 }

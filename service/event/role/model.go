@@ -5,6 +5,7 @@ import (
 
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/roles"
+	"github.com/GGP1/groove/internal/validate"
 
 	"github.com/lib/pq"
 	"github.com/pkg/errors"
@@ -13,19 +14,19 @@ import (
 // reservedRoles should be kept in sync with the roles.Reserved map.
 var reservedRoles = []Role{
 	{
-		Name:           roles.Host,
+		Name:           string(roles.Host),
 		PermissionKeys: []string{permissions.All},
 	},
 	{
-		Name:           roles.Attendant,
+		Name:           string(roles.Attendant),
 		PermissionKeys: []string{permissions.Access},
 	},
 	{
-		Name:           roles.Moderator,
+		Name:           string(roles.Moderator),
 		PermissionKeys: []string{permissions.Access, permissions.BanUsers},
 	},
 	{
-		Name:           roles.Viewer,
+		Name:           string(roles.Viewer),
 		PermissionKeys: []string{permissions.ViewEvent},
 	},
 }
@@ -41,8 +42,8 @@ func (r Role) Validate() error {
 	if r.Name == "" {
 		return errors.New("name required")
 	}
-	if len(r.Name) > 20 {
-		return errors.New("invalid name length, maximum is 20")
+	if err := validate.RoleName(r.Name); err != nil {
+		return err
 	}
 	if roles.Reserved.Exists(r.Name) {
 		return errors.New("reserved name")

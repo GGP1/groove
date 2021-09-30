@@ -4,31 +4,21 @@ import (
 	"github.com/GGP1/groove/internal/params"
 )
 
-// Predicate
-const (
-	Banned    predicate = "banned"
-	Confirmed predicate = "confirmed"
-	Invited   predicate = "invited"
-	LikedBy   predicate = "liked_by"
-)
-
 // Query
 const (
 	banned query = iota + 1
 	bannedCount
 	bannedLookup
-	confirmed
-	confirmedLookup
-	confirmedCount
+	isBanned
 	invited
 	invitedLookup
 	invitedCount
+	isInvited
 	likedBy
 	likedByLookup
 	likedByCount
 )
 
-type predicate string
 type query uint8
 
 // getQuery contains dgraphs queries to get event edges.
@@ -52,22 +42,10 @@ var getQuery = map[query]string{
 			}
 		}
 	}`,
-	confirmed: `query q($id: string, $cursor: string, $limit: string) {
+	isBanned: `query q($id: string, $lookup_id: string) {
 		q(func: eq(event_id, $id)) {
-			confirmed (orderasc: user_id) (first: $limit, offset: $cursor) {
-				user_id
-			}
-		}
-	}`,
-	confirmedCount: `query q($id: string) {
-		q(func: eq(event_id, $id)) {
-			count(confirmed)
-		}
-	}`,
-	confirmedLookup: `query q($id: string, $lookup_id: string) {
-		q(func: eq(event_id, $id)) {
-			confirmed @filter(eq(user_id, $lookup_id)) {
-				user_id
+			banned @filter(eq(user_id, $lookup_id)) {
+				count(user_id)
 			}
 		}
 	}`,
@@ -87,6 +65,13 @@ var getQuery = map[query]string{
 		q(func: eq(event_id, $id)) {
 			invited @filter(eq(user_id, $lookup_id)) {
 				user_id
+			}
+		}
+	}`,
+	isInvited: `query q($id: string, $lookup_id: string) {
+		q(func: eq(event_id, $id)) {
+			invited @filter(eq(user_id, $lookup_id)) {
+				count(user_id)
 			}
 		}
 	}`,
@@ -116,10 +101,6 @@ const (
 	bannedFriends mixedQuery = iota + 1
 	bannedFriendsCount
 	bannedFriendsLookup
-	// get users confirmed in the event that are friend of user
-	confirmedFriends
-	confirmedFriendsCount
-	confirmedFriendsLookup
 	// get users invited to the event that are friend of user
 	invitedFriends
 	invitedFriendsCount
@@ -159,34 +140,6 @@ var getMixedQuery = map[mixedQuery]string{
 
 		q(func: uid(user)) {
 			friend @filter(uid_in(~banned, uid(event)) AND eq(user_id, $lookup_id)) {
-				user_id
-			}
-		}
-	}`,
-	confirmedFriends: `query q($event_id: string, $user_id: string, $cursor: string, $limit: string) {
-		user as var(func: eq(user_id, $user_id))
-		event as var(func: eq(event_id, $event_id))
-
-		q(func: uid(user)) {
-			friend @filter(uid_in(~confirmed, uid(event))) (orderasc: user_id) (first: $limit, offset: $cursor) {
-				user_id
-			}
-		}
-	}`,
-	confirmedFriendsCount: `query q($event_id: string, $user_id: string) {
-		user as var(func: eq(user_id, $user_id))
-		event as var(func: eq(event_id, $event_id))
-
-		q(func: uid(user)) {
-			count(friend) @filter(uid_in(~confirmed, uid(event)))
-		}
-	}`,
-	confirmedFriendsLookup: `query q($event_id: string, $user_id: string, $lookup_id: string) {
-		user as var(func: eq(user_id, $user_id))
-		event as var(func: eq(event_id, $event_id))
-
-		q(func: uid(user)) {
-			friend @filter(uid_in(~confirmed, uid(event)) AND eq(user_id, $lookup_id)) {
 				user_id
 			}
 		}

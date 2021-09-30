@@ -2,12 +2,12 @@ package product_test
 
 import (
 	"context"
-	"database/sql"
 	"log"
 	"os"
 	"testing"
 
 	"github.com/GGP1/groove/internal/cache"
+	"github.com/GGP1/groove/internal/sqltx"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event/product"
 	"github.com/GGP1/groove/test"
@@ -17,7 +17,7 @@ import (
 
 var (
 	productSv   product.Service
-	sqlTx       *sql.Tx
+	ctx         context.Context
 	cacheClient cache.Client
 )
 
@@ -31,10 +31,11 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 
-	sqlTx, err = postgres.BeginTx(context.Background(), nil)
+	sqlTx, err := postgres.BeginTx(context.Background(), nil)
 	if err != nil {
 		log.Fatal(err)
 	}
+	ctx = sqltx.NewContext(ctx, sqlTx)
 	cacheClient = memcached
 
 	productSv = product.NewService(postgres, cacheClient)
@@ -56,10 +57,9 @@ func TestMain(m *testing.M) {
 }
 
 func TestCreateProduct(t *testing.T) {
-	ctx := context.Background()
 	eventID := ulid.NewString()
 
-	err := createEvent(ctx, eventID, "create_product")
+	err := createEvent(eventID, "create_product")
 	assert.NoError(t, err)
 
 	product := product.Product{
@@ -73,7 +73,7 @@ func TestCreateProduct(t *testing.T) {
 		Total:       7,
 		Description: "TestCreatePermission",
 	}
-	err = productSv.CreateProduct(ctx, sqlTx, eventID, product)
+	err = productSv.Create(ctx, eventID, product)
 	assert.NoError(t, err)
 }
 
@@ -81,10 +81,11 @@ func TestUserHasRole(t *testing.T) {
 
 }
 
-func createEvent(ctx context.Context, id, name string) error {
+func createEvent(id, name string) error {
+	sqlTx := sqltx.FromContext(ctx)
 	q := `INSERT INTO events 
-	(id, name, type, public, virtual, ticket_cost, slots, start_time, end_Time) 
-	VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`
-	_, err := sqlTx.ExecContext(ctx, q, id, name, 1, true, false, 10, 100, 15000, 320000)
+	(id, name, type, public, virtual, slots, start_time, end_Time) 
+	VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`
+	_, err := sqlTx.ExecContext(ctx, q, id, name, 1, true, false, 100, 15000, 320000)
 	return err
 }

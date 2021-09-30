@@ -1,16 +1,24 @@
 package user
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/GGP1/groove/internal/apikey"
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
+	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/response"
+	"github.com/GGP1/groove/internal/sanitize"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/internal/validate"
-	"github.com/GGP1/groove/service/event"
+	"github.com/GGP1/groove/model"
+	"github.com/GGP1/groove/service/auth"
+	"github.com/GGP1/groove/service/event/role"
+	"github.com/GGP1/groove/storage/postgres"
 
 	"github.com/julienschmidt/httprouter"
 )
@@ -25,20 +33,25 @@ type friendIDBody struct {
 
 // Handler is the user handler.
 type Handler struct {
-	service Service
-	cache   cache.Client
+	db    *sql.DB
+	cache cache.Client
+
+	service     Service
+	roleService role.Service
 }
 
 // NewHandler returns a new user handler
-func NewHandler(service Service, cache cache.Client) Handler {
+func NewHandler(db *sql.DB, cache cache.Client, service Service, roleService role.Service) Handler {
 	return Handler{
-		service: service,
-		cache:   cache,
+		db:          db,
+		cache:       cache,
+		service:     service,
+		roleService: roleService,
 	}
 }
 
 // AddFriend adds a new friend to the user.
-func (h *Handler) AddFriend() http.HandlerFunc {
+func (h Handler) AddFriend() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -55,8 +68,6 @@ func (h *Handler) AddFriend() http.HandlerFunc {
 			return
 		}
 
-		// TODO: require confirmation from the other user before performing operation.
-		// Probably better to implement SendRequest() and trigger AddFriend as a consequence of the confirmation
 		if err := h.service.AddFriend(ctx, userID, reqBody.FriendID); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -71,7 +82,7 @@ func (h *Handler) AddFriend() http.HandlerFunc {
 }
 
 // Block executes a block from the user passed to another one.
-func (h *Handler) Block() http.HandlerFunc {
+func (h Handler) Block() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -102,7 +113,7 @@ func (h *Handler) Block() http.HandlerFunc {
 }
 
 // Create creates a new user.
-func (h *Handler) Create() http.HandlerFunc {
+func (h Handler) Create() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -117,6 +128,8 @@ func (h *Handler) Create() http.HandlerFunc {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
+		user.Username = strings.ToLower(user.Username)
+		sanitize.Strings(&user.Username, &user.Name)
 
 		userID := ulid.NewString()
 		if err := h.service.Create(ctx, userID, user); err != nil {
@@ -139,7 +152,7 @@ func (h *Handler) Create() http.HandlerFunc {
 }
 
 // Delete removes a user from the system.
-func (h *Handler) Delete() http.HandlerFunc {
+func (h Handler) Delete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -158,8 +171,71 @@ func (h *Handler) Delete() http.HandlerFunc {
 	}
 }
 
+// Follow follows an organization
+func (h Handler) Follow() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		organizationID, err := params.IDFromCtx(ctx, "organization_id")
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		session, err := auth.GetSession(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		if err := h.service.Follow(ctx, session, organizationID); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		response.NoContent(w)
+	}
+}
+
+// GetAttendingEvents gets the events the user is attending to.
+func (h Handler) GetAttendingEvents() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		userID, err := params.IDFromCtx(ctx)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		params, err := params.Parse(r.URL.RawQuery, model.Event)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		if params.Count {
+			count, err := h.service.GetAttendingEventsCount(ctx, userID)
+			if err != nil {
+				response.Error(w, http.StatusInternalServerError, err)
+				return
+			}
+
+			response.JSONCount(w, http.StatusOK, "attending_events_count", count)
+			return
+		}
+
+		events, err := h.service.GetAttendingEvents(ctx, userID, params)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		response.JSON(w, http.StatusOK, events)
+	}
+}
+
 // GetBannedEvents gets the events from which the user passed is banned.
-func (h *Handler) GetBannedEvents() http.HandlerFunc {
+func (h Handler) GetBannedEvents() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -169,13 +245,13 @@ func (h *Handler) GetBannedEvents() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
+		params, err := params.Parse(r.URL.RawQuery, model.Event)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		events, err := h.service.GetConfirmedEvents(ctx, userID, params)
+		events, err := h.service.GetBannedEvents(ctx, userID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -186,7 +262,7 @@ func (h *Handler) GetBannedEvents() http.HandlerFunc {
 }
 
 // GetBlocked gets the users the user passed blocked.
-func (h *Handler) GetBlocked() http.HandlerFunc {
+func (h Handler) GetBlocked() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -196,7 +272,7 @@ func (h *Handler) GetBlocked() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
+		params, err := params.Parse(r.URL.RawQuery, model.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -209,7 +285,7 @@ func (h *Handler) GetBlocked() http.HandlerFunc {
 				return
 			}
 
-			response.JSONCount(w, http.StatusOK, count)
+			response.JSONCount(w, http.StatusOK, "blocked_count", count)
 			return
 		}
 
@@ -219,12 +295,17 @@ func (h *Handler) GetBlocked() http.HandlerFunc {
 			return
 		}
 
-		response.JSON(w, http.StatusOK, blocked)
+		var nextCursor string
+		if len(blocked) > 1 {
+			nextCursor = blocked[len(blocked)-1].ID
+		}
+
+		response.JSONCursor(w, nextCursor, "users", blocked)
 	}
 }
 
 // GetBlockedBy gets the users that blocked the user passed.
-func (h *Handler) GetBlockedBy() http.HandlerFunc {
+func (h Handler) GetBlockedBy() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -234,7 +315,7 @@ func (h *Handler) GetBlockedBy() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
+		params, err := params.Parse(r.URL.RawQuery, model.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -247,7 +328,7 @@ func (h *Handler) GetBlockedBy() http.HandlerFunc {
 				return
 			}
 
-			response.JSONCount(w, http.StatusOK, count)
+			response.JSONCount(w, http.StatusOK, "blocked_by_count", count)
 			return
 		}
 
@@ -257,26 +338,34 @@ func (h *Handler) GetBlockedBy() http.HandlerFunc {
 			return
 		}
 
-		response.JSON(w, http.StatusOK, blockedBy)
+		var nextCursor string
+		if len(blockedBy) > 1 {
+			nextCursor = blockedBy[len(blockedBy)-1].ID
+		}
+
+		response.JSONCursor(w, nextCursor, "users", blockedBy)
 	}
 }
 
 // GetByID gets a user by its id.
-func (h *Handler) GetByID() http.HandlerFunc {
+func (h Handler) GetByID() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
+		rctx := r.Context()
 
-		userID, err := params.IDFromCtx(ctx)
+		userID, err := params.IDFromCtx(rctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		cacheKey := cache.UsersKey(userID)
+		cacheKey := model.User.CacheKey(userID)
 		if item, err := h.cache.Get(cacheKey); err == nil {
 			response.EncodedJSON(w, item.Value)
 			return
 		}
+
+		sqlTx, ctx := postgres.BeginTx(rctx, h.db, true)
+		defer sqlTx.Rollback()
 
 		user, err := h.service.GetByID(ctx, userID)
 		if err != nil {
@@ -288,42 +377,18 @@ func (h *Handler) GetByID() http.HandlerFunc {
 	}
 }
 
-// GetConfirmedEvents gets the events the user is attending to.
-func (h *Handler) GetConfirmedEvents() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-
-		userID, err := params.IDFromCtx(ctx)
-		if err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
-		if err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		events, err := h.service.GetConfirmedEvents(ctx, userID, params)
-		if err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-
-		response.JSON(w, http.StatusOK, events)
-	}
-}
-
 // GetFriends gets the users friends of the user passed.
-func (h *Handler) GetFriends() http.HandlerFunc {
+func (h Handler) GetFriends() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+
 		userID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
-		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
+
+		params, err := params.Parse(r.URL.RawQuery, model.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -336,7 +401,7 @@ func (h *Handler) GetFriends() http.HandlerFunc {
 				return
 			}
 
-			response.JSONCount(w, http.StatusOK, count)
+			response.JSONCount(w, http.StatusOK, "friends_count", count)
 			return
 		}
 
@@ -346,12 +411,17 @@ func (h *Handler) GetFriends() http.HandlerFunc {
 			return
 		}
 
-		response.JSON(w, http.StatusOK, friends)
+		var nextCursor string
+		if len(friends) > 1 {
+			nextCursor = friends[len(friends)-1].ID
+		}
+
+		response.JSONCursor(w, nextCursor, "users", friends)
 	}
 }
 
 // GetFriendsInCommon returns the friends in common between userID and friendID.
-func (h *Handler) GetFriendsInCommon() http.HandlerFunc {
+func (h Handler) GetFriendsInCommon() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -363,7 +433,7 @@ func (h *Handler) GetFriendsInCommon() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
+		params, err := params.Parse(r.URL.RawQuery, model.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -376,22 +446,27 @@ func (h *Handler) GetFriendsInCommon() http.HandlerFunc {
 				return
 			}
 
-			response.JSONCount(w, http.StatusOK, count)
+			response.JSONCount(w, http.StatusOK, "friends_in_common_count", count)
 			return
 		}
 
-		users, err := h.service.GetFriendsInCommon(ctx, userID, friendID, params)
+		friends, err := h.service.GetFriendsInCommon(ctx, userID, friendID, params)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		response.JSON(w, http.StatusOK, users)
+		var nextCursor string
+		if len(friends) > 1 {
+			nextCursor = friends[len(friends)-1].ID
+		}
+
+		response.JSONCursor(w, nextCursor, "users", friends)
 	}
 }
 
 // GetFriendsNotInCommon returns the friends that are not in common between userID and friendID.
-func (h *Handler) GetFriendsNotInCommon() http.HandlerFunc {
+func (h Handler) GetFriendsNotInCommon() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -403,7 +478,7 @@ func (h *Handler) GetFriendsNotInCommon() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
+		params, err := params.Parse(r.URL.RawQuery, model.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -416,22 +491,27 @@ func (h *Handler) GetFriendsNotInCommon() http.HandlerFunc {
 				return
 			}
 
-			response.JSONCount(w, http.StatusOK, count)
+			response.JSONCount(w, http.StatusOK, "friends_not_in_common_count", count)
 			return
 		}
 
-		users, err := h.service.GetFriendsNotInCommon(ctx, userID, friendID, params)
+		friends, err := h.service.GetFriendsNotInCommon(ctx, userID, friendID, params)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		response.JSON(w, http.StatusOK, users)
+		var nextCursor string
+		if len(friends) > 1 {
+			nextCursor = friends[len(friends)-1].ID
+		}
+
+		response.JSONCursor(w, nextCursor, "users", friends)
 	}
 }
 
 // GetHostedEvents gets the events hosted by the user.
-func (h *Handler) GetHostedEvents() http.HandlerFunc {
+func (h Handler) GetHostedEvents() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -440,7 +520,7 @@ func (h *Handler) GetHostedEvents() http.HandlerFunc {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
-		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
+		params, err := params.Parse(r.URL.RawQuery, model.Event)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -457,19 +537,12 @@ func (h *Handler) GetHostedEvents() http.HandlerFunc {
 			nextCursor = events[len(events)-1].ID
 		}
 
-		type resp struct {
-			NextCursor string        `json:"next_cursor,omitempty"`
-			Events     []event.Event `json:"events,omitempty"`
-		}
-		response.JSON(w, http.StatusOK, resp{
-			NextCursor: nextCursor,
-			Events:     events,
-		})
+		response.JSONCursor(w, nextCursor, "events", events)
 	}
 }
 
 // GetInvitedEvents gets the events that the user is invited to.
-func (h *Handler) GetInvitedEvents() http.HandlerFunc {
+func (h Handler) GetInvitedEvents() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -478,7 +551,7 @@ func (h *Handler) GetInvitedEvents() http.HandlerFunc {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
-		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
+		params, err := params.Parse(r.URL.RawQuery, model.Event)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -495,7 +568,7 @@ func (h *Handler) GetInvitedEvents() http.HandlerFunc {
 }
 
 // GetLikedEvents gets the events liked by a user.
-func (h *Handler) GetLikedEvents() http.HandlerFunc {
+func (h Handler) GetLikedEvents() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -504,7 +577,7 @@ func (h *Handler) GetLikedEvents() http.HandlerFunc {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
-		params, err := params.ParseQuery(r.URL.RawQuery, params.Event)
+		params, err := params.Parse(r.URL.RawQuery, model.Event)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -521,7 +594,7 @@ func (h *Handler) GetLikedEvents() http.HandlerFunc {
 }
 
 // GetStatistics returns a user's predicates statistics.
-func (h *Handler) GetStatistics() http.HandlerFunc {
+func (h Handler) GetStatistics() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		userID, err := params.IDFromCtx(ctx)
@@ -540,8 +613,53 @@ func (h *Handler) GetStatistics() http.HandlerFunc {
 	}
 }
 
+// InviteToEvent invites a user to an event. TODO: move to the event service?
+func (h Handler) InviteToEvent() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rctx := r.Context()
+
+		session, err := auth.GetSession(rctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		var invite Invite
+		if err := json.NewDecoder(r.Body).Decode(&invite); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		defer r.Body.Close()
+
+		if err := invite.Validate(); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
+		defer sqlTx.Rollback()
+
+		if err := h.roleService.RequirePermissions(ctx, r, invite.EventID, permissions.InviteUsers); err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		if err := h.service.InviteToEvent(ctx, session, invite); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		if err := sqlTx.Commit(); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		response.NoContent(w)
+	}
+}
+
 // RemoveFriend removes a friend.
-func (h *Handler) RemoveFriend() http.HandlerFunc {
+func (h Handler) RemoveFriend() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -572,13 +690,18 @@ func (h *Handler) RemoveFriend() http.HandlerFunc {
 }
 
 // Search performs a user search.
-func (h *Handler) Search() http.HandlerFunc {
+func (h Handler) Search() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		query := httprouter.ParamsFromContext(ctx).ByName("query")
+		values, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.User)
+		query := values.Get("query")
+		params, err := params.ParseQuery(values, model.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -595,16 +718,47 @@ func (h *Handler) Search() http.HandlerFunc {
 			nextCursor = users[len(users)-1].ID
 		}
 
-		type resp struct {
-			NextCursor string     `json:"next_cursor,omitempty"`
-			Users      []ListUser `json:"users,omitempty"`
+		response.JSONCursor(w, nextCursor, "users", users)
+	}
+}
+
+// SendFriendRequest sends a friend request to a user.
+func (h Handler) SendFriendRequest() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rctx := r.Context()
+
+		session, err := auth.GetSession(rctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
 		}
-		response.JSON(w, http.StatusOK, resp{NextCursor: nextCursor, Users: users})
+
+		var reqBody model.UserID
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		defer r.Body.Close()
+
+		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
+		defer sqlTx.Rollback()
+
+		if err := h.service.SendFriendRequest(ctx, session, reqBody.UserID); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		if err := sqlTx.Commit(); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		response.NoContent(w)
 	}
 }
 
 // Unblock removes the block from the user passed to another.
-func (h *Handler) Unblock() http.HandlerFunc {
+func (h Handler) Unblock() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -635,11 +789,11 @@ func (h *Handler) Unblock() http.HandlerFunc {
 }
 
 // Update updates a user.
-func (h *Handler) Update() http.HandlerFunc {
+func (h Handler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
+		rctx := r.Context()
 
-		userID, err := params.IDFromCtx(ctx)
+		userID, err := params.IDFromCtx(rctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -657,7 +811,15 @@ func (h *Handler) Update() http.HandlerFunc {
 			return
 		}
 
+		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
+		defer sqlTx.Rollback()
+
 		if err := h.service.Update(ctx, userID, uptUser); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		if err := sqlTx.Commit(); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}

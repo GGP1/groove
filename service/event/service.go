@@ -3,16 +3,17 @@ package event
 import (
 	"context"
 	"database/sql"
-	"net/http"
 	"time"
 
 	"github.com/GGP1/groove/internal/cache"
+	"github.com/GGP1/groove/internal/httperr"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/roles"
-	"github.com/GGP1/groove/service/event/media"
-	"github.com/GGP1/groove/service/event/product"
+	"github.com/GGP1/groove/internal/scan"
+	"github.com/GGP1/groove/internal/sqltx"
+	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/event/role"
-	"github.com/GGP1/groove/service/event/zone"
+	"github.com/GGP1/groove/service/notification"
 	"github.com/GGP1/groove/storage/dgraph"
 	"github.com/GGP1/groove/storage/postgres"
 
@@ -23,42 +24,32 @@ import (
 
 // Service represents the event service.
 type Service interface {
-	AddEdge(ctx context.Context, eventID string, predicate predicate, userID string) error
-	AvailableSlots(ctx context.Context, sqlTx *sql.Tx, eventID string) (int64, error)
-	BeginSQLTx(ctx context.Context, readOnly bool) *sql.Tx
-	CanInvite(ctx context.Context, sqlTx *sql.Tx, userID, invitedID string) (bool, error)
+	AddEdge(ctx context.Context, eventID string, predicate dgraph.Predicate, userID string) error
+	AvailableSlots(ctx context.Context, eventID string) (int64, error)
 	Create(ctx context.Context, eventID string, event CreateEvent) error
-	Delete(ctx context.Context, sqlTx *sql.Tx, eventID string) error
-	GetBanned(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]User, error)
+	Delete(ctx context.Context, eventID string) error
+	GetBanned(ctx context.Context, eventID string, params params.Query) ([]model.ListUser, error)
 	GetBannedCount(ctx context.Context, eventID string) (*uint64, error)
-	GetBannedFriends(ctx context.Context, sqlTx *sql.Tx, eventID, userID string, params params.Query) ([]User, error)
-	GetBannedFriendsCount(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) (*uint64, error)
-	GetByID(ctx context.Context, sqlTx *sql.Tx, eventID string) (Event, error)
-	GetConfirmed(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]User, error)
-	GetConfirmedCount(ctx context.Context, eventID string) (*uint64, error)
-	GetConfirmedFriends(ctx context.Context, sqlTx *sql.Tx, eventID, userID string, params params.Query) ([]User, error)
-	GetConfirmedFriendsCount(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) (*uint64, error)
-	GetHosts(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]User, error)
-	GetInvited(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]User, error)
+	GetBannedFriends(ctx context.Context, eventID, userID string, params params.Query) ([]model.ListUser, error)
+	GetBannedFriendsCount(ctx context.Context, eventID, userID string) (*uint64, error)
+	GetByID(ctx context.Context, eventID string) (Event, error)
+	GetHosts(ctx context.Context, eventID string, params params.Query) ([]model.ListUser, error)
+	GetInvited(ctx context.Context, eventID string, params params.Query) ([]model.ListUser, error)
 	GetInvitedCount(ctx context.Context, eventID string) (*uint64, error)
-	GetInvitedFriends(ctx context.Context, sqlTx *sql.Tx, eventID, userID string, params params.Query) ([]User, error)
-	GetInvitedFriendsCount(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) (*uint64, error)
-	GetLikedBy(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]User, error)
+	GetInvitedFriends(ctx context.Context, eventID, userID string, params params.Query) ([]model.ListUser, error)
+	GetInvitedFriendsCount(ctx context.Context, eventID, userID string) (*uint64, error)
+	GetLikedBy(ctx context.Context, eventID string, params params.Query) ([]model.ListUser, error)
 	GetLikedByCount(ctx context.Context, eventID string) (*uint64, error)
-	GetLikedByFriends(ctx context.Context, sqlTx *sql.Tx, eventID, userID string, params params.Query) ([]User, error)
-	GetLikedByFriendsCount(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) (*uint64, error)
+	GetLikedByFriends(ctx context.Context, eventID, userID string, params params.Query) ([]model.ListUser, error)
+	GetLikedByFriendsCount(ctx context.Context, eventID, userID string) (*uint64, error)
 	GetStatistics(ctx context.Context, eventID string) (Statistics, error)
-	IsPublic(ctx context.Context, sqlTx *sql.Tx, eventID string) (bool, error)
-	RemoveEdge(ctx context.Context, eventID string, predicate predicate, userID string) error
+	IsBanned(ctx context.Context, eventID, userID string) (bool, error)
+	IsInvited(ctx context.Context, eventID, userID string) (bool, error)
+	IsPublic(ctx context.Context, eventID string) (bool, error)
+	RemoveEdge(ctx context.Context, eventID string, predicate dgraph.Predicate, userID string) error
 	Search(ctx context.Context, query string, params params.Query) ([]Event, error)
-	SQLTx(ctx context.Context, readOnly bool, f func(tx *sql.Tx) (int, error)) (int, error)
-	Update(ctx context.Context, sqlTx *sql.Tx, eventID string, event UpdateEvent) error
-	UserJoin(ctx context.Context, tx *sql.Tx, eventID, userID string) error
-
-	media.Service
-	product.Service
-	role.Service
-	zone.Service
+	SearchByLocation(ctx context.Context, userID string, location LocationSearch) ([]Event, error)
+	Update(ctx context.Context, eventID string, event UpdateEvent) error
 }
 
 type service struct {
@@ -66,159 +57,91 @@ type service struct {
 	dc    *dgo.Dgraph
 	cache cache.Client
 
-	mediaService   media.Service
-	productService product.Service
-	roleService    role.Service
-	zoneService    zone.Service
+	notificationService notification.Service
+	roleService         role.Service
 
 	metrics metrics
 }
 
 // NewService returns a new event service.
-func NewService(db *sql.DB, dc *dgo.Dgraph, cache cache.Client) Service {
+func NewService(
+	db *sql.DB,
+	dc *dgo.Dgraph,
+	cache cache.Client,
+	notificationService notification.Service,
+	roleService role.Service,
+) Service {
 	return &service{
-		db:             db,
-		dc:             dc,
-		cache:          cache,
-		mediaService:   media.NewService(db, cache),
-		productService: product.NewService(db, cache),
-		roleService:    role.NewService(db, cache),
-		zoneService:    zone.NewService(db, cache),
-		metrics:        initMetrics(),
+		db:                  db,
+		dc:                  dc,
+		cache:               cache,
+		notificationService: notificationService,
+		roleService:         roleService,
+		metrics:             initMetrics(),
 	}
 }
 
 // AddEdge creates an edge between the event and the user.
-func (s *service) AddEdge(ctx context.Context, eventID string, predicate predicate, userID string) error {
+func (s service) AddEdge(ctx context.Context, eventID string, predicate dgraph.Predicate, userID string) error {
 	s.metrics.incMethodCalls("AddEdge")
 
-	err := dgraph.Mutation(ctx, s.dc, func(tx *dgo.Txn) error {
-		req := dgraph.EventEdgeRequest(eventID, string(predicate), userID, true)
-		if _, err := tx.Do(ctx, req); err != nil {
-			return errors.Wrapf(err, "adding %s edge", predicate)
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return dgraph.AddEventEdge(ctx, s.dc, eventID, predicate, userID)
 }
 
 // AvailableSlots returns an even'ts number of slots available.
-func (s *service) AvailableSlots(ctx context.Context, sqlTx *sql.Tx, eventID string) (int64, error) {
+func (s service) AvailableSlots(ctx context.Context, eventID string) (int64, error) {
 	s.metrics.incMethodCalls("AvailableSlots")
+	sqlTx := sqltx.FromContext(ctx)
 
 	q := "SELECT slots FROM events WHERE id=$1"
-	row := sqlTx.QueryRowContext(ctx, q, eventID)
-	var slots uint64
-	if err := row.Scan(&slots); err != nil {
+	slots, err := postgres.QueryInt(ctx, sqlTx, q, eventID)
+	if err != nil {
 		return 0, errors.Wrap(err, "scanning slots")
 	}
 
-	confirmedCount, err := s.GetConfirmedCount(ctx, eventID)
+	membersCount, err := s.roleService.GetMembersCount(ctx, eventID)
 	if err != nil {
 		return 0, err
 	}
 
-	return int64(slots - *confirmedCount), nil
-}
-
-// BeginSQLTx starts and returns a new postgres transaction, if the connection fails it panics.
-func (s *service) BeginSQLTx(ctx context.Context, readOnly bool) *sql.Tx {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: readOnly})
-	if err != nil {
-		panic(err)
-	}
-
-	return tx
-}
-
-func (s *service) CanInvite(ctx context.Context, tx *sql.Tx, userID, invitedID string) (bool, error) {
-	s.metrics.incMethodCalls("CanInvite")
-
-	var invitations int
-	q := "SELECT invitations FROM users WHERE id=$1"
-	if err := tx.QueryRowContext(ctx, q, userID).Scan(&invitations); err != nil {
-		return false, errors.Wrap(err, "scanning invitations")
-	}
-
-	switch invitations {
-	// TODO: shall use invitations types instead of raw numbers
-	case 1: // Friends
-		// user and invited must be friends
-		q := `query q($user_id: string, $target_user_id: string) {
-			user as var(func: eq(user_id, $user_id))
-			target as var(func: eq(user_id, $target_user_id))
-			
-			q(func: uid(user)) {
-				friend @filter(uid(target)) {
-					user_id
-				}
-			}
-		}`
-		vars := map[string]string{"$user_id": userID, "$target_user_id": invitedID}
-		res, err := s.dc.NewReadOnlyTxn().QueryRDFWithVars(ctx, q, vars)
-		if err != nil {
-			return false, err
-		}
-
-		ids := dgraph.ParseRDFULIDs(res.Rdf)
-		return len(ids) != 0, nil
-	case 2: // Nobody
-		return false, nil
-	default:
-		return false, errors.New("invalid invitations value")
-	}
+	return slots - membersCount, nil
 }
 
 // Create creates a new event.
-func (s *service) Create(ctx context.Context, eventID string, event CreateEvent) error {
+func (s service) Create(ctx context.Context, eventID string, event CreateEvent) error {
 	s.metrics.incMethodCalls("Create")
 
-	sqlTx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return errors.Wrap(err, "starting transaction")
-	}
+	sqlTx, ctx := postgres.BeginTx(ctx, s.db, false)
 	defer sqlTx.Rollback()
 
-	exists, err := postgres.QueryBool(ctx, sqlTx, "SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)", event.HostID)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		return errors.Errorf("user with id %q does not exist", event.HostID)
-	}
-
 	q1 := `INSERT INTO events 
-	(id, name, description, type, virtual, url, address, latitude, longitude, public, 
-	start_time, end_time, slots, min_age, ticket_cost, updated_at)
+	(id, name, description, type, ticket_type, virtual, url, logo_url, header_url, address, 
+	latitude, longitude, public, start_time, end_time, slots, min_age, updated_at)
 	VALUES 
-	($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`
-	_, err = sqlTx.ExecContext(ctx, q1, eventID, event.Name, event.Description, event.Type,
-		event.Virtual, event.URL, event.Location.Address, event.Location.Coordinates.Latitude,
-		event.Location.Coordinates.Longitude, event.Public, event.StartTime, event.EndTime,
-		event.Slots, event.MinAge, event.TicketCost, time.Time{})
+	($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`
+	_, err := sqlTx.ExecContext(ctx, q1, eventID, event.Name, event.Description, event.Type,
+		event.TicketType, event.Virtual, event.URL, event.LogoURL, event.HeaderURL, event.Location.Address,
+		event.Location.Coordinates.Latitude, event.Location.Coordinates.Longitude, event.Public,
+		event.StartTime, event.EndTime, event.Slots, event.MinAge, time.Time{})
 	if err != nil {
 		return errors.Wrap(err, "creating event")
 	}
 
-	q3 := "INSERT INTO events_users_roles (event_id, user_id, role_name) VALUES ($1, $2, $3)"
-	if _, err := sqlTx.ExecContext(ctx, q3, eventID, event.HostID, roles.Host); err != nil {
-		return errors.Wrap(err, "setting host role")
+	// TODO: take media, products, roles, tickets and zones all in CreateEvent and create
+	// them using their services. If there are any tickets with a cost, set the event's slots to
+	// the total number of available tickets.
+	if event.TicketType == Paid || event.TicketType == Mixed {
+		// TODO: take tickets from the CreateEvent struct
+		// if err := s.ticketService.CreateTickets(ctx, sqlTx, eventID, nil); err != nil {
+		// 	return err
+		// }
+	}
+	if err := s.roleService.SetReservedRole(ctx, eventID, event.HostID, roles.Host); err != nil {
+		return err
 	}
 
 	err = dgraph.Mutation(ctx, s.dc, func(dgraphTx *dgo.Txn) error {
-		if err := dgraph.CreateNode(ctx, dgraphTx, dgraph.Event, eventID); err != nil {
-			return err
-		}
-		// Add the host as confirmed to the event
-		req := dgraph.EventEdgeRequest(eventID, string(Confirmed), event.HostID, true)
-		if _, err := dgraphTx.Do(ctx, req); err != nil {
-			return errors.Wrapf(err, "adding %s edge", Confirmed)
-		}
-		return nil
+		return dgraph.CreateNode(ctx, dgraphTx, model.Event, eventID)
 	})
 	if err != nil {
 		return err
@@ -233,8 +156,9 @@ func (s *service) Create(ctx context.Context, eventID string, event CreateEvent)
 }
 
 // Delete removes an event and all its edges.
-func (s *service) Delete(ctx context.Context, sqlTx *sql.Tx, eventID string) error {
+func (s service) Delete(ctx context.Context, eventID string) error {
 	s.metrics.incMethodCalls("Delete")
+	sqlTx := sqltx.FromContext(ctx)
 
 	if _, err := sqlTx.ExecContext(ctx, "DELETE FROM events WHERE id=$1", eventID); err != nil {
 		return errors.Wrap(err, "postgres: deleting event")
@@ -257,7 +181,7 @@ func (s *service) Delete(ctx context.Context, sqlTx *sql.Tx, eventID string) err
 		return errors.Wrap(err, "dgraph: deleting event")
 	}
 
-	if err := s.cache.Delete(cache.EventsKey(eventID)); err != nil {
+	if err := s.cache.Delete(model.Event.CacheKey(eventID)); err != nil {
 		return errors.Wrap(err, "deleting event")
 	}
 
@@ -266,8 +190,9 @@ func (s *service) Delete(ctx context.Context, sqlTx *sql.Tx, eventID string) err
 }
 
 // GetBanned returns event's banned guests.
-func (s *service) GetBanned(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]User, error) {
+func (s service) GetBanned(ctx context.Context, eventID string, params params.Query) ([]model.ListUser, error) {
 	s.metrics.incMethodCalls("GetBanned")
+	sqlTx := sqltx.FromContext(ctx)
 
 	query := banned
 	if params.LookupID != "" {
@@ -279,14 +204,15 @@ func (s *service) GetBanned(ctx context.Context, sqlTx *sql.Tx, eventID string, 
 }
 
 // GetBannedCount returns event's banned guests count.
-func (s *service) GetBannedCount(ctx context.Context, eventID string) (*uint64, error) {
+func (s service) GetBannedCount(ctx context.Context, eventID string) (*uint64, error) {
 	s.metrics.incMethodCalls("GetBannedCount")
 	return dgraph.GetCount(ctx, s.dc, getQuery[bannedCount], eventID)
 }
 
 // GetBannedFriends returns event likes users that are friend of the user passed.
-func (s *service) GetBannedFriends(ctx context.Context, sqlTx *sql.Tx, eventID, userID string, params params.Query) ([]User, error) {
+func (s service) GetBannedFriends(ctx context.Context, eventID, userID string, params params.Query) ([]model.ListUser, error) {
 	s.metrics.incMethodCalls("GetBannedFriends")
+	sqlTx := sqltx.FromContext(ctx)
 
 	query := bannedFriends
 	if params.LookupID != "" {
@@ -298,7 +224,7 @@ func (s *service) GetBannedFriends(ctx context.Context, sqlTx *sql.Tx, eventID, 
 }
 
 // GetBannedFriendsCount returns event's banned friends count.
-func (s *service) GetBannedFriendsCount(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) (*uint64, error) {
+func (s service) GetBannedFriendsCount(ctx context.Context, eventID, userID string) (*uint64, error) {
 	s.metrics.incMethodCalls("GetBannedFriendsCount")
 
 	vars := map[string]string{
@@ -309,66 +235,31 @@ func (s *service) GetBannedFriendsCount(ctx context.Context, sqlTx *sql.Tx, even
 }
 
 // GetByID returns the event with the id passed.
-func (s *service) GetByID(ctx context.Context, sqlTx *sql.Tx, eventID string) (Event, error) {
+func (s service) GetByID(ctx context.Context, eventID string) (Event, error) {
 	s.metrics.incMethodCalls("GetByID")
+	sqlTx := sqltx.FromContext(ctx)
 
-	q := `SELECT id, name, description, virtual, url, address, latitude, longitude, type, public, start_time, end_time, 
-	slots, min_age, ticket_cost, created_at, updated_at FROM events WHERE id=$1`
-	row := sqlTx.QueryRowContext(ctx, q, eventID)
-	event, err := scanEvent(row)
+	q := `SELECT id, name, description, virtual, url, logo_url, header_url, address, latitude, longitude, 
+	type, ticket_type, public, start_time, end_time, slots, min_age, created_at, updated_at 
+	FROM events WHERE id=$1`
+	rows, err := sqlTx.QueryContext(ctx, q, eventID)
 	if err != nil {
-		return Event{}, nil
+		return Event{}, errors.Wrap(err, "querying event")
+	}
+
+	var event Event
+	if err := scan.Row(&event, rows); err != nil {
+		return Event{}, errors.Wrap(err, "scanning event")
 	}
 
 	return event, nil
 }
 
-// GetConfirmed returns event's confirmed guests.
-func (s *service) GetConfirmed(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]User, error) {
-	s.metrics.incMethodCalls("GetConfirmed")
-
-	query := confirmed
-	if params.LookupID != "" {
-		query = confirmedLookup
-	}
-
-	vars := dgraph.QueryVars(eventID, params)
-	return s.queryUsers(ctx, sqlTx, getQuery[query], vars, params)
-}
-
-// GetConfirmed returns event's confirmed guests count.
-func (s *service) GetConfirmedCount(ctx context.Context, eventID string) (*uint64, error) {
-	s.metrics.incMethodCalls("GetConfirmedCount")
-	return dgraph.GetCount(ctx, s.dc, getQuery[confirmedCount], eventID)
-}
-
-// GetConfirmedFriends returns event confirmed users that are friends of the user passed.
-func (s *service) GetConfirmedFriends(ctx context.Context, sqlTx *sql.Tx, eventID, userID string, params params.Query) ([]User, error) {
-	s.metrics.incMethodCalls("GetConfirmedFriends")
-
-	query := confirmedFriends
-	if params.LookupID != "" {
-		query = confirmedFriendsLookup
-	}
-
-	vars := mixedQueryVars(eventID, userID, params)
-	return s.queryUsers(ctx, sqlTx, getMixedQuery[query], vars, params)
-}
-
-// GetConfirmedFriendsCount returns event's confirmed friends count.
-func (s *service) GetConfirmedFriendsCount(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) (*uint64, error) {
-	s.metrics.incMethodCalls("GetConfirmedFriendsCount")
-
-	vars := map[string]string{
-		"$event_id": eventID,
-		"$user_id":  userID,
-	}
-	return dgraph.GetCountWithVars(ctx, s.dc, getMixedQuery[confirmedFriendsCount], vars)
-}
-
 // GetHosts returns event's hosts.
-func (s *service) GetHosts(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]User, error) {
+func (s service) GetHosts(ctx context.Context, eventID string, params params.Query) ([]model.ListUser, error) {
 	s.metrics.incMethodCalls("GetHosts")
+	sqlTx := sqltx.FromContext(ctx)
+
 	query := "SELECT user_id FROM events_users_roles WHERE event_id=$1 AND role_name='host'"
 	q := postgres.AddPagination(query, "user_id", params)
 	rows, err := sqlTx.QueryContext(ctx, q, eventID)
@@ -385,14 +276,14 @@ func (s *service) GetHosts(ctx context.Context, sqlTx *sql.Tx, eventID string, p
 		return nil, nil
 	}
 
-	q2 := postgres.SelectInID(postgres.Users, usersIds, params.Fields)
+	q2 := postgres.SelectInID(model.User, usersIds, params.Fields)
 	rows2, err := sqlTx.QueryContext(ctx, q2)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching users")
 	}
 
-	users, err := scanUsers(rows2)
-	if err != nil {
+	var users []model.ListUser
+	if err := scan.Rows(&users, rows2); err != nil {
 		return nil, err
 	}
 
@@ -400,8 +291,9 @@ func (s *service) GetHosts(ctx context.Context, sqlTx *sql.Tx, eventID string, p
 }
 
 // GetInvited returns event's invited users.
-func (s *service) GetInvited(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]User, error) {
+func (s service) GetInvited(ctx context.Context, eventID string, params params.Query) ([]model.ListUser, error) {
 	s.metrics.incMethodCalls("GetInvited")
+	sqlTx := sqltx.FromContext(ctx)
 
 	query := invited
 	if params.LookupID != "" {
@@ -413,14 +305,15 @@ func (s *service) GetInvited(ctx context.Context, sqlTx *sql.Tx, eventID string,
 }
 
 // GetInvited returns event's invited users count.
-func (s *service) GetInvitedCount(ctx context.Context, eventID string) (*uint64, error) {
+func (s service) GetInvitedCount(ctx context.Context, eventID string) (*uint64, error) {
 	s.metrics.incMethodCalls("GetInvitedCount")
 	return dgraph.GetCount(ctx, s.dc, getQuery[invitedCount], eventID)
 }
 
 // GetInvitedFriends returns event invited users that are friends of the user passed.
-func (s *service) GetInvitedFriends(ctx context.Context, sqlTx *sql.Tx, eventID, userID string, params params.Query) ([]User, error) {
+func (s service) GetInvitedFriends(ctx context.Context, eventID, userID string, params params.Query) ([]model.ListUser, error) {
 	s.metrics.incMethodCalls("GetInvitedFriends")
+	sqlTx := sqltx.FromContext(ctx)
 
 	query := invitedFriends
 	if params.LookupID != "" {
@@ -432,7 +325,7 @@ func (s *service) GetInvitedFriends(ctx context.Context, sqlTx *sql.Tx, eventID,
 }
 
 // GetInvitedFriendsCount returns event's invited friends count.
-func (s *service) GetInvitedFriendsCount(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) (*uint64, error) {
+func (s service) GetInvitedFriendsCount(ctx context.Context, eventID, userID string) (*uint64, error) {
 	s.metrics.incMethodCalls("GetInvitedFriendsCount")
 
 	vars := map[string]string{
@@ -443,8 +336,9 @@ func (s *service) GetInvitedFriendsCount(ctx context.Context, sqlTx *sql.Tx, eve
 }
 
 // GetLikedBy returns users liking the event.
-func (s *service) GetLikedBy(ctx context.Context, sqlTx *sql.Tx, eventID string, params params.Query) ([]User, error) {
+func (s service) GetLikedBy(ctx context.Context, eventID string, params params.Query) ([]model.ListUser, error) {
 	s.metrics.incMethodCalls("GetLikedBy")
+	sqlTx := sqltx.FromContext(ctx)
 
 	query := likedBy
 	if params.LookupID != "" {
@@ -456,14 +350,15 @@ func (s *service) GetLikedBy(ctx context.Context, sqlTx *sql.Tx, eventID string,
 }
 
 // GetLikedByCount returns the number of users liking the event.
-func (s *service) GetLikedByCount(ctx context.Context, eventID string) (*uint64, error) {
+func (s service) GetLikedByCount(ctx context.Context, eventID string) (*uint64, error) {
 	s.metrics.incMethodCalls("GetLikedByCount")
 	return dgraph.GetCount(ctx, s.dc, getQuery[likedByCount], eventID)
 }
 
 // GetLikedByFriends returns event likes users that are friends of the user passed.
-func (s *service) GetLikedByFriends(ctx context.Context, sqlTx *sql.Tx, eventID, userID string, params params.Query) ([]User, error) {
+func (s service) GetLikedByFriends(ctx context.Context, eventID, userID string, params params.Query) ([]model.ListUser, error) {
 	s.metrics.incMethodCalls("GetLikedByFriends")
+	sqlTx := sqltx.FromContext(ctx)
 
 	query := likedByFriends
 	if params.LookupID != "" {
@@ -475,7 +370,7 @@ func (s *service) GetLikedByFriends(ctx context.Context, sqlTx *sql.Tx, eventID,
 }
 
 // GetLikedByFriendsCount returns event's liked by friends count.
-func (s *service) GetLikedByFriendsCount(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) (*uint64, error) {
+func (s service) GetLikedByFriendsCount(ctx context.Context, eventID, userID string) (*uint64, error) {
 	s.metrics.incMethodCalls("GetLikedByFriendsCount")
 
 	vars := map[string]string{
@@ -486,13 +381,12 @@ func (s *service) GetLikedByFriendsCount(ctx context.Context, sqlTx *sql.Tx, eve
 }
 
 // GetStatistics returns events' predicates statistics.
-func (s *service) GetStatistics(ctx context.Context, eventID string) (Statistics, error) {
+func (s service) GetStatistics(ctx context.Context, eventID string) (Statistics, error) {
 	s.metrics.incMethodCalls("GetStatistics")
 
 	q := `query q($id: string) {
 		q(func: eq(event_id, $id)) {
 			count(banned)
-			count(confirmed)
 			count(invited)
 			count(liked_by)
 		}
@@ -509,23 +403,68 @@ func (s *service) GetStatistics(ctx context.Context, eventID string) (Statistics
 		return Statistics{}, err
 	}
 
+	membersCount, err := s.roleService.GetMembersCount(ctx, eventID)
+	if err != nil {
+		return Statistics{}, err
+	}
+
 	return Statistics{
-		Banned:    mp["banned"],
-		Confirmed: mp["confirmed"],
-		Invited:   mp["invited"],
-		Likes:     mp["liked_by"],
+		Banned:  mp["banned"],
+		Members: membersCount,
+		Invited: mp["invited"],
+		Likes:   mp["liked_by"],
 	}, nil
 }
 
-// IsPublic returns if the event is public or not.
-func (s *service) IsPublic(ctx context.Context, sqlTx *sql.Tx, eventID string) (bool, error) {
-	s.metrics.incMethodCalls("IsPublic")
+// IsBanned returns if the user is banned or not from the event.
+func (s service) IsBanned(ctx context.Context, eventID, userID string) (bool, error) {
+	s.metrics.incMethodCalls("IsBanned")
 
+	vars := map[string]string{
+		"$id":        eventID,
+		"$lookup_id": userID,
+	}
+	res, err := s.dc.NewReadOnlyTxn().QueryRDFWithVars(ctx, getQuery[isBanned], vars)
+	if err != nil {
+		return false, err
+	}
+	count, err := dgraph.ParseCount(res.Rdf)
+	if err != nil {
+		return false, err
+	}
+	return *count == 1, nil
+}
+
+// IsInvited returns if the user is invited or not to the event.
+func (s service) IsInvited(ctx context.Context, eventID, userID string) (bool, error) {
+	s.metrics.incMethodCalls("IsInvited")
+
+	vars := map[string]string{
+		"$id":        eventID,
+		"$lookup_id": userID,
+	}
+	res, err := s.dc.NewReadOnlyTxn().QueryRDFWithVars(ctx, getQuery[isInvited], vars)
+	if err != nil {
+		return false, errors.Wrap(err, "checking invited edge")
+	}
+	count, err := dgraph.ParseCount(res.Rdf)
+	if err != nil {
+		return false, errors.Wrap(err, "parsing count")
+	}
+	return *count == 1, nil
+}
+
+// IsPublic returns if the event is public or not.
+func (s service) IsPublic(ctx context.Context, eventID string) (bool, error) {
+	s.metrics.incMethodCalls("IsPublic")
+	sqlTx := sqltx.FromContext(ctx)
+
+	// TODO: cache
 	var public bool
 	row := sqlTx.QueryRowContext(ctx, "SELECT public FROM events WHERE id=$1", eventID)
 	if err := row.Scan(&public); err != nil {
-		if err == sql.ErrNoRows {
-			return false, errors.Errorf("event with id %q does not exists", eventID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, httperr.Errorf(httperr.BadRequest, "event with id %q does not exists", eventID)
 		}
 		return false, err
 	}
@@ -533,134 +472,129 @@ func (s *service) IsPublic(ctx context.Context, sqlTx *sql.Tx, eventID string) (
 	return public, nil
 }
 
-func (s *service) RemoveEdge(ctx context.Context, eventID string, predicate predicate, userID string) error {
+func (s service) RemoveEdge(ctx context.Context, eventID string, predicate dgraph.Predicate, userID string) error {
 	s.metrics.incMethodCalls("RemoveEdge")
 
-	err := dgraph.Mutation(ctx, s.dc, func(tx *dgo.Txn) error {
-		req := dgraph.EventEdgeRequest(eventID, string(predicate), userID, false)
+	return dgraph.Mutation(ctx, s.dc, func(tx *dgo.Txn) error {
+		req := dgraph.EventEdgeRequest(eventID, predicate, userID, false)
 		_, err := tx.Do(ctx, req)
 		return err
 	})
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // Search returns events matching the given query.
-func (s *service) Search(ctx context.Context, query string, params params.Query) ([]Event, error) {
+func (s service) Search(ctx context.Context, query string, params params.Query) ([]Event, error) {
 	s.metrics.incMethodCalls("Search")
 
-	q := postgres.FullTextSearch(postgres.Events, params)
+	q := postgres.FullTextSearch(model.Event, params)
 	rows, err := s.db.QueryContext(ctx, q, postgres.ToTSQuery(query))
 	if err != nil {
 		return nil, errors.Wrap(err, "events searching")
 	}
 
-	events, err := scanEvents(rows)
-	if err != nil {
+	var events []Event
+	if err := scan.Rows(&events, rows); err != nil {
 		return nil, err
 	}
 
 	return events, nil
 }
 
-// BeginSQLTx starts and returns a new postgres transaction, if the connection fails it panics.
-func (s *service) SQLTx(ctx context.Context, readOnly bool, f func(tx *sql.Tx) (int, error)) (int, error) {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: readOnly})
+// SearchByLocation returns the events located within the coordinates given.
+func (s service) SearchByLocation(ctx context.Context, userID string, location LocationSearch) ([]Event, error) {
+	s.metrics.incMethodCalls("SearchByLocation")
+	sqlTx := sqltx.FromContext(ctx)
+
+	latMin := location.Latitude - location.LatitudeDelta
+	latMax := location.Latitude + location.LatitudeDelta
+	longMin := location.Longitude - location.LongitudeDelta
+	longMax := location.Longitude + location.LongitudeDelta
+
+	// TODO: all this data may not be needed in the future when the mobile app is finished
+	q := `SELECT 
+	id, name, description, virtual, header_url, logo_url, url, address, latitude, longitude, type, 
+	ticket_type, public, start_time, end_time, min_age, slots, created_at, updated_at 
+	FROM events WHERE 
+	(latitude BETWEEN $1 AND $2) AND
+	(longitude BETWEEN $3 AND $4) AND
+	((public=false AND id IN (SELECT event_id FROM events_users_roles WHERE user_id=$5)) OR public=true)`
+	// Using this since pq.StringArray doesn't work with IN
+	if location.DiscardIDs != nil && len(*location.DiscardIDs) > 0 {
+		// TODO: is the overhead of building the query + the range that postgres
+		// does worth it just to return non-repeatable data?
+		q = postgres.AppendInIDs(q, *location.DiscardIDs, true)
+	}
+	rows, err := sqlTx.QueryContext(ctx, q, latMin, latMax, longMin, longMax, userID)
 	if err != nil {
-		return http.StatusInternalServerError, errors.Wrap(err, "starting transaction")
+		return nil, err
 	}
 
-	status, err := f(tx)
-	if err != nil {
-		if err := tx.Rollback(); err != nil {
-			return http.StatusInternalServerError, errors.Wrap(err, "rolling back transaction")
-		}
-
-		return status, err
+	var events []Event
+	if err := scan.Rows(&events, rows); err != nil {
+		return nil, err
 	}
 
-	return 0, tx.Commit()
+	return events, nil
 }
 
 // Update updates an event.
-func (s *service) Update(ctx context.Context, sqlTx *sql.Tx, eventID string, event UpdateEvent) error {
+func (s service) Update(ctx context.Context, eventID string, event UpdateEvent) error {
 	s.metrics.incMethodCalls("Update")
+	sqlTx := sqltx.FromContext(ctx)
 
-	var startTime time.Time
-	if err := sqlTx.QueryRowContext(ctx, "SELECT start_time FROM events WHERE id=$1", eventID).Scan(&startTime); err != nil {
-		return errors.Wrap(err, "scanning start time")
+	var endTime time.Time
+	if err := sqlTx.QueryRowContext(ctx, "SELECT end_time FROM events WHERE id=$1", eventID).Scan(&endTime); err != nil {
+		return errors.Wrap(err, "scanning end_time")
 	}
-	if startTime.Before(time.Now()) {
-		return errors.New("cannot modify an event that has already started")
+	if endTime.Before(time.Now()) {
+		// TODO: put the event in a read-only db or in a cache without an expiration
+		// as it won't be modified ever again
+		return httperr.New("cannot modify an ended event", httperr.Forbidden)
 	}
 
 	if event.Slots != nil {
-		confirmedCount, err := s.GetConfirmedCount(ctx, eventID)
+		membersCount, err := s.roleService.GetMembersCount(ctx, eventID)
 		if err != nil {
 			return err
 		}
 
-		if *event.Slots < *confirmedCount {
-			return errors.New("slots must be higher than the amount of already confirmed users")
+		if *event.Slots < uint64(membersCount) {
+			return httperr.New("slots must be higher than the current number of members", httperr.BadRequest)
 		}
 	}
 
 	q := `UPDATE events SET 
 	name = COALESCE($2,name),
 	description = COALESCE($3,description), 
-	type = COALESCE($4,type), 
-	address = COALESCE($5,address),
-	latitude = COALESCE($6,latitude),
-	longitude = COALESCE($7,longitude),
-	start_time = COALESCE($8,start_time),
-	end_time = COALESCE($9,end_time),
-	ticket_cost = COALESCE($10,ticket_cost),
-	slots = COALESCE($11,slots),
-	updated_at = $12
+	type = COALESCE($4,type),
+	url = COALESCE($5,url),
+	logo_url = COALESCE($6,logo_url),
+	header_url = COALESCE($7,header_url),
+	address = COALESCE($8,address),
+	latitude = COALESCE($9,latitude),
+	longitude = COALESCE($10,longitude),
+	start_time = COALESCE($11,start_time),
+	end_time = COALESCE($12,end_time),
+	slots = COALESCE($13,slots),
+	updated_at = $14
 	WHERE id = $1`
 	_, err := sqlTx.ExecContext(ctx, q, eventID, event.Name, event.Description, event.Type,
-		event.Location.Address, event.Location.Coordinates.Latitude, event.Location.Coordinates.Longitude,
-		event.StartTime, event.EndTime, event.TicketCost, event.Slots, time.Now())
+		event.URL, event.LogoURL, event.HeaderURL, event.Location.Address,
+		event.Location.Coordinates.Latitude, event.Location.Coordinates.Longitude, event.StartTime,
+		event.EndTime, event.Slots, time.Now())
 	if err != nil {
-		return errors.Wrap(err, "updating event")
+		return errors.Wrap(err, "postgres: updating event")
 	}
 
-	if err := s.cache.Delete(cache.EventsKey(eventID)); err != nil {
-		return errors.Wrap(err, "deleting event")
+	if err := s.cache.Delete(model.Event.CacheKey(eventID)); err != nil {
+		return errors.Wrap(err, "memcached: updating event")
 	}
 
 	return nil
 }
 
-// UserJoin joins a user to a private event and sets it the viewer role.
-func (s *service) UserJoin(ctx context.Context, sqlTx *sql.Tx, eventID, userID string) error {
-	s.metrics.incMethodCalls("UserJoin")
-
-	isPublic, err := s.IsPublic(ctx, sqlTx, eventID)
-	if err != nil {
-		return err
-	}
-	if isPublic {
-		return errors.Errorf("event %q is public, cannot join", eventID)
-	}
-
-	invited, err := s.GetInvited(ctx, sqlTx, eventID, params.Query{LookupID: userID})
-	if err != nil {
-		return err
-	}
-
-	if invited == nil {
-		return errors.Errorf("user %q is not invited to the event %q", userID, eventID)
-	}
-
-	return s.SetViewerRole(ctx, sqlTx, eventID, userID)
-}
-
 // queryUsers returns the users found in the dgraph query passed.
-func (s *service) queryUsers(ctx context.Context, sqlTx *sql.Tx, query string, vars map[string]string, params params.Query) ([]User, error) {
+func (s service) queryUsers(ctx context.Context, sqlTx *sql.Tx, query string, vars map[string]string, params params.Query) ([]model.ListUser, error) {
 	res, err := s.dc.NewReadOnlyTxn().QueryRDFWithVars(ctx, query, vars)
 	if err != nil {
 		return nil, errors.Wrap(err, "dgraph: fetching users ids")
@@ -671,14 +605,14 @@ func (s *service) queryUsers(ctx context.Context, sqlTx *sql.Tx, query string, v
 		return nil, nil
 	}
 
-	q := postgres.SelectInID(postgres.Users, usersIds, params.Fields)
+	q := postgres.SelectInID(model.User, usersIds, params.Fields)
 	rows, err := sqlTx.QueryContext(ctx, q)
 	if err != nil {
 		return nil, errors.Wrap(err, "postgres: fetching users")
 	}
 
-	users, err := scanUsers(rows)
-	if err != nil {
+	var users []model.ListUser
+	if err := scan.Rows(&users, rows); err != nil {
 		return nil, err
 	}
 
