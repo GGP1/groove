@@ -18,15 +18,16 @@ type Config struct {
 	Admins      map[string]interface{}
 	Development bool
 
-	Dgraph      Dgraph
-	Logger      Logger
-	Memcached   Memcached
-	Postgres    Postgres
-	RateLimiter RateLimiter
-	Redis       Redis
-	Server      Server
-	Sessions    Sessions
-	TLS         TLS
+	Dgraph        Dgraph
+	Logger        Logger
+	Memcached     Memcached
+	Notifications Notifications
+	Postgres      Postgres
+	RateLimiter   RateLimiter
+	Redis         Redis
+	Server        Server
+	Sessions      Sessions
+	TLS           TLS
 }
 
 // Dgraph configuration.
@@ -49,17 +50,26 @@ type Memcached struct {
 	Timeout         time.Duration
 }
 
+// Notifications configuration.
+type Notifications struct {
+	CredentialsFile string
+	MaxRetries      int
+}
+
 // Postgres configuration.
 type Postgres struct {
-	Username    string
-	Password    string
-	Host        string
-	Port        string
-	Name        string
-	SSLMode     string
-	SSLRootCert string
-	SSLCert     string
-	SSLKey      string
+	Username        string
+	Password        string
+	Host            string
+	Port            string
+	Name            string
+	SSLMode         string
+	SSLRootCert     string
+	SSLCert         string
+	SSLKey          string
+	MaxIdleConns    int
+	ConnMaxIdleTime time.Duration
+	MetricsRate     time.Duration
 }
 
 // RateLimiter configuration.
@@ -72,7 +82,10 @@ type Redis struct {
 	Host            string
 	Port            string
 	Password        string
+	PoolSize        int
+	MinIdleConns    int
 	TLSCertificates []tls.Certificate
+	MetricsRate     time.Duration
 }
 
 // Server configuration.
@@ -199,49 +212,60 @@ var (
 			"port": 9080,
 		},
 		"logger": map[string]interface{}{
-			"outfiles": []string{},
+			"outFiles": []string{},
 		},
 		"memcached": map[string]interface{}{
-			"itemsexpiration": 0,
-			"maxidleconns":    memcache.DefaultMaxIdleConns,
+			"itemsExpiration": 0,
+			"maxIdleConns":    memcache.DefaultMaxIdleConns,
 			"servers":         []string{"localhost:11211"},
 			"timeout":         memcache.DefaultTimeout,
 		},
-		"postgres": map[string]interface{}{
-			"host":        "postgres",
-			"port":        "5432",
-			"name":        "postgres",
-			"username":    "postgres",
-			"password":    "postgres",
-			"sslmode":     "disabled",
-			"sslrootcert": "",
-			"sslcert":     "",
-			"sslkey":      "",
+		"notifications": map[string]interface{}{
+			"credentialsFile": "/firebase_credentials.json",
+			"maxRetries":      5,
 		},
-		"ratelimiter": map[string]interface{}{
+		"postgres": map[string]interface{}{
+			"host":            "postgres",
+			"port":            "5432",
+			"name":            "postgres",
+			"username":        "postgres",
+			"password":        "postgres",
+			"sslMode":         "disabled",
+			"sslRootCert":     "",
+			"sslCert":         "",
+			"sslKey":          "",
+			"maxIdleConns":    50,
+			"maxConnIdleTime": time.Minute * 5,
+			"metricsRate":     time.Minute * 5,
+		},
+		"rateLimiter": map[string]interface{}{
 			"rate": 5,
 		},
 		"redis": map[string]interface{}{
-			"host":     "localhost",
-			"port":     6379,
-			"password": "redis",
+			"host":         "localhost",
+			"port":         6379,
+			"password":     "redis",
+			"poolSize":     0, // Use default (GOMAXPROCS * 10)
+			"minIdleConns": 5,
+			"metricsRate":  time.Minute * 5,
 		},
 		"secrets": map[string]interface{}{
-			"encryption": "encryption",
+			"encryption": "{X]_?4-6)hgp(P_w9nTO8f =2Gki",
+			"apiKeys":    "u3xLK_7HBf!s@1p-*Gj/]oUgQ>E4",
 		},
 		"server": map[string]interface{}{
 			"host": "localhost",
 			"port": 4000,
-			"letsencrypt": map[string]interface{}{
+			"letsEncrypt": map[string]interface{}{
 				"enabled":   false,
-				"accepttos": false,
+				"acceptTOS": false,
 				"cache":     "",
 				"hosts":     []string{},
 			},
 			"timeout": map[string]interface{}{
-				"read":      5,
-				"write":     5,
-				"shutwdown": 5,
+				"read":     5,
+				"write":    5,
+				"shutdown": 5,
 			},
 		},
 		"sessions": map[string]interface{}{
@@ -249,8 +273,8 @@ var (
 			"expiration":   "168h", // 7 days
 		},
 		"tls": map[string]interface{}{
-			"certfile": "",
-			"keyfile":  "",
+			"certFile": "",
+			"keyFile":  "",
 		},
 	}
 
@@ -263,43 +287,55 @@ var (
 		"dgraph.host": "DGRAPH_HOST",
 		"dgraph.port": "DGRAPH_PORT",
 		// Logger
-		"logger.outfiles": "LOGGER_OUTFILES",
+		"logger.outFiles": "LOGGER_OUT_FILES",
 		// Memcached
-		"memcached.itemsexpiration": "MEMCACHED_ITEMSEXPIRATION",
-		"memcached.maxidleconns":    "MEMCACHED_MAXIDLECONS",
+		"memcached.itemsExpiration": "MEMCACHED_ITEMS_EXPIRATION",
+		"memcached.maxIdleConns":    "MEMCACHED_MAX_IDLE_CONS",
 		"memcached.servers":         "MEMCACHED_SERVERS",
 		"memcached.timeout":         "MEMCACHED_TIMEOUT",
+		// Notifications
+		"notifications.credentialsFile": "NOTIFICATIONS_CREDENTIALS_FILE",
+		"notifications.maxRetries":      "NOTIFICATIONS_MAX_RETRIES",
 		// Postgres
-		"postgres.username": "POSTGRES_USERNAME",
-		"postgres.password": "POSTGRES_PASSWORD",
-		"postgres.host":     "POSTGRES_HOST",
-		"postgres.port":     "POSTGRES_PORT",
-		"postgres.name":     "POSTGRES_DB",
-		"postgres.sslmode":  "POSTGRES_SSL",
+		"postgres.username":        "POSTGRES_USERNAME",
+		"postgres.password":        "POSTGRES_PASSWORD",
+		"postgres.host":            "POSTGRES_HOST",
+		"postgres.port":            "POSTGRES_PORT",
+		"postgres.name":            "POSTGRES_DB",
+		"postgres.sslMode":         "POSTGRES_SSL_MODE",
+		"postgres.sslRootCert":     "POSTGRES_SSL_ROOT_CERT",
+		"postgres.sslCert":         "POSTGRES_SSL_CERT",
+		"postgres.sslKey":          "POSTGRES_SSL_KEY",
+		"postgres.maxIdleConns":    "POSTGRES_MAX_IDLE_CONNS",
+		"postgres.maxConnIdleTime": "POSTGRES_MAX_CONN_IDLE_TIME",
+		"postgres.metricsRate":     "POSTGRES_METRICS_RATE",
 		// Rate limiter
-		"ratelimiter.rate": "RATELIMITER_RATE",
+		"rateLimiter.rate": "RATE_LIMITER_RATE",
 		// Redis
-		"redis.host":     "REDIS_HOST",
-		"redis.port":     "REDIS_PORT",
-		"redis.password": "REDIS_PASSWORD",
+		"redis.host":         "REDIS_HOST",
+		"redis.port":         "REDIS_PORT",
+		"redis.password":     "REDIS_PASSWORD",
+		"redis.poolSize":     "REDIS_POOL_SIZE",
+		"redis.minIdleConns": "REDIS_MIN_IDLE_CONS",
+		"redis.metricsRate":  "REDIS_METRICS_RATE",
 		// Secrets
 		"secrets.encryption": "SECRETS_ENCRYPTION",
-		"secrets.apikeys":    "SECRETS_APIKEYS",
+		"secrets.apiKeys":    "SECRETS_API_KEYS",
 		// Server
 		"server.host":                  "SV_HOST",
 		"server.port":                  "SV_PORT",
-		"server.letsencrypt.enabled":   "SV_LETSENCRYPT_ENABLED",
-		"server.letsencrypt.accepttos": "SV_LETSENCRYPT_ACCEPTTOS",
-		"server.letsencrypt.cache":     "SV_LETSENCRYPT_CACHE",
-		"server.letsencrypt.hosts":     "SV_LETSENCRYPT_HOSTS",
+		"server.letsEncrypt.enabled":   "SV_LETSENCRYPT_ENABLED",
+		"server.letsEncrypt.acceptTOS": "SV_LETSENCRYPT_ACCEPT_TOS",
+		"server.letsEncrypt.cache":     "SV_LETSENCRYPT_CACHE",
+		"server.letsEncrypt.hosts":     "SV_LETSENCRYPT_HOSTS",
 		"server.timeout.read":          "SV_TIMEOUT_READ",
 		"server.timeout.write":         "SV_TIMEOUT_WRITE",
 		"server.timeout.shutdown":      "SV_TIMEOUT_SHUTDOWN",
 		// Sessions
-		"sessions.verifyEmails": "SESSIONS_VERIFYEMAILS",
+		"sessions.verifyEmails": "SESSIONS_VERIFY_EMAILS",
 		"sessions.expiration":   "SESSIONS_EXPIRATION",
 		// TLS
-		"tls.certfile": "TLS_CERTFILE",
-		"tls.keyfile":  "TLS_KEYFILE",
+		"tls.certFile": "TLS_CERT_FILE",
+		"tls.keyFile":  "TLS_KEY_FILE",
 	}
 )

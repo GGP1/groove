@@ -25,14 +25,14 @@ const (
 // RateLimiter uses a leaky bucket algorithm for limiting the requests to the API from the same host.
 type RateLimiter struct {
 	limiter *redis_rate.Limiter
-	rate    int
+	config  config.RateLimiter
 }
 
 // NewRateLimiter returns a rate limiter with the configuration values passed.
 func NewRateLimiter(config config.RateLimiter, rdb *redis.Client) RateLimiter {
 	rl := RateLimiter{
 		limiter: redis_rate.NewLimiter(rdb),
-		rate:    config.Rate,
+		config:  config,
 	}
 
 	return rl
@@ -44,13 +44,13 @@ func (rl RateLimiter) Limit(next http.Handler) http.Handler {
 		ctx := r.Context()
 
 		rate := redis_rate.Limit{
-			Rate:   rl.rate,
+			Rate:   rl.config.Rate,
 			Period: time.Minute,
-			Burst:  rl.rate,
+			Burst:  rl.config.Rate,
 		}
 		key, err := apikey.FromRequest(r)
 		if err != nil {
-			if err == apikey.ErrInvalidAPIKey {
+			if errors.Is(err, apikey.ErrInvalidAPIKey) {
 				response.Error(w, http.StatusBadRequest, err)
 				return
 			}
