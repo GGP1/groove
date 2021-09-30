@@ -1,4 +1,4 @@
-package event
+package product
 
 import (
 	"database/sql"
@@ -9,31 +9,50 @@ import (
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/internal/validate"
-	"github.com/GGP1/groove/service/event/product"
+	"github.com/GGP1/groove/model"
+	"github.com/GGP1/groove/service/event/role"
+	"github.com/GGP1/groove/storage/postgres"
 
 	"github.com/julienschmidt/httprouter"
 )
 
-// CreateProduct creates an image/video inside an event.
-func (h *Handler) CreateProduct() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
+// Handler handles ticket service endpoints.
+type Handler struct {
+	db *sql.DB
 
-		eventID, err := params.IDFromCtx(ctx)
+	service     Service
+	roleService role.Service
+}
+
+// NewHandler returns a new ticket handler.
+func NewHandler(db *sql.DB, service Service, roleService role.Service) Handler {
+	return Handler{
+		db:          db,
+		service:     service,
+		roleService: roleService,
+	}
+}
+
+// Create creates an image/video inside an event.
+func (h Handler) Create() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rctx := r.Context()
+
+		eventID, err := params.IDFromCtx(rctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		sqlTx := h.service.BeginSQLTx(ctx, false)
+		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
 		defer sqlTx.Rollback()
 
-		if err := h.requirePermissions(ctx, r, sqlTx, eventID, permissions.ModifyProducts); err != nil {
+		if err := h.roleService.RequirePermissions(ctx, r, eventID, permissions.ModifyProducts); err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
-		var product product.Product
+		var product Product
 		if err := json.NewDecoder(r.Body).Decode(&product); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -45,7 +64,7 @@ func (h *Handler) CreateProduct() http.Handler {
 			return
 		}
 
-		if err := h.service.CreateProduct(ctx, sqlTx, eventID, product); err != nil {
+		if err := h.service.Create(ctx, eventID, product); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -59,12 +78,12 @@ func (h *Handler) CreateProduct() http.Handler {
 	})
 }
 
-// DeleteProduct removes a product from an event.
-func (h *Handler) DeleteProduct() http.HandlerFunc {
+// Delete removes a product from an event.
+func (h Handler) Delete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
+		rctx := r.Context()
 
-		ctxParams := httprouter.ParamsFromContext(ctx)
+		ctxParams := httprouter.ParamsFromContext(rctx)
 		eventID := ctxParams.ByName("id")
 		productID := ctxParams.ByName("product_id")
 		if err := validate.ULIDs(eventID, productID); err != nil {
@@ -72,17 +91,20 @@ func (h *Handler) DeleteProduct() http.HandlerFunc {
 			return
 		}
 
-		errStatus, err := h.service.SQLTx(ctx, false, func(tx *sql.Tx) (int, error) {
-			if err := h.requirePermissions(ctx, r, tx, eventID, permissions.ModifyProducts); err != nil {
-				return http.StatusForbidden, err
-			}
-			if err := h.service.DeleteProduct(ctx, tx, eventID, productID); err != nil {
-				return http.StatusInternalServerError, err
-			}
-			return 0, nil
-		})
-		if err != nil {
-			response.Error(w, errStatus, err)
+		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
+		defer sqlTx.Rollback()
+
+		if err := h.roleService.RequirePermissions(ctx, r, eventID, permissions.ModifyProducts); err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+		if err := h.service.Delete(ctx, eventID, productID); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		if err := sqlTx.Commit(); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 
@@ -90,32 +112,32 @@ func (h *Handler) DeleteProduct() http.HandlerFunc {
 	}
 }
 
-// GetProducts gets the products of an event.
-func (h *Handler) GetProducts() http.HandlerFunc {
+// Get gets the products of an event.
+func (h Handler) Get() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
+		rctx := r.Context()
 
-		eventID, err := params.IDFromCtx(ctx)
+		eventID, err := params.IDFromCtx(rctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		sqlTx := h.service.BeginSQLTx(ctx, true)
+		sqlTx, ctx := postgres.BeginTx(rctx, h.db, true)
 		defer sqlTx.Rollback()
 
-		if err := h.privacyFilter(ctx, r, sqlTx, eventID); err != nil {
+		if err := h.roleService.PrivacyFilter(ctx, r, eventID); err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
-		params, err := params.ParseQuery(r.URL.RawQuery, params.Product)
+		params, err := params.Parse(r.URL.RawQuery, model.Product)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		products, err := h.service.GetProducts(ctx, sqlTx, eventID, params)
+		products, err := h.service.Get(ctx, eventID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -126,34 +148,33 @@ func (h *Handler) GetProducts() http.HandlerFunc {
 			nextCursor = products[len(products)-1].ID
 		}
 
-		type resp struct {
-			NextCursor string            `json:"next_cursor,omitempty"`
-			Products   []product.Product `json:"products,omitempty"`
-		}
-		response.JSON(w, http.StatusOK, resp{NextCursor: nextCursor, Products: products})
+		response.JSONCursor(w, nextCursor, "products", products)
+
 	}
 }
 
-// UpdateProduct updates a product of an event.
-func (h *Handler) UpdateProduct() http.HandlerFunc {
+// Update updates a product of an event.
+func (h Handler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
+		rctx := r.Context()
 
-		eventID, err := params.IDFromCtx(ctx)
-		if err != nil {
+		ctxParams := httprouter.ParamsFromContext(rctx)
+		eventID := ctxParams.ByName("id")
+		productID := ctxParams.ByName("product_id")
+		if err := validate.ULIDs(eventID, productID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		sqlTx := h.service.BeginSQLTx(ctx, false)
+		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
 		defer sqlTx.Rollback()
 
-		if err := h.requirePermissions(ctx, r, sqlTx, eventID, permissions.ModifyProducts); err != nil {
+		if err := h.roleService.RequirePermissions(ctx, r, eventID, permissions.ModifyProducts); err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
-		var product product.UpdateProduct
+		var product UpdateProduct
 		if err := json.NewDecoder(r.Body).Decode(&product); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -165,7 +186,7 @@ func (h *Handler) UpdateProduct() http.HandlerFunc {
 			return
 		}
 
-		if err := h.service.UpdateProduct(ctx, sqlTx, eventID, product); err != nil {
+		if err := h.service.Update(ctx, eventID, productID, product); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
