@@ -7,18 +7,13 @@ import (
 	"strings"
 
 	"github.com/GGP1/groove/internal/validate"
+	"github.com/GGP1/groove/model"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/pkg/errors"
 )
 
-// Object type
 const (
-	User obj = iota
-	Event
-	Media
-	Product
-
 	// DefaultCursor is the one used in case it isn't provided by the client
 	DefaultCursor = "0"
 
@@ -27,8 +22,6 @@ const (
 	// defaultLimit is the number of objects returned in case none is specified
 	defaultLimit = "20"
 )
-
-type obj uint8
 
 // Query contains the request parameters provided by the client.
 type Query struct {
@@ -40,22 +33,41 @@ type Query struct {
 }
 
 // IDFromCtx takes the id parameter from context and validates it.
-func IDFromCtx(ctx context.Context) (string, error) {
-	id := httprouter.ParamsFromContext(ctx).ByName("id")
+func IDFromCtx(ctx context.Context, tag ...string) (string, error) {
+	tagName := "id"
+	if len(tag) == 1 {
+		tagName = tag[0]
+	}
+	id := httprouter.ParamsFromContext(ctx).ByName(tagName)
 	if err := validate.ULID(id); err != nil {
 		return "", err
 	}
 	return id, nil
 }
 
-// ParseQuery returns the url params received after validating them.
-func ParseQuery(rawQuery string, obj obj) (Query, error) {
-	// Note: values.Get() retrieves only the first parameter, it's better to avoid accessing
-	// the map manually, also validate the input to avoid HTTP parameter pollution.
+// IDAndNameFromCtx returns the id and name parameters from the endpoint's route.
+func IDAndNameFromCtx(ctx context.Context) (id, name string, err error) {
+	ctxParams := httprouter.ParamsFromContext(ctx)
+	id = ctxParams.ByName("id")
+	if err = validate.ULID(id); err != nil {
+		return "", "", err
+	}
+	name = strings.ToLower(ctxParams.ByName("name"))
+	return
+}
+
+// Parse returns the url params received after validating them.
+func Parse(rawQuery string, model model.Model) (Query, error) {
 	values, err := url.ParseQuery(rawQuery)
 	if err != nil {
 		return Query{}, err
 	}
+
+	return ParseQuery(values, model)
+}
+
+// ParseQuery returns the parameters from the url values passed.
+func ParseQuery(values url.Values, model model.Model) (Query, error) {
 	count, err := parseBool(values.Get("count"))
 	if err != nil {
 		return Query{}, err
@@ -65,7 +77,7 @@ func ParseQuery(rawQuery string, obj obj) (Query, error) {
 		return Query{Count: count}, nil
 	}
 
-	fields, err := parseFields(obj, values)
+	fields, err := parseFields(model, values)
 	if err != nil {
 		return Query{}, err
 	}
@@ -112,36 +124,20 @@ func parseBool(value string) (bool, error) {
 	return b, nil
 }
 
-func parseFields(obj obj, values url.Values) ([]string, error) {
-	var fields []string
-	switch obj {
-	case User:
-		fields = split(values.Get("user.fields"))
-		if err := validate.UserFields(fields); err != nil {
-			return nil, err
-		}
+func parseFields(model model.Model, values url.Values) ([]string, error) {
+	fieldsValue := values.Get(model.URLQueryKey())
+	if fieldsValue == "" {
+		return nil, nil
+	}
 
-	case Event:
-		fields = split(values.Get("event.fields"))
-		if err := validate.EventFields(fields); err != nil {
-			return nil, err
+	fields := strings.Split(fieldsValue, ",")
+	for i, field := range fields {
+		if field == "" {
+			return nil, errors.Errorf("invalid empty field at index [%d]", i)
 		}
-
-	case Media:
-		fields = split(values.Get("media.fields"))
-		if err := validate.MediaFields(fields); err != nil {
-			return nil, err
+		if !model.ValidField(field) {
+			return nil, errors.Errorf("unrecognized field (%s)", field)
 		}
-
-	case Product:
-		fields = split(values.Get("product.fields"))
-		if err := validate.ProductFields(fields); err != nil {
-			return nil, err
-		}
-
-	default:
-		// Just in case obj is not valid
-		fields = nil
 	}
 
 	return fields, nil
@@ -167,12 +163,4 @@ func parseLimit(value string) (string, error) {
 		}
 		return value, nil
 	}
-}
-
-// split is like strings.Split but returns nil if the slice is empty
-func split(s string) []string {
-	if s == "" {
-		return nil
-	}
-	return strings.Split(s, ",")
 }
