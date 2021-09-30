@@ -24,7 +24,7 @@ docker-run:
 
 .PHONY: rebuild-server
 rebuild-server:
-	docker compose rm -sf server && docker compose up -d --build --no-deps server
+	docker compose rm -sf server && docker compose up -d --build --no-deps server && docker compose logs -f
 
 .PHONY: remove-images
 remove-images:
