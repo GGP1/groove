@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GGP1/groove/internal/httperr"
 	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/test"
 
@@ -28,21 +29,41 @@ func TestEncodedJSON(t *testing.T) {
 }
 
 func TestError(t *testing.T) {
-	expectedHeaderCT := "application/json; charset=UTF-8"
-	expectedStatus := 404
-	expectedText := "{\"status\":404,\"error\":\"test\"}\n"
+	t.Run("Standard error", func(t *testing.T) {
+		expectedHeaderCT := "application/json; charset=UTF-8"
+		expectedStatus := 404
+		expectedText := "{\"status\":404,\"error\":\"test\"}\n"
 
-	rec := httptest.NewRecorder()
-	response.Error(rec, http.StatusNotFound, errors.New("test"))
+		rec := httptest.NewRecorder()
+		response.Error(rec, http.StatusNotFound, errors.New("test"))
 
-	assert.Equal(t, expectedHeaderCT, rec.Header().Get("Content-Type"))
-	assert.Equal(t, expectedStatus, rec.Code)
+		assert.Equal(t, expectedHeaderCT, rec.Header().Get("Content-Type"))
+		assert.Equal(t, expectedStatus, rec.Code)
 
-	var buf bytes.Buffer
-	_, err := buf.ReadFrom(rec.Body)
-	assert.NoError(t, err, "Failed reading response body")
+		var buf bytes.Buffer
+		_, err := buf.ReadFrom(rec.Body)
+		assert.NoError(t, err, "Failed reading response body")
 
-	assert.Equal(t, expectedText, buf.String())
+		assert.Equal(t, expectedText, buf.String())
+	})
+
+	t.Run("Custom error", func(t *testing.T) {
+		expectedHeaderCT := "application/json; charset=UTF-8"
+		expectedStatus := 403
+		expectedText := "{\"status\":403,\"error\":\"test\"}\n"
+
+		rec := httptest.NewRecorder()
+		response.Error(rec, http.StatusInternalServerError, httperr.New("test", httperr.Forbidden))
+
+		assert.Equal(t, expectedHeaderCT, rec.Header().Get("Content-Type"))
+		assert.Equal(t, expectedStatus, rec.Code)
+
+		var buf bytes.Buffer
+		_, err := buf.ReadFrom(rec.Body)
+		assert.NoError(t, err, "Failed reading response body")
+
+		assert.Equal(t, expectedText, buf.String())
+	})
 }
 
 func TestJSON(t *testing.T) {

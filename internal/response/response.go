@@ -6,6 +6,7 @@ import (
 
 	"github.com/GGP1/groove/internal/bufferpool"
 	"github.com/GGP1/groove/internal/cache"
+	"github.com/GGP1/groove/internal/httperr"
 )
 
 // Performance optimizations:
@@ -20,14 +21,9 @@ import (
 // For example, the canonical key for "accept-encoding" is "Accept-Encoding".
 const contentType = "Content-Type"
 
-type countResponse struct {
-	Status int     `json:"status,omitempty"`
-	Count  *uint64 `json:"count,omitempty"`
-}
-
 type errResponse struct {
 	Status int    `json:"status"`
-	Err    string `json:"error"`
+	Error  string `json:"error"`
 }
 
 type msgResponse struct {
@@ -49,9 +45,13 @@ func EncodedJSON(w http.ResponseWriter, buf []byte) {
 
 // Error is the function used to send error resposes.
 func Error(w http.ResponseWriter, status int, err error) {
+	// If the error contains a specific status, use it instead of the one provided.
+	if e, ok := err.(*httperr.Err); ok {
+		status = e.Status()
+	}
 	JSON(w, status, errResponse{
 		Status: status,
-		Err:    err.Error(),
+		Error:  err.Error(),
 	})
 }
 
@@ -106,10 +106,18 @@ func JSONAndCache(cache cache.Client, w http.ResponseWriter, key string, v inter
 }
 
 // JSONCount sends a json encoded response with the status and a count.
-func JSONCount(w http.ResponseWriter, status int, count *uint64) {
-	JSON(w, status, countResponse{
-		Status: status,
-		Count:  count,
+func JSONCount(w http.ResponseWriter, status int, fieldName string, count interface{}) {
+	JSON(w, status, map[string]interface{}{
+		"status":  status,
+		fieldName: count,
+	})
+}
+
+// JSONCursor sends a json encoded response with the next cursor and items.
+func JSONCursor(w http.ResponseWriter, nextCursor, fieldName string, items interface{}) {
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"next_cursor": nextCursor,
+		fieldName:     items,
 	})
 }
 
