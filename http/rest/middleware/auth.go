@@ -4,10 +4,11 @@ import (
 	"database/sql"
 	"net/http"
 
-	"github.com/GGP1/groove/auth"
 	"github.com/GGP1/groove/internal/apikey"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/response"
+	"github.com/GGP1/groove/service/auth"
+	"github.com/GGP1/groove/service/event"
 	"github.com/GGP1/groove/service/user"
 
 	"github.com/pkg/errors"
@@ -20,17 +21,19 @@ var (
 
 // Auth holds the redis instance used to authenticate users.
 type Auth struct {
-	db          *sql.DB
-	authService auth.Service
-	userService user.Service
+	db           *sql.DB
+	authService  auth.Service
+	userService  user.Service
+	eventService event.Service
 }
 
 // NewAuth returns a new authentication/authorization middleware.
-func NewAuth(db *sql.DB, session auth.Service, userSv user.Service) Auth {
+func NewAuth(db *sql.DB, authSv auth.Service, eventSv event.Service, userSv user.Service) Auth {
 	return Auth{
-		db:          db,
-		authService: session,
-		userService: userSv,
+		db:           db,
+		authService:  authSv,
+		userService:  userSv,
+		eventService: eventSv,
 	}
 }
 
@@ -46,14 +49,7 @@ func (a Auth) AdminsOnly(next http.Handler) http.Handler {
 			return
 		}
 
-		tx, err := a.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
-		if err != nil {
-			http.NotFound(w, r)
-			return
-		}
-		defer tx.Rollback()
-
-		isAdmin, err := a.userService.IsAdmin(ctx, tx, session.ID)
+		isAdmin, err := a.userService.IsAdmin(ctx, session.ID)
 		if err != nil {
 			http.NotFound(w, r)
 			return
@@ -64,6 +60,34 @@ func (a Auth) AdminsOnly(next http.Handler) http.Handler {
 		}
 
 		next.ServeHTTP(w, r)
+	})
+}
+
+// NotBanned lets in to an event only non-banned users.
+func (a Auth) NotBanned(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		session, ok := a.authService.AlreadyLoggedIn(ctx, r)
+		if !ok {
+			response.Error(w, http.StatusUnauthorized, errLoginToAccess)
+			return
+		}
+
+		id, err := params.IDFromCtx(ctx)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		isBanned, err := a.eventService.IsBanned(ctx, id, session.ID)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+		if isBanned {
+			response.Error(w, http.StatusForbidden, errors.New("you are banned from this event"))
+		}
 	})
 }
 
@@ -113,26 +137,6 @@ func (a *Auth) RequireLogin(next http.Handler) http.Handler {
 		if _, ok := a.authService.AlreadyLoggedIn(r.Context(), r); !ok {
 			r.Header["Www-Authenticate"] = []string{`Basic realm="restricted", charset="UTF-8"`}
 			response.Error(w, http.StatusUnauthorized, errLoginToAccess)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}
-
-// RequirePremium requires the user to be premium to continue.
-func (a *Auth) RequirePremium(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-
-		session, ok := a.authService.AlreadyLoggedIn(ctx, r)
-		if !ok {
-			response.Error(w, http.StatusUnauthorized, errLoginToAccess)
-			return
-		}
-
-		if !session.Premium {
-			response.Error(w, http.StatusForbidden, errAccessDenied)
 			return
 		}
 
