@@ -5,9 +5,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/GGP1/groove/auth"
 	"github.com/GGP1/groove/config"
 	"github.com/GGP1/groove/internal/ulid"
+	"github.com/GGP1/groove/service/auth"
 	"github.com/GGP1/groove/test"
 
 	"github.com/stretchr/testify/assert"
@@ -28,7 +28,8 @@ func TestAuth(t *testing.T) {
 	err := test.CreateUser(ctx, db, dc, ulid.NewString(), email, "username", password)
 	assert.NoError(t, err)
 
-	user, err := session.Login(ctx, w, r, email, password)
+	login := auth.Login{Username: email, Password: password}
+	user, err := session.Login(ctx, w, r, login)
 	assert.NoError(t, err)
 	assert.Equal(t, email, user.Email)
 
