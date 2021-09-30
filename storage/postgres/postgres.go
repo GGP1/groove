@@ -7,10 +7,6 @@ import (
 
 	"github.com/GGP1/groove/config"
 	"github.com/GGP1/groove/internal/log"
-	"github.com/GGP1/groove/internal/permissions"
-	"github.com/GGP1/groove/internal/roles"
-
-	"github.com/lib/pq"
 
 	"github.com/pkg/errors"
 )
@@ -24,6 +20,8 @@ func Connect(ctx context.Context, c config.Postgres) (*sql.DB, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "connecting with postgres")
 	}
+	db.SetMaxIdleConns(c.MaxIdleConns)
+	db.SetConnMaxIdleTime(c.ConnMaxIdleTime)
 
 	if err := db.PingContext(ctx); err != nil {
 		return nil, errors.Wrap(err, "ping error")
@@ -32,6 +30,8 @@ func Connect(ctx context.Context, c config.Postgres) (*sql.DB, error) {
 	if err := CreateTables(ctx, db, c); err != nil {
 		return nil, err
 	}
+
+	runMetrics(db, c)
 
 	log.Sugar().Infof("Connected to postgres on %s:%s", c.Host, c.Port)
 	return db, nil
@@ -42,45 +42,7 @@ func CreateTables(ctx context.Context, db *sql.DB, c config.Postgres) error {
 	if _, err := db.ExecContext(ctx, tables); err != nil {
 		return errors.Wrap(err, "creating tables")
 	}
-	return createReservedRolesTable(ctx, db, c)
-}
-
-func createReservedRolesTable(ctx context.Context, db *sql.DB, c config.Postgres) error {
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	// TODO: use a different connection with a user with read only access to the table
-	q := `CREATE TABLE IF NOT EXISTS events_reserved_roles
-	(
-		name varchar(20) NOT NULL,
-		permission_keys text[] NOT NULL,
-		created_at timestamp with time zone DEFAULT NOW()
-	);
-	
-	CREATE INDEX ON events_reserved_roles (name);`
-	if _, err := tx.ExecContext(ctx, q); err != nil {
-		return errors.Wrap(err, "creating readonly schema")
-	}
-
-	// Create host, attendant, viewer and moderator roles
-	insert := `INSERT INTO events_reserved_roles 
-	(name, permission_keys) 
-	VALUES 
-	($1, $2), ($3, $4), ($5, $6), ($7, $8);`
-	_, err = tx.ExecContext(ctx, insert,
-		roles.Host, pq.StringArray{permissions.All},
-		roles.Attendant, pq.StringArray{permissions.Access},
-		roles.Viewer, pq.StringArray{permissions.ViewEvent},
-		roles.Moderator, pq.StringArray{permissions.Access, permissions.BanUsers},
-	)
-	if err != nil {
-		return errors.Wrap(err, "creating roles")
-	}
-
-	return tx.Commit()
+	return nil
 }
 
 const tables = `
@@ -89,18 +51,21 @@ CREATE TABLE IF NOT EXISTS events
 	id varchar(26),
 	name text NOT NULL,
 	description text NOT NULL,
-	type integer NOT NULL,
+	type smallint NOT NULL CHECK (type > 0),
+	ticket_type smallint NOT NULL CHECK (ticket_type > 0),
 	virtual bool NOT NULL,
+	members_count integer DEFAULT 0,
+	logo_url text,
+	header_url text,
 	url text,
 	address text,
-	latitude real,
-	longitude real,
+	latitude double precision,
+	longitude double precision,
 	public boolean NOT NULL,
-	ticket_cost integer DEFAULT 0,
-	slots integer NOT NULL,
+	slots integer NOT NULL CHECK (slots >= 0),
 	start_time timestamp with time zone NOT NULL,
 	end_time timestamp with time zone NOT NULL,
-	min_age integer DEFAULT 0,
+	min_age smallint DEFAULT 0 CHECK (min_age >= 0),
 	search tsvector,
 	created_at timestamp with time zone DEFAULT NOW(),
     updated_at timestamp with time zone,
@@ -108,10 +73,13 @@ CREATE TABLE IF NOT EXISTS events
 );
 
 CREATE INDEX ON events USING GIN (search);
+CREATE INDEX ON events (latitude);
+CREATE INDEX ON events (longitude);
 
 CREATE OR REPLACE FUNCTION events_tsvector_trigger() RETURNS trigger AS $$
 BEGIN
-  new.search := to_tsvector('english', new.name);
+  new.search := setweight(to_tsvector('english', new.name), 'A')
+  || setweight(to_tsvector('english', new.address), 'B');
   return new;
 END
 $$ LANGUAGE plpgsql;
@@ -128,13 +96,13 @@ CREATE TABLE IF NOT EXISTS users
     username text NOT NULL UNIQUE,
     email text NOT NULL UNIQUE,
     password bytea NOT NULL,
-	description varchar(150),
-	birth_date timestamp NOT NULL,
+	description varchar(144),
+	birth_date timestamp,
 	profile_image_url text,
     is_admin boolean DEFAULT false,
-	premium boolean DEFAULT false,
 	private boolean DEFAULT false,
-	invitations integer DEFAULT 1,
+	type smallint NOT NULL CHECK (type > 0 AND type < 3),
+	invitations smallint NOT NULL CHECK (invitations > 0 AND type < 3),
     verified_email boolean DEFAULT false,
 	search tsvector,
     created_at timestamp with time zone DEFAULT NOW(),
@@ -160,10 +128,10 @@ CREATE TRIGGER users_tsvector_update BEFORE INSERT OR UPDATE
 
 CREATE TABLE IF NOT EXISTS events_permissions
 (
- 	event_id varchar(26),
+ 	event_id varchar(26) NOT NULL,
 	key varchar(20) NOT NULL,
  	name varchar(20) NOT NULL,
- 	description varchar(50),
+ 	description varchar(80),
     created_at timestamp with time zone DEFAULT NOW(),
 	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,
 	UNIQUE(event_id, key)
@@ -173,7 +141,7 @@ CREATE INDEX ON events_permissions (key);
 
 CREATE TABLE IF NOT EXISTS events_roles
 (
-	event_id varchar(26),
+	event_id varchar(26) NOT NULL,
 	name varchar(20) NOT NULL,
  	permission_keys text[] NOT NULL,
     created_at timestamp with time zone DEFAULT NOW(),
@@ -185,28 +153,61 @@ CREATE INDEX ON events_roles (name);
 
 CREATE TABLE IF NOT EXISTS events_users_roles
 (
-	event_id varchar(26),
-	user_id varchar(26),
- 	role_name varchar(20),
+	event_id varchar(26) NOT NULL,
+	user_id varchar(26) NOT NULL,
+ 	role_name varchar(20) NOT NULL,
 	FOREIGN KEY (event_id) REFERENCES events (id) ON UPDATE CASCADE ON DELETE CASCADE,
  	FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS events_media
+CREATE INDEX ON events_users_roles (role_name);
+
+CREATE TABLE IF NOT EXISTS events_tickets
 (
-    id varchar(26),
-    event_id varchar(26) NOT NULL,
-	url text NOT NULL,
-    created_at timestamp with time zone DEFAULT NOW(),
-	CONSTRAINT events_media_pkey PRIMARY KEY (id),
-    FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
+	event_id varchar(26) NOT NULL,
+	available_count integer NOT NULL CHECK (available_count >= 0),
+	name text NOT NULL,
+	cost integer NOT NULL CHECK (cost >= 0),
+	linked_role varchar(20) DEFAULT 'attendant',
+	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,
+	UNIQUE(event_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS events_posts 
+(
+	id varchar(26),
+	event_id varchar(26) NOT NULL,
+	media text[],
+	content varchar(1024),
+	likes_count integer DEFAULT 0,
+	comments_count integer DEFAULT 0,
+	created_at timestamp with time zone DEFAULT NOW(),
+	updated_at timestamp with time zone,
+	CONSTRAINT events_posts_pkey PRIMARY KEY (id),
+	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS events_posts_comments 
+(
+	id varchar(26),
+	parent_comment_id varchar(26),
+	post_id varchar(26),
+	user_id varchar(26),
+	content varchar(1024),
+	likes_count integer DEFAULT 0,
+	replies_count integer DEFAULT 0,
+	created_at timestamp with time zone DEFAULT NOW(),
+	CONSTRAINT events_posts_comments_pkey PRIMARY KEY (id),
+	FOREIGN KEY (parent_comment_id) REFERENCES events_posts_comments (id) ON DELETE CASCADE,
+	FOREIGN KEY (post_id) REFERENCES events_posts (id) ON DELETE CASCADE,
+	FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS events_products
 (
     id varchar(26),
     event_id varchar(26) NOT NULL,
-    stock integer NOT NULL,
+    stock integer NOT NULL CHECK (stock >= 0),
     brand text NOT NULL,
 	type text NOT NULL,
     description text,
@@ -215,6 +216,7 @@ CREATE TABLE IF NOT EXISTS events_products
     subtotal integer NOT NULL,
     total integer NOT NULL,
     created_at timestamp with time zone DEFAULT NOW(),
+    updated_at timestamp with time zone,
 	CONSTRAINT events_products_pkey PRIMARY KEY (id),
     FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
 );
@@ -240,4 +242,21 @@ CREATE TABLE IF NOT EXISTS events_zones
 	UNIQUE(event_id, name)
 );
 
-CREATE INDEX ON events_zones (name);`
+CREATE INDEX ON events_zones (name);
+
+CREATE TABLE IF NOT EXISTS notifications
+(
+	id varchar(26),
+	sender_id varchar(26) NOT NULL,
+	receiver_id varchar(26) NOT NULL,
+	event_id varchar(26),
+	type integer NOT NULL CHECK (type > 0 AND type < 5),
+	content text,
+	seen boolean DEFAULT FALSE,
+    created_at timestamp with time zone DEFAULT NOW(),
+	CONSTRAINT notifications_pkey PRIMARY KEY (id),
+    FOREIGN KEY (sender_id) REFERENCES users (id) ON DELETE CASCADE,
+    FOREIGN KEY (receiver_id) REFERENCES users (id) ON DELETE CASCADE,
+    FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,
+	UNIQUE(sender_id, receiver_id, type)
+);`
