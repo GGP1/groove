@@ -9,6 +9,7 @@ services:
       - 4000:4000
     volumes:
       # - ./hide/certs:/certs/
+      - ./hide/firebase/credentials.json:/firebase_credentials.json
       - ./hide/configs/config_docker.yml:/config.yml
       # - ./hide/logs/groove.log:/logs/groove.log
     networks: 
@@ -21,7 +22,7 @@ services:
       - redis
           
   dgraph:
-    image: dgraph/standalone:v21.03.0
+    image: dgraph/standalone:v21.03.2
     restart: on-failure:5
     expose:
       - 9080 # Dgraph Zero GRPC api
@@ -31,7 +32,7 @@ services:
       - storage
               
   memcached:
-    image: memcached:1.6.9-alpine
+    image: memcached:1.6.10-alpine
     restart: on-failure:5
     ports:
       - 11211:11211
@@ -39,7 +40,7 @@ services:
       - storage
 
   postgres:
-    image: postgres:13.3-alpine
+    image: postgres:14.0-alpine
     command: -c 'config_file=/etc/postgresql/postgresql.conf'
     restart: on-failure:5
     environment:
@@ -54,7 +55,7 @@ services:
       - storage
 
   redis:
-    image: redis:6.2.4-alpine
+    image: redis:6.2.5-alpine
     restart: on-failure:5
     ports:
       - 6379:6379
@@ -66,7 +67,7 @@ services:
       # - redis
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v2.30.1
     restart: on-failure:5
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -95,7 +96,7 @@ services:
 
   # Enable when necessary, works right away
   # grafana:
-  #   image: grafana/grafana:latest
+  #   image: grafana/grafana:8.1.5
   #   restart: on-failure:5
   #   ports:
   #     - 3000:3000

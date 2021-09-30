@@ -1,6 +1,6 @@
-FROM golang:1.17.0-alpine3.14 as builder
+FROM golang:1.17.1-alpine3.14 as builder
 
-# RUN apk add --update --no-cache git ca-certificates && update-ca-certificates
+RUN apk add --update --no-cache git ca-certificates && update-ca-certificates
 
 WORKDIR /go/src/app
 
@@ -16,6 +16,6 @@ FROM scratch
 
 COPY --from=builder /go/src/app/groove /usr/bin/groove
 
-# COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 ENTRYPOINT ["/usr/bin/groove"]
