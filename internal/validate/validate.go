@@ -1,12 +1,18 @@
 package validate
 
 import (
+	"regexp"
 	"strconv"
+	"unicode"
 
 	"github.com/GGP1/groove/internal/ulid"
 
 	"github.com/pkg/errors"
 )
+
+const emailStr = "^(?:(?:(?:(?:[a-zA-Z]|\\d|[!#\\$%&'\\*\\+\\-\\/=\\?\\^_`{\\|}~]|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])+(?:\\.([a-zA-Z]|\\d|[!#\\$%&'\\*\\+\\-\\/=\\?\\^_`{\\|}~]|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])+)*)|(?:(?:\\x22)(?:(?:(?:(?:\\x20|\\x09)*(?:\\x0d\\x0a))?(?:\\x20|\\x09)+)?(?:(?:[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f]|\\x21|[\\x23-\\x5b]|[\\x5d-\\x7e]|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])|(?:(?:[\\x01-\\x09\\x0b\\x0c\\x0d-\\x7f]|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}]))))*(?:(?:(?:\\x20|\\x09)*(?:\\x0d\\x0a))?(\\x20|\\x09)+)?(?:\\x22))))@(?:(?:(?:[a-zA-Z]|\\d|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])|(?:(?:[a-zA-Z]|\\d|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])(?:[a-zA-Z]|\\d|-|\\.|~|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])*(?:[a-zA-Z]|\\d|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])))\\.)+(?:(?:[a-zA-Z]|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])|(?:(?:[a-zA-Z]|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])(?:[a-zA-Z]|\\d|-|\\.|~|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])*(?:[a-zA-Z]|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])))\\.?$"
+
+var emailRegex = regexp.MustCompile(emailStr)
 
 // Cursor returns an error if the cursor is not a ulid not a number.
 func Cursor(cursor string) error {
@@ -20,80 +26,73 @@ func Cursor(cursor string) error {
 	return nil
 }
 
-// EventFields validates the fields requested.
-func EventFields(fields []string) error {
-	if fields == nil {
-		return nil
+// Email returns an error if the email passed is not valid.
+func Email(email string) error {
+	if len(email) < 7 || len(email) > 254 {
+		return errors.New("invalid email length, must be between 7 and 254 characters long")
 	}
-	for i, f := range fields {
-		switch f {
-		case "":
-			return errors.Errorf("invalid empty field at index %d", i)
-		case "id", "created_at", "updated_at", "name", "description",
-			"type", "public", "virtual", "ticket_cost", "slots", "start_time",
-			"end_time", "min_age", "url":
-			continue
-		default:
-			return errors.Errorf("unrecognized field (%s)", f)
+	if !emailRegex.MatchString(email) {
+		return errors.Errorf("invalid email: %q", email)
+	}
+	return nil
+}
+
+// Password returns an error if the password passed is not valid.
+func Password(password string) error {
+	if len(password) < 10 {
+		return errors.New("invalid password, it must contain 10 or more characters")
+	}
+	lowercase := false
+	uppercase := false
+	number := false
+	special := false
+	for _, c := range password {
+		switch {
+		case unicode.IsLower(c):
+			lowercase = true
+		case unicode.IsUpper(c):
+			uppercase = true
+		case unicode.IsNumber(c):
+			number = true
+		case unicode.IsPunct(c), unicode.IsSymbol(c):
+			special = true
+		}
+		if lowercase && uppercase && number && special {
+			return nil
+		}
+	}
+	if !lowercase || !uppercase || !number || !special {
+		return errors.New(
+			"invalid password, it must contain at least one lowercase, one uppercase, one number and one special character",
+		)
+	}
+	return nil
+}
+
+// RoleName returns an error if the name passed is invalid for a role.
+func RoleName(roleName string) error {
+	if len(roleName) > 20 {
+		return errors.New("invalid role name length, maximum is 20")
+	}
+	for _, c := range roleName {
+		if !unicode.IsLower(c) && c != '_' {
+			return errors.New("role name can contain lower case and \"_\" characters only")
 		}
 	}
 	return nil
 }
 
-// MediaFields validates all the fields correspond to the media table.
-func MediaFields(fields []string) error {
-	if fields == nil {
-		return nil
+// Username returns an error if the username passed is not valid.
+func Username(username string) error {
+	if len(username) < 1 || len(username) > 24 {
+		return errors.New("invalid username length, must be between 1 and 24 characters")
 	}
-	for i, f := range fields {
-		switch f {
-		case "":
-			return errors.Errorf("invalid empty field at index %d", i)
-		case "id", "event_id", "url", "created_at":
-			continue
-		default:
-			return errors.Errorf("unrecognized field %q", f)
-		}
-	}
-
-	return nil
-}
-
-// ProductFields validates all the fields correspond to the products table.
-func ProductFields(fields []string) error {
-	if fields == nil {
-		return nil
-	}
-	for i, f := range fields {
-		switch f {
-		case "":
-			return errors.Errorf("invalid empty field at index %d", i)
-		case "id", "event_id", "stock", "brand", "type", "description",
-			"discount", "taxes", "subtotal", "total", "created_at":
-			continue
-		default:
-			return errors.Errorf("unrecognized field %q", f)
-		}
-	}
-
-	return nil
-}
-
-// UserFields validates the correctness of the user fields passed.
-func UserFields(fields []string) error {
-	if fields == nil {
-		return nil
-	}
-	for i, f := range fields {
-		switch f {
-		case "":
-			return errors.Errorf("invalid empty field at index %d", i)
-		case "id", "created_at", "updated_at", "name", "user_id", "username",
-			"email", "description", "birth_date", "profile_image_url",
-			"premium", "private", "verified_email":
-			continue
-		default:
-			return errors.Errorf("unrecognized field %q", f)
+	for _, c := range username {
+		// Only accept lowercase, uppercase, number and (._)
+		if !unicode.IsLower(c) && !unicode.IsUpper(c) && !unicode.IsNumber(c) {
+			if c != '_' && c != '.' {
+				return errors.New("invalid username")
+			}
 		}
 	}
 	return nil

@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/GGP1/groove/internal/ulid"
@@ -41,98 +42,76 @@ func TestCursor(t *testing.T) {
 	}
 }
 
-func TestEventFields(t *testing.T) {
+func TestEmail(t *testing.T) {
 	t.Run("Valid", func(t *testing.T) {
-		fields := []string{"id", "name", "type", "public", "start_time", "end_time", "created_at", "updated_at"}
-		err := EventFields(fields)
-		assert.NoError(t, err)
-	})
-
-	t.Run("Nil", func(t *testing.T) {
-		err := EventFields(nil)
+		err := Email("testing_email_regexp@test.com")
 		assert.NoError(t, err)
 	})
 
 	t.Run("Invalid", func(t *testing.T) {
-		err := EventFields([]string{"username"})
-		assert.Error(t, err, "Expected an error and got nil")
-	})
+		emails := []string{"testing_email_regexptest.com", "@test.com", "%·$·@#2t.com", "invalid_email@test"}
 
-	t.Run("Empty field", func(t *testing.T) {
-		err := EventFields([]string{"created_at", ""})
-		assert.Error(t, err, "Expected an error and got nil")
+		for i, email := range emails {
+			t.Run(strconv.Itoa(i), func(t *testing.T) {
+				err := Email(email)
+				assert.Error(t, err)
+			})
+		}
 	})
 }
 
-func TestMediaFields(t *testing.T) {
+func TestPassword(t *testing.T) {
 	t.Run("Valid", func(t *testing.T) {
-		fields := []string{"id", "event_id", "url", "created_at"}
-		err := MediaFields(fields)
-		assert.NoError(t, err)
-	})
-
-	t.Run("Nil", func(t *testing.T) {
-		err := MediaFields(nil)
+		pwd := "eC#fnz}18A"
+		err := Password(pwd)
 		assert.NoError(t, err)
 	})
 
 	t.Run("Invalid", func(t *testing.T) {
-		err := MediaFields([]string{"username"})
-		assert.Error(t, err, "Expected an error and got nil")
-	})
+		passwords := []string{"asc1I_", "1nv4lidpassword", "123456789+123A"}
 
-	t.Run("Empty field", func(t *testing.T) {
-		err := MediaFields([]string{"created_at", ""})
-		assert.Error(t, err, "Expected an error and got nil")
+		for i, password := range passwords {
+			t.Run(strconv.Itoa(i), func(t *testing.T) {
+				err := Password(password)
+				assert.Error(t, err)
+			})
+		}
 	})
 }
 
-func TestProductFields(t *testing.T) {
+func TestRoleName(t *testing.T) {
 	t.Run("Valid", func(t *testing.T) {
-		fields := []string{"id", "event_id", "stock", "brand", "type", "description",
-			"discount", "taxes", "subtotal", "total", "created_at"}
-		err := ProductFields(fields)
-		assert.NoError(t, err)
-	})
-
-	t.Run("Nil", func(t *testing.T) {
-		err := ProductFields(nil)
+		err := RoleName("chef")
 		assert.NoError(t, err)
 	})
 
 	t.Run("Invalid", func(t *testing.T) {
-		err := ProductFields([]string{"username"})
-		assert.Error(t, err, "Expected an error and got nil")
-	})
+		roleNames := []string{"n'tall&why", "invalid-name"}
 
-	t.Run("Empty field", func(t *testing.T) {
-		err := ProductFields([]string{"created_at", ""})
-		assert.Error(t, err, "Expected an error and got nil")
+		for i, roleName := range roleNames {
+			t.Run(strconv.Itoa(i), func(t *testing.T) {
+				err := RoleName(roleName)
+				assert.Error(t, err)
+			})
+		}
 	})
 }
 
-func TestUserFields(t *testing.T) {
+func TestUsername(t *testing.T) {
 	t.Run("Valid", func(t *testing.T) {
-		fields := []string{"id", "created_at", "updated_at", "name", "user_id", "username",
-			"email", "description", "birth_date", "profile_image_url",
-			"premium", "private", "verified_email"}
-		err := UserFields(fields)
-		assert.NoError(t, err)
-	})
-
-	t.Run("Nil", func(t *testing.T) {
-		err := UserFields(nil)
+		err := Username("gastonpalomeque")
 		assert.NoError(t, err)
 	})
 
 	t.Run("Invalid", func(t *testing.T) {
-		err := UserFields([]string{"type"})
-		assert.Error(t, err, "Expected an error and got nil")
-	})
+		usernames := []string{"n'tall&wse", "contains_invalid-chars", "actuallytoolongforausername"}
 
-	t.Run("Empty field", func(t *testing.T) {
-		err := UserFields([]string{"created_at", ""})
-		assert.Error(t, err, "Expected an error and got nil")
+		for i, username := range usernames {
+			t.Run(strconv.Itoa(i), func(t *testing.T) {
+				err := Username(username)
+				assert.Error(t, err)
+			})
+		}
 	})
 }
 
@@ -171,6 +150,24 @@ func TestULIDs(t *testing.T) {
 		err := ULIDs(ids...)
 		assert.Error(t, err)
 	})
+}
+
+func BenchmarkEmail(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Email("testing_email_regex@test.com")
+	}
+}
+
+func BenchmarkPassword(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Password("8tOnVgK]/#ET{")
+	}
+}
+
+func BenchmarkUsername(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Username("testing_username_regex")
+	}
 }
 
 func BenchmarkULID(b *testing.B) {
