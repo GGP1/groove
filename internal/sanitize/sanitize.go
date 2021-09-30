@@ -1,15 +1,20 @@
 package sanitize
 
+import (
+	"strings"
+	"unicode/utf8"
+)
+
 // Normalize replaces latin script letters with unique and equivalent characters.
 //
 // Usually only names, emails and usernames should be normalized.
 func Normalize(s string) string {
-	runes := []rune(s)
-	if len(runes) == len(s) {
+	if utf8.RuneCountInString(s) == len(s) {
 		// Return if the string is made up off 1 byte characters only
 		return s
 	}
 
+	runes := []rune(s)
 	for i, r := range runes {
 		if r < 0x00C0 || r > 0x2184 {
 			continue
@@ -21,6 +26,13 @@ func Normalize(s string) string {
 	}
 
 	return string(runes)
+}
+
+// Strings takes n string to trim their spaces and normalize them.
+func Strings(slice ...*string) {
+	for _, s := range slice {
+		*s = Normalize(strings.TrimSpace(*s))
+	}
 }
 
 var normalized = map[rune]rune{
