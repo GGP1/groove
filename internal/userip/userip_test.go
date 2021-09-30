@@ -9,15 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestFromContext(t *testing.T) {
-	ip := "135.15.3.42"
-	valueCtx := NewContext(context.Background(), ip)
-
-	got, ok := FromContext(valueCtx)
-	assert.Equal(t, ok, true)
-	assert.Equal(t, ip, got)
-}
-
 func TestFromRequest(t *testing.T) {
 	cases := []struct {
 		desc     string
@@ -58,7 +49,7 @@ func TestFromRequest(t *testing.T) {
 
 			r.Header.Set(tc.key, tc.value)
 
-			got := FromRequest(r)
+			got := fromRequest(r)
 			assert.Equal(t, tc.expected, got)
 		})
 	}
@@ -67,7 +58,7 @@ func TestFromRequest(t *testing.T) {
 		r := httptest.NewRequest("GET", "/", nil)
 		r.RemoteAddr = "127.0.0.1:8080"
 
-		got := FromRequest(r)
+		got := fromRequest(r)
 		assert.Equal(t, "127.0.0.1", got)
 	})
 }

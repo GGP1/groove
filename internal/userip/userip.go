@@ -26,20 +26,21 @@ var userIPKey key
 // other packages.
 type key struct{}
 
-// NewContext returns a new Context carrying userIP.
-func NewContext(ctx context.Context, userIP string) context.Context {
-	return context.WithValue(ctx, userIPKey, userIP)
+// Get returns the user IP. If it's retrieved from the request it sets it in the request's context.
+func Get(ctx context.Context, r *http.Request) string {
+	if userIP, ok := r.Context().Value(userIPKey).(string); ok {
+		return userIP
+	}
+
+	ip := fromRequest(r)
+	// Add ip to the request context
+	*r = *r.WithContext(context.WithValue(ctx, userIPKey, ip))
+
+	return ip
 }
 
-// FromContext extracts the user IP address from ctx, if present.
-func FromContext(ctx context.Context) (string, bool) {
-	// ctx.Value returns nil if ctx has no value for the key.
-	userIP, ok := ctx.Value(userIPKey).(string)
-	return userIP, ok
-}
-
-// FromRequest extracts the user IP from the request and returns it.
-func FromRequest(r *http.Request) string {
+// fromRequest extracts the user IP from the request and returns it.
+func fromRequest(r *http.Request) string {
 	ip := r.RemoteAddr
 	if strings.Contains(ip, ":") {
 		host, _, err := net.SplitHostPort(ip)
@@ -70,19 +71,6 @@ func FromRequest(r *http.Request) string {
 		return parseForwardedHeader(f)
 	}
 
-	return ip
-}
-
-// Get returns the user IP. If it's retrieved from the request it sets it in the request's context.
-func Get(ctx context.Context, r *http.Request) string {
-	ip, ok := FromContext(ctx)
-	if !ok {
-		ip := FromRequest(r)
-		// Add ip to the request context
-		*r = *r.WithContext(context.WithValue(ctx, userIPKey, ip))
-
-		return ip
-	}
 	return ip
 }
 
