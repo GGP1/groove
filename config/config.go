@@ -15,26 +15,25 @@ import (
 
 // Config represents groove's configuration.
 type Config struct {
-	Admins      map[string]interface{}
-	Development bool
-
-	Dgraph        Dgraph
+	Admins        map[string]interface{}
+	TLS           TLS
 	Logger        Logger
-	Memcached     Memcached
 	Notifications Notifications
+	Dgraph        Dgraph
+	Memcached     Memcached
 	Postgres      Postgres
-	RateLimiter   RateLimiter
 	Redis         Redis
 	Server        Server
 	Sessions      Sessions
-	TLS           TLS
+	RateLimiter   RateLimiter
+	Development   bool
 }
 
 // Dgraph configuration.
 type Dgraph struct {
 	Host            string
-	Port            int
 	TLSCertificates []tls.Certificate
+	Port            int
 }
 
 // Logger contains Zap's configurations.
@@ -44,10 +43,10 @@ type Logger struct {
 
 // Memcached configuration.
 type Memcached struct {
-	ItemsExpiration int32
-	MaxIdleConns    int
 	Servers         []string
+	MaxIdleConns    int
 	Timeout         time.Duration
+	ItemsExpiration int32
 }
 
 // Notifications configuration.
@@ -82,28 +81,28 @@ type Redis struct {
 	Host            string
 	Port            string
 	Password        string
+	TLSCertificates []tls.Certificate
 	PoolSize        int
 	MinIdleConns    int
-	TLSCertificates []tls.Certificate
 	MetricsRate     time.Duration
 }
 
 // Server configuration.
 type Server struct {
-	Host        string
-	Port        string
-	LetsEncrypt struct {
-		Enabled   bool
-		AcceptTOS bool
+	Host            string
+	Port            string
+	TLSCertificates []tls.Certificate
+	LetsEncrypt     struct {
 		Cache     string
 		Hosts     []string
+		Enabled   bool
+		AcceptTOS bool
 	}
 	Timeout struct {
 		Read     time.Duration
 		Write    time.Duration
 		Shutdown time.Duration
 	}
-	TLSCertificates []tls.Certificate
 }
 
 // Sessions configuration.

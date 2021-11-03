@@ -25,7 +25,7 @@ func TestNew(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
-			os.Setenv("groove_CONFIG", tc.path)
+			os.Setenv("GROOVE_CONFIG", tc.path)
 
 			_, err := New()
 			assert.NoError(t, err)
@@ -33,10 +33,10 @@ func TestNew(t *testing.T) {
 			gotDev := viper.Get("development")
 			assert.Equal(t, expectedDev, gotDev)
 
-			gotDBHost := viper.Get("database.host")
+			gotDBHost := viper.Get("postgres.host")
 			assert.Equal(t, expectedDBHost, gotDBHost)
 
-			gotDBPort := viper.Get("database.port")
+			gotDBPort := viper.Get("postgres.port")
 			assert.Equal(t, expectedDBPort, gotDBPort)
 		})
 	}
@@ -52,9 +52,9 @@ func TestNew(t *testing.T) {
 
 func TestNewErrors(t *testing.T) {
 	cases := []struct {
+		set  func()
 		desc string
 		path string
-		set  func()
 	}{
 		{
 			desc: "Invalid path",
