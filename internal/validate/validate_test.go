@@ -42,6 +42,57 @@ func TestCursor(t *testing.T) {
 	}
 }
 
+func TestCron(t *testing.T) {
+	cases := []struct {
+		cron  string
+		valid bool
+	}{
+		{
+			cron:  "0 0 * * * 60",
+			valid: true,
+		},
+		{
+			cron:  "15 12 22 8-10 2 5",
+			valid: true,
+		},
+		{
+			cron:  "15 12 5,8 10 4L 2",
+			valid: true,
+		},
+		{
+			cron:  "0 0 9,12,22 0 * 90",
+			valid: true,
+		},
+		{
+			cron:  "* 5 * * * 60",
+			valid: false,
+		},
+		{
+			cron:  "15 12 5,8 10 8L 2",
+			valid: false,
+		},
+		{
+			cron:  "15-50 12 * * 1 20",
+			valid: false,
+		},
+		{
+			cron:  ",3 4 * * 5 87",
+			valid: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.cron, func(t *testing.T) {
+			err := Cron(tc.cron)
+			if tc.valid {
+				assert.NoError(t, err)
+			} else {
+				assert.Error(t, err)
+			}
+		})
+	}
+}
+
 func TestEmail(t *testing.T) {
 	t.Run("Valid", func(t *testing.T) {
 		err := Email("testing_email_regexp@test.com")
@@ -57,6 +108,16 @@ func TestEmail(t *testing.T) {
 				assert.Error(t, err)
 			})
 		}
+	})
+}
+
+func TestKey(t *testing.T) {
+	t.Run("Valid", func(t *testing.T) {
+		assert.NoError(t, Key("valid_key"))
+	})
+
+	t.Run("Invalid", func(t *testing.T) {
+		assert.Error(t, Key("key_too_long_to_be_valid"))
 	})
 }
 
@@ -150,6 +211,27 @@ func TestULIDs(t *testing.T) {
 		err := ULIDs(ids...)
 		assert.Error(t, err)
 	})
+}
+
+func TestURL(t *testing.T) {
+	t.Run("Valid", func(t *testing.T) {
+		url := ""
+		err := URL(url)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Invalid", func(t *testing.T) {
+		url := ""
+		err := URL(url)
+		assert.Error(t, err)
+	})
+}
+
+func BenchmarkCron(b *testing.B) {
+	cron := "30 12 17-26 0,1,4,8,9 0 4789004"
+	for i := 0; i < b.N; i++ {
+		Cron(cron)
+	}
 }
 
 func BenchmarkEmail(b *testing.B) {

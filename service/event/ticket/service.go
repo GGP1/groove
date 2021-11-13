@@ -9,6 +9,7 @@ import (
 	"github.com/GGP1/groove/internal/sqltx"
 	"github.com/GGP1/groove/service/event/role"
 	"github.com/GGP1/groove/storage/postgres"
+	"github.com/GGP1/sqan"
 
 	"github.com/pkg/errors"
 )
@@ -52,10 +53,8 @@ func NewService(db *sql.DB, cache cache.Client, roleService role.Service) Servic
 
 // AvailableTickets returns the number of available tickets.
 func (s service) AvailableTickets(ctx context.Context, eventID, ticketName string) (int64, error) {
-	sqlTx := sqltx.FromContext(ctx)
-
 	q := "SELECT available_count FROM events_tickets WHERE event_id=$1 AND name=$2"
-	return postgres.QueryInt(ctx, sqlTx, q, eventID, ticketName)
+	return postgres.QueryInt(ctx, s.db, q, eventID, ticketName)
 }
 
 // BuyTicket performs the operations necessary when a ticket is bought.
@@ -68,12 +67,14 @@ func (s service) BuyTicket(ctx context.Context, eventID, userID, ticketName stri
 	available_count = available_count - 1 
 	WHERE event_id=$1 AND name=$2
 	RETURNING linked_role`
-	linkedRole, err := postgres.QueryString(ctx, sqlTx, q, eventID, ticketName)
-	if err != nil {
+	row := sqlTx.QueryRowContext(ctx, q, eventID, ticketName)
+	var linkedRole string
+	if err := row.Scan(&linkedRole); err != nil {
 		return errors.Wrap(err, "updating ticket availability")
 	}
 
-	return s.roleService.SetRoles(ctx, eventID, linkedRole, userID)
+	setRole := role.SetRole{RoleName: linkedRole, UserIDs: []string{userID}}
+	return s.roleService.SetRole(ctx, eventID, setRole)
 }
 
 // CreateTickets adds n tickets to the event.
@@ -89,10 +90,12 @@ func (s service) CreateTickets(ctx context.Context, eventID string, tickets []Ti
 	q := "SELECT EXISTS(SELECT 1 FROM events_roles WHERE name=$1)"
 	for _, ticket := range tickets {
 		if ticket.LinkedRole != "" && !roles.Reserved.Exists(ticket.LinkedRole) {
-			exists, err := postgres.QueryBool(ctx, sqlTx, q, ticket.LinkedRole)
-			if err != nil {
-				return errors.Wrap(err, "querying role name")
+			row := sqlTx.QueryRowContext(ctx, q, ticket.LinkedRole)
+			var exists bool
+			if err := row.Scan(&exists); err != nil {
+				return errors.Wrap(err, "querying role existence")
 			}
+
 			if !exists {
 				return errors.Errorf("role %q does not exists in the event", ticket.LinkedRole)
 			}
@@ -125,14 +128,15 @@ func (s service) DeleteTicket(ctx context.Context, eventID, ticketName string) e
 
 // GetTicket returns the ticket with the given name.
 func (s service) GetTicket(ctx context.Context, eventID, ticketName string) (Ticket, error) {
-	sqlTx := sqltx.FromContext(ctx)
-
 	q := "SELECT available_count, name, cost, linked_role FROM events_tickets WHERE event_id=$1"
-	row := sqlTx.QueryRowContext(ctx, q, eventID, ticketName)
-	var ticket Ticket
-	err := row.Scan(&ticket.AvailableCount, &ticket.Name, &ticket.Cost, &ticket.LinkedRole)
+	rows, err := s.db.QueryContext(ctx, q, eventID, ticketName)
 	if err != nil {
 		return Ticket{}, errors.Wrap(err, "scanning ticket")
+	}
+
+	var ticket Ticket
+	if err := sqan.Row(&ticket, rows); err != nil {
+		return Ticket{}, err
 	}
 
 	return ticket, nil
@@ -140,25 +144,15 @@ func (s service) GetTicket(ctx context.Context, eventID, ticketName string) (Tic
 
 // GetTickets returns an event's tickets.
 func (s service) GetTickets(ctx context.Context, eventID string) ([]Ticket, error) {
-	sqlTx := sqltx.FromContext(ctx)
-
 	q := "SELECT available_count, name, cost, linked_role FROM events_tickets WHERE event_id=$1"
-	rows, err := sqlTx.QueryContext(ctx, q, eventID)
+	rows, err := s.db.QueryContext(ctx, q, eventID)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching tickets")
 	}
 
-	var (
-		tickets []Ticket
-		ticket  Ticket
-	)
-	for rows.Next() {
-		err := rows.Scan(&ticket.AvailableCount, &ticket.Name, &ticket.Cost, &ticket.LinkedRole)
-		if err != nil {
-			return nil, errors.Wrap(err, "scanning tickets")
-		}
-
-		tickets = append(tickets, ticket)
+	var tickets []Ticket
+	if err := sqan.Rows(&tickets, rows); err != nil {
+		return nil, errors.Wrap(err, "scanning tickets")
 	}
 
 	return tickets, nil
@@ -185,13 +179,14 @@ func (s service) UpdateTicket(ctx context.Context, eventID, ticketName string, u
 	cost = COALESCE($4,cost), 
 	linked_role = COALESCE($5,linked_role) 
 	WHERE event_id=$1 AND name=$2
-	RETURNING (SELECT available_count FROM events_tickets WHERE event_id=$1 AND name=$2`
-	oldAvailableCount, err := postgres.QueryInt(ctx, sqlTx, q, eventID, ticketName,
+	RETURNING (SELECT available_count FROM events_tickets WHERE event_id=$1 AND name=$2)`
+	row := sqlTx.QueryRowContext(ctx, q, q, eventID, ticketName,
 		updateTicket.AvailableCount, updateTicket.Cost, updateTicket.LinkedRole)
-	if err != nil {
+
+	var oldAvailableCount int64
+	if err := row.Scan(&oldAvailableCount); err != nil {
 		return errors.Wrap(err, "updating ticket")
 	}
-
 	if updateTicket.AvailableCount != nil {
 		// if available_count is updated, update the event's total slots
 		q2 := `UPDATE events SET slots = slots + $2 WHERE event_id=$1`

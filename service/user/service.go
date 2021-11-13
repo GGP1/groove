@@ -4,20 +4,23 @@ import (
 	"context"
 	"database/sql"
 	"encoding/binary"
+	"fmt"
 	"time"
 
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/httperr"
 	"github.com/GGP1/groove/internal/log"
 	"github.com/GGP1/groove/internal/params"
-	"github.com/GGP1/groove/internal/scan"
+	"github.com/GGP1/groove/internal/roles"
 	"github.com/GGP1/groove/internal/sqltx"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/auth"
 	"github.com/GGP1/groove/service/event"
+	"github.com/GGP1/groove/service/event/role"
 	"github.com/GGP1/groove/service/notification"
 	"github.com/GGP1/groove/storage/dgraph"
 	"github.com/GGP1/groove/storage/postgres"
+	"github.com/GGP1/sqan"
 
 	"github.com/dgraph-io/dgo/v210"
 	"github.com/dgraph-io/dgo/v210/protos/api"
@@ -34,10 +37,11 @@ type Service interface {
 	CanInvite(ctx context.Context, authUserID, invitedID string) (bool, error)
 	Create(ctx context.Context, userID string, user CreateUser) error
 	Delete(ctx context.Context, userID string) error
-	Follow(ctx context.Context, session auth.Session, organizationID string) error
+	Follow(ctx context.Context, session auth.Session, businessID string) error
 	GetAttendingEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
 	GetAttendingEventsCount(ctx context.Context, userID string) (int64, error)
 	GetBannedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
+	GetBannedEventsCount(ctx context.Context, userID string) (*uint64, error)
 	GetBlocked(ctx context.Context, userID string, params params.Query) ([]User, error)
 	GetBlockedCount(ctx context.Context, userID string) (*uint64, error)
 	GetBlockedBy(ctx context.Context, userID string, params params.Query) ([]User, error)
@@ -45,6 +49,10 @@ type Service interface {
 	GetByEmail(ctx context.Context, value string) (User, error)
 	GetByID(ctx context.Context, value string) (User, error)
 	GetByUsername(ctx context.Context, value string) (User, error)
+	GetFollowers(ctx context.Context, userID string, params params.Query) ([]User, error)
+	GetFollowersCount(ctx context.Context, userID string) (*uint64, error)
+	GetFollowing(ctx context.Context, userID string, params params.Query) ([]User, error)
+	GetFollowingCount(ctx context.Context, userID string) (*uint64, error)
 	GetFriends(ctx context.Context, userID string, params params.Query) ([]User, error)
 	GetFriendsCount(ctx context.Context, userID string) (*uint64, error)
 	GetFriendsInCommon(ctx context.Context, userID, friendID string, params params.Query) ([]User, error)
@@ -52,7 +60,9 @@ type Service interface {
 	GetFriendsNotInCommon(ctx context.Context, userID, friendID string, params params.Query) ([]User, error)
 	GetFriendsNotInCommonCount(ctx context.Context, userID, friendID string) (*uint64, error)
 	GetInvitedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
+	GetInvitedEventsCount(ctx context.Context, userID string) (int64, error)
 	GetHostedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
+	GetHostedEventsCount(ctx context.Context, userID string) (int64, error)
 	GetLikedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
 	GetStatistics(ctx context.Context, userID string) (Statistics, error)
 	InviteToEvent(ctx context.Context, session auth.Session, invite Invite) error
@@ -75,6 +85,7 @@ type service struct {
 	metrics metrics
 
 	notificationService notification.Service
+	roleService         role.Service
 }
 
 // NewService returns a new user service.
@@ -84,6 +95,7 @@ func NewService(
 	cache cache.Client,
 	admins map[string]interface{},
 	notificationService notification.Service,
+	roleService role.Service,
 ) Service {
 	return &service{
 		db:                  db,
@@ -92,6 +104,7 @@ func NewService(
 		admins:              admins,
 		metrics:             initMetrics(),
 		notificationService: notificationService,
+		roleService:         roleService,
 	}
 }
 
@@ -173,21 +186,21 @@ func (s service) CanInvite(ctx context.Context, authUserID, invitedID string) (b
 	s.metrics.incMethodCalls("CanInvite")
 	sqlTx := sqltx.FromContext(ctx)
 
-	var invitations invitations
+	var invitations model.Invitations
 	q := "SELECT invitations FROM users WHERE id=$1"
 	if err := sqlTx.QueryRowContext(ctx, q, invitedID).Scan(&invitations); err != nil {
 		return false, errors.Wrap(err, "querying invitations")
 	}
 
 	switch invitations {
-	case Friends:
+	case model.Friends:
 		// user and invited must be friends
 		areFriends, err := s.AreFriends(ctx, authUserID, invitedID)
 		if err != nil {
 			return false, err
 		}
 		return areFriends, nil
-	case Nobody:
+	case model.Nobody:
 		return false, nil
 	default:
 		return false, errors.New("internal inconsistency")
@@ -217,10 +230,10 @@ func (s service) Create(ctx context.Context, userID string, user CreateUser) err
 
 	// Use default invitations settings depending on the user type
 	switch *user.Type {
-	case model.Standard:
-		user.Invitations = Friends
-	case model.Organization:
-		user.Invitations = Nobody
+	case model.Personal:
+		user.Invitations = model.Friends
+	case model.Business:
+		user.Invitations = model.Nobody
 	}
 
 	q3 := `INSERT INTO users 
@@ -295,18 +308,20 @@ func (s service) Delete(ctx context.Context, userID string) error {
 	return nil
 }
 
-// Follow follows an organization.
-func (s service) Follow(ctx context.Context, session auth.Session, organizationID string) error {
-	typ, err := s.Type(ctx, organizationID)
+// Follow follows an business.
+func (s service) Follow(ctx context.Context, session auth.Session, businessID string) error {
+	s.metrics.incMethodCalls("Follow")
+
+	typ, err := s.Type(ctx, businessID)
 	if err != nil {
 		return err
 	}
-	if typ != model.Organization {
-		return httperr.New("only organizations can be followed", httperr.Forbidden)
+	if typ != model.Business {
+		return httperr.Forbidden("only businesses can be followed")
 	}
 
 	return dgraph.Mutation(ctx, s.dc, func(tx *dgo.Txn) error {
-		req := dgraph.UserEdgeRequest(session.ID, dgraph.Follows, organizationID, true)
+		req := dgraph.UserEdgeRequest(session.ID, dgraph.Follows, businessID, true)
 		if _, err := tx.Do(ctx, req); err != nil {
 			return errors.Wrap(err, "creating follows edge")
 		}
@@ -318,15 +333,15 @@ func (s service) Follow(ctx context.Context, session auth.Session, organizationI
 func (s service) GetAttendingEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error) {
 	s.metrics.incMethodCalls("GetAttendingEvents")
 
-	whereCond := "id IN (SELECT event_id FROM events_users_roles WHERE user_id=$1)"
+	whereCond := "id IN (SELECT event_id FROM events_users_roles WHERE user_id=$1 AND role_name != $2)"
 	q := postgres.SelectWhere(model.Event, whereCond, "id", params)
-	rows, err := s.db.QueryContext(ctx, q, userID)
+	rows, err := s.db.QueryContext(ctx, q, userID, roles.Viewer)
 	if err != nil {
 		return nil, err
 	}
 
 	var events []event.Event
-	if err := scan.Rows(&events, rows); err != nil {
+	if err := sqan.Rows(&events, rows); err != nil {
 		return nil, err
 	}
 
@@ -337,14 +352,8 @@ func (s service) GetAttendingEvents(ctx context.Context, userID string, params p
 func (s service) GetAttendingEventsCount(ctx context.Context, userID string) (int64, error) {
 	s.metrics.incMethodCalls("GetAttendingEventsCount")
 
-	sqlTx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
-	if err != nil {
-		return 0, err
-	}
-	defer sqlTx.Rollback()
-
-	q := "SELECT COUNT(*) FROM events_users_roles WHERE user_id=$1"
-	count, err := postgres.QueryInt(ctx, sqlTx, q, userID)
+	q := "SELECT COUNT(*) FROM events_users_roles WHERE user_id=$1 AND role_name != $2"
+	count, err := postgres.QueryInt(ctx, s.db, q, userID, roles.Viewer)
 	if err != nil {
 		return 0, err
 	}
@@ -352,27 +361,40 @@ func (s service) GetAttendingEventsCount(ctx context.Context, userID string) (in
 	return count, nil
 }
 
-// GetBannedEvents returns the events that the user is attending.
+// GetBannedEvents returns the events that the user is banned from.
 func (s service) GetBannedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error) {
 	s.metrics.incMethodCalls("GetBannedEvents")
 
-	predicate := banned
+	query := banned
 	if params.LookupID != "" {
-		predicate = bannedLookup
+		query = bannedLookup
 	}
 
-	return s.getEventsEdge(ctx, userID, predicate, params)
+	return s.getEventsEdge(ctx, userID, query, params)
+}
+
+// GetBannedEvents returns the number of events that the user is banned from.
+func (s service) GetBannedEventsCount(ctx context.Context, userID string) (*uint64, error) {
+	s.metrics.incMethodCalls("GetBannedEventsCount")
+
+	vars := map[string]string{"$id": userID}
+	res, err := s.dc.NewReadOnlyTxn().QueryRDFWithVars(ctx, getQuery[bannedCount], vars)
+	if err != nil {
+		return nil, errors.Wrap(err, "dgraph: fetching banned events count")
+	}
+
+	return dgraph.ParseCount(res.Rdf)
 }
 
 func (s service) GetBlocked(ctx context.Context, userID string, params params.Query) ([]User, error) {
 	s.metrics.incMethodCalls("GetBlocked")
 
-	predicate := blocked
+	query := blocked
 	if params.LookupID != "" {
-		predicate = blockedLookup
+		query = blockedLookup
 	}
 
-	return s.getUsersEdge(ctx, userID, predicate, params)
+	return s.getUsersEdge(ctx, userID, query, params)
 }
 
 func (s service) GetBlockedCount(ctx context.Context, userID string) (*uint64, error) {
@@ -384,12 +406,12 @@ func (s service) GetBlockedCount(ctx context.Context, userID string) (*uint64, e
 func (s service) GetBlockedBy(ctx context.Context, userID string, params params.Query) ([]User, error) {
 	s.metrics.incMethodCalls("GetBlockedBy")
 
-	predicate := blockedBy
+	query := blockedBy
 	if params.LookupID != "" {
-		predicate = blockedByLookup
+		query = blockedByLookup
 	}
 
-	return s.getUsersEdge(ctx, userID, predicate, params)
+	return s.getUsersEdge(ctx, userID, query, params)
 }
 
 func (s service) GetBlockedByCount(ctx context.Context, userID string) (*uint64, error) {
@@ -402,7 +424,7 @@ func (s service) GetByEmail(ctx context.Context, email string) (User, error) {
 	s.metrics.incMethodCalls("GetByEmail")
 
 	q := `SELECT 
-	id, name, username, email, birth_date, description, private, 
+	id, name, username, email, birth_date, description, private, type,
 	verified_email, profile_image_url, invitations, created_at, updated_at
 	FROM users WHERE email=$1`
 	return s.getBy(ctx, q, email)
@@ -412,7 +434,7 @@ func (s service) GetByID(ctx context.Context, userID string) (User, error) {
 	s.metrics.incMethodCalls("GetByID")
 
 	q := `SELECT 
-	id, name, username, email, birth_date, description, private, 
+	id, name, username, email, birth_date, description, private, type,
 	verified_email, profile_image_url, invitations, created_at, updated_at
 	FROM users WHERE id=$1`
 	return s.getBy(ctx, q, userID)
@@ -422,22 +444,62 @@ func (s service) GetByUsername(ctx context.Context, username string) (User, erro
 	s.metrics.incMethodCalls("GetByUsername")
 
 	q := `SELECT 
-	id, name, username, email, birth_date, description, private, 
+	id, name, username, email, birth_date, description, private, type,
 	verified_email, profile_image_url, invitations, created_at, updated_at
 	FROM users WHERE username=$1`
 	return s.getBy(ctx, q, username)
+}
+
+// GetFollowers returns a user's followers. Only businesses can have followers, calling this on
+// a standard user will return always nil.
+func (s service) GetFollowers(ctx context.Context, userID string, params params.Query) ([]User, error) {
+	s.metrics.incMethodCalls("GetFollowers")
+
+	query := followers
+	if params.LookupID != "" {
+		query = followersLookup
+	}
+
+	return s.getUsersEdge(ctx, userID, query, params)
+}
+
+// GetFollowersCount returns a user's number of followers. Only businesses can have followers, calling this on
+// a standard user will return always 0.
+func (s service) GetFollowersCount(ctx context.Context, userID string) (*uint64, error) {
+	s.metrics.incMethodCalls("GetFollowersCount")
+
+	return dgraph.GetCount(ctx, s.dc, getQuery[followersCount], userID)
+}
+
+// GetFollowing returns the businesses the user is following.
+func (s service) GetFollowing(ctx context.Context, userID string, params params.Query) ([]User, error) {
+	s.metrics.incMethodCalls("GetFollowing")
+
+	query := following
+	if params.LookupID != "" {
+		query = followingLookup
+	}
+
+	return s.getUsersEdge(ctx, userID, query, params)
+}
+
+// GetFollowingCount returns the number of businesses the user is following.
+func (s service) GetFollowingCount(ctx context.Context, userID string) (*uint64, error) {
+	s.metrics.incMethodCalls("GetFollowingCount")
+
+	return dgraph.GetCount(ctx, s.dc, getQuery[followingCount], userID)
 }
 
 // GetFriends returns people the user fetched is friend of.
 func (s service) GetFriends(ctx context.Context, userID string, params params.Query) ([]User, error) {
 	s.metrics.incMethodCalls("GetFriends")
 
-	predicate := friends
+	query := friends
 	if params.LookupID != "" {
-		predicate = friendsLookup
+		query = friendsLookup
 	}
 
-	return s.getUsersEdge(ctx, userID, predicate, params)
+	return s.getUsersEdge(ctx, userID, query, params)
 }
 
 // GetFriendsCount returns the number of users friends of the one fetched.
@@ -451,12 +513,12 @@ func (s service) GetFriendsCount(ctx context.Context, userID string) (*uint64, e
 func (s service) GetFriendsInCommon(ctx context.Context, userID, friendID string, params params.Query) ([]User, error) {
 	s.metrics.incMethodCalls("GetFriendsInCommon")
 
-	predicate := friendsInCommon
+	query := friendsInCommon
 	if params.LookupID != "" {
-		predicate = friendsInCommonLookup
+		query = friendsInCommonLookup
 	}
 
-	return s.getUsersMixedEdge(ctx, userID, friendID, predicate, params)
+	return s.getUsersMixedEdge(ctx, userID, friendID, query, params)
 }
 
 // GetFriendsInCommonCount returns the number of matching friends between userID and friendID.
@@ -471,12 +533,12 @@ func (s service) GetFriendsInCommonCount(ctx context.Context, userID, friendID s
 func (s service) GetFriendsNotInCommon(ctx context.Context, userID, friendID string, params params.Query) ([]User, error) {
 	s.metrics.incMethodCalls("GetFriendsNotInCommon")
 
-	predicate := friendsNotInCommon
+	query := friendsNotInCommon
 	if params.LookupID != "" {
-		predicate = friendsNotInCommonLookup
+		query = friendsNotInCommonLookup
 	}
 
-	return s.getUsersMixedEdge(ctx, userID, friendID, predicate, params)
+	return s.getUsersMixedEdge(ctx, userID, friendID, query, params)
 }
 
 // GetFriendsNotInCommonCount returns the number of non-matching friends between userID and friendID.
@@ -491,64 +553,39 @@ func (s service) GetFriendsNotInCommonCount(ctx context.Context, userID, friendI
 func (s service) GetHostedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error) {
 	s.metrics.incMethodCalls("GetHostedEvents")
 
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
-	if err != nil {
-		return nil, errors.Wrap(err, "starting transaction")
-	}
-	defer tx.Rollback()
+	return s.getUserEvents(ctx, userID, string(roles.Host), params)
+}
 
-	query := "SELECT event_id FROM events_users_roles WHERE user_id=$1 AND role_name='host'"
-	q := postgres.AddPagination(query, "event_id", params)
-	rows, err := tx.QueryContext(ctx, q, userID)
-	if err != nil {
-		return nil, errors.Wrap(err, "fetching events")
-	}
+// GetHostedEventsCount returns the number of events hosted by the user with the given id.
+func (s service) GetHostedEventsCount(ctx context.Context, userID string) (int64, error) {
+	s.metrics.incMethodCalls("GetHostedEventsCount")
 
-	eventsIds, err := postgres.ScanStringSlice(rows)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(eventsIds) == 0 {
-		return nil, nil
-	}
-
-	q2 := postgres.SelectInID(model.User, eventsIds, params.Fields)
-	rows2, err := tx.QueryContext(ctx, q2)
-	if err != nil {
-		return nil, errors.Wrap(err, "fetching events")
-	}
-
-	var events []event.Event
-	if err := scan.Rows(&events, rows2); err != nil {
-		return nil, err
-	}
-
-	return events, nil
+	return s.roleService.GetUserEventsCount(ctx, userID, string(roles.Host))
 }
 
 // GetInvitedEvents returns the events that the user is invited to.
 func (s service) GetInvitedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error) {
 	s.metrics.incMethodCalls("GetInvitedEvents")
 
-	predicate := invited
-	if params.LookupID != "" {
-		predicate = invitedLookup
-	}
+	return s.getUserEvents(ctx, userID, string(roles.Viewer), params)
+}
 
-	return s.getEventsEdge(ctx, userID, predicate, params)
+// GetInvitedEvents returns the number of events that the user is banned from.
+func (s service) GetInvitedEventsCount(ctx context.Context, userID string) (int64, error) {
+	s.metrics.incMethodCalls("GetInvitedEventsCount")
+
+	return s.roleService.GetUserEventsCount(ctx, userID, string(roles.Viewer))
 }
 
 // GetLikedEvents returns the events that the user likes.
 func (s service) GetLikedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error) {
 	s.metrics.incMethodCalls("GetLikedEvents")
 
-	predicate := likedBy
+	query := likedBy
 	if params.LookupID != "" {
-		predicate = likedByLookup
+		query = likedByLookup
 	}
-
-	return s.getEventsEdge(ctx, userID, predicate, params)
+	return s.getEventsEdge(ctx, userID, query, params)
 }
 
 // GetStatistics returns a users' predicates statistics.
@@ -562,6 +599,7 @@ func (s service) GetStatistics(ctx context.Context, userID string) (Statistics, 
 			count(friend)
 			count(~invited)
 			count(~follows)
+			count(~liked_by)
 		}
 	}`
 	vars := map[string]string{"$id": userID}
@@ -581,42 +619,83 @@ func (s service) GetStatistics(ctx context.Context, userID string) (Statistics, 
 		return Statistics{}, err
 	}
 
+	hostedCount, err := s.GetHostedEventsCount(ctx, userID)
+	if err != nil {
+		return Statistics{}, err
+	}
+
 	return Statistics{
 		Blocked:         mp["blocked"],
 		BlockedBy:       mp["~blocked"],
 		Friends:         mp["friend"],
 		Followers:       mp["~follows"],
 		AttendingEvents: attendingCount,
+		HostedEvents:    hostedCount,
 		InvitedEvents:   mp["~invited"],
+		LikedEvents:     mp["~liked_by"],
 	}, nil
 }
 
 // InviteToEvent invites a user to an event.
 func (s service) InviteToEvent(ctx context.Context, session auth.Session, invite Invite) error {
-	canInvite, err := s.CanInvite(ctx, session.ID, invite.UserID)
-	if err != nil {
-		return err
-	}
-	if !canInvite {
-		return httperr.New("you aren't allowed to invite this user", httperr.Forbidden)
+	s.metrics.incMethodCalls("InviteToEvent")
+
+	for _, userID := range invite.UserIDs {
+		canInvite, err := s.CanInvite(ctx, session.ID, userID)
+		if err != nil {
+			return err
+		}
+		if !canInvite {
+			return httperr.Forbidden(fmt.Sprintf("you aren't allowed to invite the user %q", userID))
+		}
 	}
 
-	err = s.notificationService.Create(ctx, session, notification.CreateNotification{
-		SenderID:   session.ID,
-		ReceiverID: invite.UserID,
-		EventID:    &invite.EventID,
-		Content:    notification.InvitationContent(session),
-		Type:       notification.Invitation,
+	q := `
+	query q($user_id: string, $target_id: string) {
+		user as var(func: eq(user_id, $user_id))
+		target as var(func: eq(user_id, $target_id))
+		}`
+	req := &api.Request{
+		Vars:  map[string]string{"$user_id": session.ID},
+		Query: q,
+		Mutations: []*api.Mutation{{
+			Cond:      "@if(eq(len(user), 1) AND eq(len(target), 1))",
+			SetNquads: dgraph.TripleUID("uid(user)", string(dgraph.Invited), "uid(target)"),
+		}},
+	}
+
+	err := dgraph.Mutation(ctx, s.dc, func(tx *dgo.Txn) error {
+		for _, userID := range invite.UserIDs {
+			// Replace the target id on each iteration
+			req.Vars["$target_id"] = userID
+			if _, err := tx.Do(ctx, req); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
-		return errors.Wrap(err, "creating invitation notification")
+		return errors.Wrap(err, "creating invited edges")
 	}
 
-	return dgraph.AddEventEdge(ctx, s.dc, invite.EventID, dgraph.Invited, invite.UserID)
+	err = s.notificationService.CreateMany(ctx, session, notification.CreateNotificationMany{
+		SenderID:    session.ID,
+		ReceiverIDs: invite.UserIDs,
+		EventID:     &invite.EventID,
+		Content:     notification.InvitationContent(session),
+		Type:        notification.Invitation,
+	})
+	if err != nil {
+		return errors.Wrap(err, "creating invitation notifications")
+	}
+
+	return nil
 }
 
 // IsAdmin returns if the user is an administrator or not.
 func (s service) IsAdmin(ctx context.Context, userID string) (bool, error) {
+	s.metrics.incMethodCalls("IsAdmin")
+
 	var isAdmin bool
 	if err := s.db.QueryRowContext(ctx, "SELECT is_admin FROM users WHERE id=$1", userID).Scan(&isAdmin); err != nil {
 		return false, errors.Wrap(err, "fetching is admin")
@@ -629,13 +708,7 @@ func (s service) IsAdmin(ctx context.Context, userID string) (bool, error) {
 func (s service) PrivateProfile(ctx context.Context, userID string) (bool, error) {
 	s.metrics.incMethodCalls("PrivateProfile")
 
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
-	if err != nil {
-		return false, errors.Wrap(err, "starting transaction")
-	}
-	defer tx.Rollback()
-
-	isPrivate, err := postgres.QueryBool(ctx, tx, "SELECT private FROM users WHERE id=$1", userID)
+	isPrivate, err := postgres.QueryBool(ctx, s.db, "SELECT private FROM users WHERE id=$1", userID)
 	if err != nil {
 		return false, err
 	}
@@ -645,6 +718,8 @@ func (s service) PrivateProfile(ctx context.Context, userID string) (bool, error
 
 // RemoveFriend removes a friend.
 func (s service) RemoveFriend(ctx context.Context, userID string, friendID string) error {
+	s.metrics.incMethodCalls("RemoveFriend")
+
 	vars := map[string]string{"$user_id": userID, "$friend_id": friendID}
 	q := `query q($user_id: string, $friend_id: string) {
 		user as var(func: eq(user_id, $user_id))
@@ -679,7 +754,7 @@ func (s service) Search(ctx context.Context, query string, params params.Query) 
 	}
 
 	var users []User
-	if err := scan.Rows(&users, rows); err != nil {
+	if err := sqan.Rows(&users, rows); err != nil {
 		return nil, err
 	}
 
@@ -694,8 +769,8 @@ func (s service) SendFriendRequest(ctx context.Context, session auth.Session, fr
 	if err != nil {
 		return err
 	}
-	if typ == model.Organization {
-		return httperr.New("cannot invite an organization", httperr.Forbidden)
+	if typ == model.Business {
+		return httperr.Forbidden("cannot invite a business")
 	}
 
 	err = s.notificationService.Create(ctx, session, notification.CreateNotification{
@@ -713,15 +788,14 @@ func (s service) SendFriendRequest(ctx context.Context, session auth.Session, fr
 // Type returns the user's type.
 func (s service) Type(ctx context.Context, userID string) (model.UserType, error) {
 	s.metrics.incMethodCalls("Type")
-	sqlTx := sqltx.FromContext(ctx)
 
 	cacheKey := userID + "_type"
-	if item, err := s.cache.Get(cacheKey); err == nil {
-		x, _ := binary.Varint(item.Value)
+	if v, err := s.cache.Get(cacheKey); err == nil {
+		x, _ := binary.Varint(v)
 		return model.UserType(x), nil
 	}
 
-	accType, err := postgres.QueryInt(ctx, sqlTx, "SELECT type FROM users WHERE id=$1", userID)
+	accType, err := postgres.QueryInt(ctx, s.db, "SELECT type FROM users WHERE id=$1", userID)
 	if err != nil {
 		return 0, errors.Wrap(err, "querying user type")
 	}
@@ -769,8 +843,8 @@ func (s service) Update(ctx context.Context, userID string, user UpdateUser) err
 	if err != nil {
 		return err
 	}
-	if typ == model.Organization && user.Private != nil {
-		return httperr.New("cannot update an organization's visibility", httperr.Forbidden)
+	if typ == model.Business && user.Private != nil {
+		return httperr.Forbidden("cannot update an business' visibility")
 	}
 
 	sqlTx := sqltx.FromContext(ctx)
@@ -806,14 +880,14 @@ func (s service) getEventsEdge(ctx context.Context, userID string, query query, 
 		return nil, nil
 	}
 
-	q := postgres.SelectInID(model.Event, eventIDs, params.Fields)
+	q := postgres.SelectInID(model.Event, params.Fields, eventIDs)
 	rows, err := s.db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, errors.Wrap(err, "postgres: fetching events")
 	}
 
 	var events []event.Event
-	if err := scan.Rows(&events, rows); err != nil {
+	if err := sqan.Rows(&events, rows); err != nil {
 		return nil, err
 	}
 
@@ -841,20 +915,36 @@ func (s service) getUsersMixedEdge(ctx context.Context, userID, friendID string,
 	return s.parseIDsAndScan(ctx, res.Rdf, params)
 }
 
+func (s service) getUserEvents(ctx context.Context, userID, roleName string, params params.Query) ([]event.Event, error) {
+	whereCond := "id IN (SELECT event_id FROM events_users_roles WHERE user_id=$1 AND role_name=$2)"
+	q := postgres.SelectWhere(model.Event, whereCond, "id", params)
+	rows, err := s.db.QueryContext(ctx, q, userID, roles.Viewer)
+	if err != nil {
+		return nil, errors.Wrapf(err, "fetching events with role %s", roleName)
+	}
+
+	var events []event.Event
+	if err := sqan.Rows(&events, rows); err != nil {
+		return nil, err
+	}
+
+	return events, nil
+}
+
 func (s service) parseIDsAndScan(ctx context.Context, rdf []byte, params params.Query) ([]User, error) {
 	userIDs := dgraph.ParseRDFULIDs(rdf)
 	if len(userIDs) == 0 {
 		return nil, nil
 	}
 
-	q := postgres.SelectInID(model.User, userIDs, params.Fields)
+	q := postgres.SelectInID(model.User, params.Fields, userIDs)
 	rows, err := s.db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, errors.Wrap(err, "postgres: fetching users")
 	}
 
 	var users []User
-	if err := scan.Rows(&users, rows); err != nil {
+	if err := sqan.Rows(&users, rows); err != nil {
 		return nil, err
 	}
 
@@ -862,15 +952,13 @@ func (s service) parseIDsAndScan(ctx context.Context, rdf []byte, params params.
 }
 
 func (s service) getBy(ctx context.Context, query, value string) (User, error) {
-	sqlTx := sqltx.FromContext(ctx)
-
-	rows, err := sqlTx.QueryContext(ctx, query, value)
+	rows, err := s.db.QueryContext(ctx, query, value)
 	if err != nil {
 		return User{}, errors.Wrap(err, "fetching user")
 	}
 
 	var user User
-	if err := scan.Row(&user, rows); err != nil {
+	if err := sqan.Row(&user, rows); err != nil {
 		return User{}, errors.Wrap(err, "scanning user")
 	}
 

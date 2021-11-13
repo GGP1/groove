@@ -11,7 +11,7 @@ func TestParseCount(t *testing.T) {
 	t.Run("Valid", func(t *testing.T) {
 		expected := new(uint64)
 		*expected = 470
-		rdf := []byte("<0x8> <invited> \"470\" .\n")
+		rdf := []byte("<0x8> <count(invited)> \"470\" .\n")
 
 		got, err := ParseCount(rdf)
 		assert.NoError(t, err)
@@ -64,15 +64,40 @@ func TestParseRDFULIDs(t *testing.T) {
 	assert.Equal(t, expected, got)
 }
 
-func TestParseRDFWithMap(t *testing.T) {
+func TestParseRDF(t *testing.T) {
 	expected := []string{"01FATYNXRDPTPSJNEJ0DQ5KBAB", "01FATYMXV9M5K093CK5NX0Y4K9"}
 	rdf := []byte(`<0x2> <invited> <0x1> .
 <0x1> <event_id> "01FATYNXRDPTPSJNEJ0DQ5KBAB" .
 <0x1> <event_id> "01FATYMXV9M5K093CK5NX0Y4K9" .
 `)
-	got, err := ParseRDFWithMap(rdf)
+	got, err := ParseRDF(rdf)
+	assert.NoError(t, err)
+	assert.Equal(t, expected, got["event_id"])
+}
+
+func TestParseRDFByPredicate(t *testing.T) {
+	expected := []string{"01FATYNXRDPTPSJNEJ0DQ5KBAB", "01FATYMXV9M5K093CK5NX0Y4K9"}
+	rdf := []byte(`<0x2> <invited> <0x1> .
+<0x1> <event_id> "01FATYNXRDPTPSJNEJ0DQ5KBAB" .
+<0x1> <event_id> "01FATYMXV9M5K093CK5NX0Y4K9" .
+`)
+	got, err := ParseRDFByPredicate(rdf)
 	assert.NoError(t, err)
 	assert.Equal(t, expected, got["invited"])
+}
+
+func TestParseRDFPredicate(t *testing.T) {
+	expected := []string{"01FATYNXRDPTPSJNEJ0DQ5KBAB", "01FATYMXV9M5K093CK5NX0Y4K9", "01FATYNXRDPTPSJNEJ0DQ5KBAC", "01FATYMXV9M5K093CK5NX0Y4K0"}
+	rdf := []byte(`<0x2> <invited> <0x1> .
+<0x1> <event_id> "01FATYNXRDPTPSJNEJ0DQ5KBAB" .
+<0x1> <event_id> "01FATYMXV9M5K093CK5NX0Y4K9" .
+<0x2> <banned> <0x1> .
+<0x1> <event_id> "01FATYNXRDPTPSJNEJ0DQ5KBAC" .
+<0x1> <event_id> "01FATYMXV9M5K093CK5NX0Y4K0" .
+`)
+	got, err := ParseRDFPredicate(rdf, "event_id")
+	assert.NoError(t, err)
+	assert.Equal(t, expected, got)
 }
 
 func TestTriple(t *testing.T) {
@@ -141,13 +166,13 @@ func BenchmarkParseJSON(b *testing.B) {
 	}
 }
 
-func BenchmarkParseRDFWithMap(b *testing.B) {
+func BenchmarkParseRDF(b *testing.B) {
 	rdf := []byte(`<0x2> <~invited> <0x1> .
 <0x1> <event_id> "01FATYNXRDPTPSJNEJ0DQ5KBAB" .
 <0x1> <event_id> "01FATYMXV9M5K093CK5NX0Y4K9" .
 `)
 	for i := 0; i < b.N; i++ {
-		_, _ = ParseRDFWithMap(rdf)
+		_, _ = ParseRDF(rdf)
 	}
 }
 

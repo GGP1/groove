@@ -22,6 +22,9 @@ func (t Ticket) Validate() error {
 	if t.Name == "" {
 		return errors.New("name required")
 	}
+	if len(t.Name) > 60 {
+		return errors.New("invalid name, maximum length is 60 characters")
+	}
 	if t.AvailableCount == nil {
 		return errors.New("available_count required")
 	} else if *t.AvailableCount < 0 {

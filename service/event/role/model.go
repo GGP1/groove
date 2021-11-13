@@ -51,7 +51,26 @@ func (r Role) Validate() error {
 	if len(r.PermissionKeys) == 0 {
 		return errors.New("permission_keys required")
 	}
+	for i, k := range r.PermissionKeys {
+		if err := validate.Key(k); err != nil {
+			return errors.Wrapf(err, "permission_keys [%d]", i)
+		}
+	}
 	return nil
+}
+
+// SetRole is the struct used to assign roles to multiple users.
+type SetRole struct {
+	RoleName string   `json:"role_name,omitempty"`
+	UserIDs  []string `json:"user_ids,omitempty"`
+}
+
+// Validate verifies the ids and the role name passed is correct.
+func (sr SetRole) Validate() error {
+	if err := validate.RoleName(sr.RoleName); err != nil {
+		return err
+	}
+	return validate.ULIDs(sr.UserIDs...)
 }
 
 // UpdateRole is the structure used to update roles.
@@ -64,15 +83,20 @@ func (r UpdateRole) Validate() error {
 	if r.PermissionKeys == nil || len(*r.PermissionKeys) == 0 {
 		return errors.New("permission_keys required")
 	}
+	for i, k := range *r.PermissionKeys {
+		if err := validate.Key(k); err != nil {
+			return errors.Wrapf(err, "permission_keys [%d]", i)
+		}
+	}
 	return nil
 }
 
 // Permission represents a privilege inside an event.
 type Permission struct {
+	CreatedAt   time.Time `json:"created_at,omitempty" db:"created_at"`
 	Name        string    `json:"name,omitempty"`
 	Key         string    `json:"key,omitempty"`
 	Description string    `json:"description,omitempty"`
-	CreatedAt   time.Time `json:"created_at,omitempty" db:"created_at"`
 }
 
 // Validate returns an error if the permission is invalid.
@@ -83,17 +107,17 @@ func (p Permission) Validate() error {
 	if permissions.Reserved.Exists(p.Key) {
 		return errors.New("reserved key")
 	}
-	if len(p.Key) > 20 {
-		return errors.New("invalid key length, maximum is 20")
+	if err := validate.Key(p.Key); err != nil {
+		return err
 	}
 	if p.Name == "" {
 		return errors.New("name required")
 	}
-	if len(p.Name) > 20 {
-		return errors.New("invalid name length, maximum is 20")
+	if len(p.Name) > 40 {
+		return errors.New("invalid name length, maximum is 40")
 	}
-	if len(p.Description) > 20 {
-		return errors.New("invalid description length, maximum is 50")
+	if len(p.Description) > 200 {
+		return errors.New("invalid description length, maximum is 200")
 	}
 	return nil
 }
@@ -110,13 +134,13 @@ func (p UpdatePermission) Validate() error {
 		if *p.Name == "" {
 			return errors.New("name required")
 		}
-		if len(*p.Name) > 20 {
-			return errors.New("invalid name length, maximum is 20")
+		if len(*p.Name) > 40 {
+			return errors.New("invalid name length, maximum is 40")
 		}
 	}
 	if p.Description != nil {
-		if len(*p.Description) > 20 {
-			return errors.New("invalid description length, maximum is 50")
+		if len(*p.Description) > 200 {
+			return errors.New("invalid description length, maximum is 200")
 		}
 	}
 	return nil

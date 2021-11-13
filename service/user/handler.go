@@ -10,14 +10,12 @@ import (
 	"github.com/GGP1/groove/internal/apikey"
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
-	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/internal/sanitize"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/internal/validate"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/auth"
-	"github.com/GGP1/groove/service/event/role"
 	"github.com/GGP1/groove/storage/postgres"
 
 	"github.com/julienschmidt/httprouter"
@@ -36,17 +34,15 @@ type Handler struct {
 	db    *sql.DB
 	cache cache.Client
 
-	service     Service
-	roleService role.Service
+	service Service
 }
 
 // NewHandler returns a new user handler
-func NewHandler(db *sql.DB, cache cache.Client, service Service, roleService role.Service) Handler {
+func NewHandler(db *sql.DB, cache cache.Client, service Service) Handler {
 	return Handler{
-		db:          db,
-		cache:       cache,
-		service:     service,
-		roleService: roleService,
+		db:      db,
+		cache:   cache,
+		service: service,
 	}
 }
 
@@ -171,12 +167,12 @@ func (h Handler) Delete() http.HandlerFunc {
 	}
 }
 
-// Follow follows an organization
+// Follow follows a business.
 func (h Handler) Follow() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		organizationID, err := params.IDFromCtx(ctx, "organization_id")
+		businessID, err := params.IDFromCtx(ctx, "business_id")
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -188,7 +184,7 @@ func (h Handler) Follow() http.HandlerFunc {
 			return
 		}
 
-		if err := h.service.Follow(ctx, session, organizationID); err != nil {
+		if err := h.service.Follow(ctx, session, businessID); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -248,6 +244,17 @@ func (h Handler) GetBannedEvents() http.HandlerFunc {
 		params, err := params.Parse(r.URL.RawQuery, model.Event)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		if params.Count {
+			count, err := h.service.GetBannedEventsCount(ctx, userID)
+			if err != nil {
+				response.Error(w, http.StatusInternalServerError, err)
+				return
+			}
+
+			response.JSONCount(w, http.StatusOK, "banned_events_count", count)
 			return
 		}
 
@@ -350,22 +357,19 @@ func (h Handler) GetBlockedBy() http.HandlerFunc {
 // GetByID gets a user by its id.
 func (h Handler) GetByID() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		userID, err := params.IDFromCtx(rctx)
+		userID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
 		cacheKey := model.User.CacheKey(userID)
-		if item, err := h.cache.Get(cacheKey); err == nil {
-			response.EncodedJSON(w, item.Value)
+		if v, err := h.cache.Get(cacheKey); err == nil {
+			response.EncodedJSON(w, v)
 			return
 		}
-
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, true)
-		defer sqlTx.Rollback()
 
 		user, err := h.service.GetByID(ctx, userID)
 		if err != nil {
@@ -374,6 +378,92 @@ func (h Handler) GetByID() http.HandlerFunc {
 		}
 
 		response.JSONAndCache(h.cache, w, cacheKey, user)
+	}
+}
+
+// GetFollowers gets the followers of a user.
+func (h Handler) GetFollowers() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		userID, err := params.IDFromCtx(ctx)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		params, err := params.Parse(r.URL.RawQuery, model.User)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		if params.Count {
+			count, err := h.service.GetFollowersCount(ctx, userID)
+			if err != nil {
+				response.Error(w, http.StatusInternalServerError, err)
+				return
+			}
+
+			response.JSONCount(w, http.StatusOK, "followers_count", count)
+			return
+		}
+
+		followers, err := h.service.GetFollowers(ctx, userID, params)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		var nextCursor string
+		if len(followers) > 1 {
+			nextCursor = followers[len(followers)-1].ID
+		}
+
+		response.JSONCursor(w, nextCursor, "users", followers)
+	}
+}
+
+// GetFollowing gets the business the user is following.
+func (h Handler) GetFollowing() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		userID, err := params.IDFromCtx(ctx)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		params, err := params.Parse(r.URL.RawQuery, model.User)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		if params.Count {
+			count, err := h.service.GetFollowingCount(ctx, userID)
+			if err != nil {
+				response.Error(w, http.StatusInternalServerError, err)
+				return
+			}
+
+			response.JSONCount(w, http.StatusOK, "following_count", count)
+			return
+		}
+
+		following, err := h.service.GetFollowing(ctx, userID, params)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		var nextCursor string
+		if len(following) > 1 {
+			nextCursor = following[len(following)-1].ID
+		}
+
+		response.JSONCursor(w, nextCursor, "users", following)
 	}
 }
 
@@ -526,6 +616,17 @@ func (h Handler) GetHostedEvents() http.HandlerFunc {
 			return
 		}
 
+		if params.Count {
+			count, err := h.service.GetHostedEventsCount(ctx, userID)
+			if err != nil {
+				response.Error(w, http.StatusInternalServerError, err)
+				return
+			}
+
+			response.JSONCount(w, http.StatusOK, "hosted_events_count", count)
+			return
+		}
+
 		events, err := h.service.GetHostedEvents(ctx, userID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
@@ -554,6 +655,17 @@ func (h Handler) GetInvitedEvents() http.HandlerFunc {
 		params, err := params.Parse(r.URL.RawQuery, model.Event)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		if params.Count {
+			count, err := h.service.GetInvitedEventsCount(ctx, userID)
+			if err != nil {
+				response.Error(w, http.StatusInternalServerError, err)
+				return
+			}
+
+			response.JSONCount(w, http.StatusOK, "invited_events_count", count)
 			return
 		}
 
@@ -613,12 +725,12 @@ func (h Handler) GetStatistics() http.HandlerFunc {
 	}
 }
 
-// InviteToEvent invites a user to an event. TODO: move to the event service?
+// InviteToEvent invites a user to an event.
 func (h Handler) InviteToEvent() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		session, err := auth.GetSession(rctx, r)
+		session, err := auth.GetSession(ctx, r)
 		if err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
@@ -636,13 +748,8 @@ func (h Handler) InviteToEvent() http.HandlerFunc {
 			return
 		}
 
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
-
-		if err := h.roleService.RequirePermissions(ctx, r, invite.EventID, permissions.InviteUsers); err != nil {
-			response.Error(w, http.StatusForbidden, err)
-			return
-		}
 
 		if err := h.service.InviteToEvent(ctx, session, invite); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
@@ -725,9 +832,9 @@ func (h Handler) Search() http.HandlerFunc {
 // SendFriendRequest sends a friend request to a user.
 func (h Handler) SendFriendRequest() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		session, err := auth.GetSession(rctx, r)
+		session, err := auth.GetSession(ctx, r)
 		if err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
@@ -740,7 +847,7 @@ func (h Handler) SendFriendRequest() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
 		if err := h.service.SendFriendRequest(ctx, session, reqBody.UserID); err != nil {
@@ -791,9 +898,9 @@ func (h Handler) Unblock() http.HandlerFunc {
 // Update updates a user.
 func (h Handler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		userID, err := params.IDFromCtx(rctx)
+		userID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -811,7 +918,7 @@ func (h Handler) Update() http.HandlerFunc {
 			return
 		}
 
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
 		if err := h.service.Update(ctx, userID, uptUser); err != nil {

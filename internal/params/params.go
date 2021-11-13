@@ -25,17 +25,17 @@ const (
 
 // Query contains the request parameters provided by the client.
 type Query struct {
-	Count    bool
 	Cursor   string
-	Fields   []string
 	Limit    string
 	LookupID string
+	Fields   []string
+	Count    bool
 }
 
 // IDFromCtx takes the id parameter from context and validates it.
 func IDFromCtx(ctx context.Context, tag ...string) (string, error) {
 	tagName := "id"
-	if len(tag) == 1 {
+	if len(tag) > 0 {
 		tagName = tag[0]
 	}
 	id := httprouter.ParamsFromContext(ctx).ByName(tagName)

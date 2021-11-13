@@ -40,12 +40,12 @@ func (c client) Delete(key string) error {
 }
 
 // Get returns an item from the cache.
-func (c client) Get(key string) (*memcache.Item, error) {
+func (c client) Get(key string) ([]byte, error) {
 	item, err := c.mc.Get(key)
 	if err != nil {
 		return nil, errors.Wrap(err, "memcached lookup")
 	}
-	return item, nil
+	return item.Value, nil
 }
 
 // Miss returns if the error is a cache miss or not.

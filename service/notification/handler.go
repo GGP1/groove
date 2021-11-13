@@ -27,15 +27,15 @@ func NewHandler(db *sql.DB, service Service) Handler {
 // Answer handles the accept or decline of a notification.
 func (h Handler) Answer() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		session, err := auth.GetSession(rctx, r)
+		session, err := auth.GetSession(ctx, r)
 		if err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
-		id, err := params.IDFromCtx(rctx)
+		id, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -48,7 +48,7 @@ func (h Handler) Answer() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
 		if err := h.service.Answer(ctx, id, session.ID, accepted); err != nil {
@@ -68,15 +68,15 @@ func (h Handler) Answer() http.HandlerFunc {
 // GetFromUser returns a user's notifications.
 func (h Handler) GetFromUser() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		session, err := auth.GetSession(rctx, r)
+		session, err := auth.GetSession(ctx, r)
 		if err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
-		userID, err := params.IDFromCtx(rctx, "user_id")
+		userID, err := params.IDFromCtx(ctx, "user_id")
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -94,7 +94,7 @@ func (h Handler) GetFromUser() http.HandlerFunc {
 		}
 
 		if params.Count {
-			count, err := h.service.GetFromUserCount(rctx, userID)
+			count, err := h.service.GetFromUserCount(ctx, userID)
 			if err != nil {
 				response.Error(w, http.StatusInternalServerError, err)
 				return
@@ -104,7 +104,7 @@ func (h Handler) GetFromUser() http.HandlerFunc {
 			return
 		}
 
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
 		notifications, err := h.service.GetFromUser(ctx, userID, params)

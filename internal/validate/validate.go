@@ -1,8 +1,11 @@
 package validate
 
 import (
+	"math"
+	"net/url"
 	"regexp"
 	"strconv"
+	"strings"
 	"unicode"
 
 	"github.com/GGP1/groove/internal/ulid"
@@ -10,9 +13,22 @@ import (
 	"github.com/pkg/errors"
 )
 
-const emailStr = "^(?:(?:(?:(?:[a-zA-Z]|\\d|[!#\\$%&'\\*\\+\\-\\/=\\?\\^_`{\\|}~]|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])+(?:\\.([a-zA-Z]|\\d|[!#\\$%&'\\*\\+\\-\\/=\\?\\^_`{\\|}~]|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])+)*)|(?:(?:\\x22)(?:(?:(?:(?:\\x20|\\x09)*(?:\\x0d\\x0a))?(?:\\x20|\\x09)+)?(?:(?:[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f]|\\x21|[\\x23-\\x5b]|[\\x5d-\\x7e]|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])|(?:(?:[\\x01-\\x09\\x0b\\x0c\\x0d-\\x7f]|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}]))))*(?:(?:(?:\\x20|\\x09)*(?:\\x0d\\x0a))?(\\x20|\\x09)+)?(?:\\x22))))@(?:(?:(?:[a-zA-Z]|\\d|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])|(?:(?:[a-zA-Z]|\\d|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])(?:[a-zA-Z]|\\d|-|\\.|~|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])*(?:[a-zA-Z]|\\d|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])))\\.)+(?:(?:[a-zA-Z]|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])|(?:(?:[a-zA-Z]|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])(?:[a-zA-Z]|\\d|-|\\.|~|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])*(?:[a-zA-Z]|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])))\\.?$"
+const (
+	emailStr = "^(?:(?:(?:(?:[a-zA-Z]|\\d|[!#\\$%&'\\*\\+\\-\\/=\\?\\^_`{\\|}~]|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])+(?:\\.([a-zA-Z]|\\d|[!#\\$%&'\\*\\+\\-\\/=\\?\\^_`{\\|}~]|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])+)*)|(?:(?:\\x22)(?:(?:(?:(?:\\x20|\\x09)*(?:\\x0d\\x0a))?(?:\\x20|\\x09)+)?(?:(?:[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f]|\\x21|[\\x23-\\x5b]|[\\x5d-\\x7e]|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])|(?:(?:[\\x01-\\x09\\x0b\\x0c\\x0d-\\x7f]|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}]))))*(?:(?:(?:\\x20|\\x09)*(?:\\x0d\\x0a))?(\\x20|\\x09)+)?(?:\\x22))))@(?:(?:(?:[a-zA-Z]|\\d|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])|(?:(?:[a-zA-Z]|\\d|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])(?:[a-zA-Z]|\\d|-|\\.|~|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])*(?:[a-zA-Z]|\\d|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])))\\.)+(?:(?:[a-zA-Z]|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])|(?:(?:[a-zA-Z]|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])(?:[a-zA-Z]|\\d|-|\\.|~|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])*(?:[a-zA-Z]|[\\x{00A0}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFEF}])))\\.?$"
 
-var emailRegex = regexp.MustCompile(emailStr)
+	// Date cron maximums
+	maxMin     = "59"
+	maxH       = "23"
+	maxDay     = "31"
+	maxMonth   = "12"
+	maxWeekDay = "6"
+)
+
+var (
+	maxIntStr      = strconv.Itoa(math.MaxInt64)
+	emailRegex     = regexp.MustCompile(emailStr)
+	errInvalidCron = errors.New("invalid cron format, must have 6 values")
+)
 
 // Cursor returns an error if the cursor is not a ulid not a number.
 func Cursor(cursor string) error {
@@ -26,6 +42,52 @@ func Cursor(cursor string) error {
 	return nil
 }
 
+// Cron returns an error if the date cron passed is invalid.
+//
+// A cron contains a date of an event and its duration.
+//
+// Format:
+//  ┌─────────────> minutes (0-59)
+//  │ ┌───────────> hours (0-23)
+//  │ │ ┌─────────> month day (0-31)
+//  │ │ │  ┌──────> year month (0-12)
+//  │ │ │  │  ┌───> week day (0-6, 0=sunday)
+//  │ │ │  │  │  ┌> duration (1-∞)
+//  m h md ym wd d
+//
+// Values may contain (*) meaning any, (-) for ranges, (L) for last occurrence or (,) for concatenations. Except for minutes and hours.
+func Cron(cron string) error {
+	if cron == "" || len(cron) < 11 {
+		return errInvalidCron
+	}
+
+	parts := strings.Split(cron, " ")
+	if len(parts) != 6 {
+		return errInvalidCron
+	}
+
+	if !validNum(parts[0], maxMin, true) {
+		return errors.New("invalid minutes")
+	}
+	if !validNum(parts[1], maxH, true) {
+		return errors.New("invalid hours")
+	}
+	if !validNum(parts[2], maxDay, false) {
+		return errors.New("invalid month day")
+	}
+	if !validNum(parts[3], maxMonth, false) {
+		return errors.New("invalid year month")
+	}
+	if !validNum(parts[4], maxWeekDay, false) {
+		return errors.New("invalid week day")
+	}
+	if !validDuration(parts[5]) {
+		return errors.New("invalid duration")
+	}
+
+	return nil
+}
+
 // Email returns an error if the email passed is not valid.
 func Email(email string) error {
 	if len(email) < 7 || len(email) > 254 {
@@ -33,6 +95,19 @@ func Email(email string) error {
 	}
 	if !emailRegex.MatchString(email) {
 		return errors.Errorf("invalid email: %q", email)
+	}
+	return nil
+}
+
+// Key returns an error if the key passed is invalid.
+func Key(key string) error {
+	if len(key) > 30 {
+		return errors.New("invalid key length, maximum is 30")
+	}
+	for _, k := range key {
+		if !unicode.IsLower(k) && k != '_' {
+			return errors.New("a key can contain lower case and underscore characters only")
+		}
 	}
 	return nil
 }
@@ -71,13 +146,8 @@ func Password(password string) error {
 
 // RoleName returns an error if the name passed is invalid for a role.
 func RoleName(roleName string) error {
-	if len(roleName) > 20 {
-		return errors.New("invalid role name length, maximum is 20")
-	}
-	for _, c := range roleName {
-		if !unicode.IsLower(c) && c != '_' {
-			return errors.New("role name can contain lower case and \"_\" characters only")
-		}
+	if len(roleName) > 40 {
+		return errors.New("invalid role_name length, maximum is 40")
 	}
 	return nil
 }
@@ -111,6 +181,88 @@ func ULIDs(ids ...string) error {
 		}
 	}
 	return nil
+}
+
+// URL returns an error if the url received is invalid.
+func URL(uri string) error {
+	if len(uri) > 240 {
+		return errors.New("url too long, maximum length is 240")
+	}
+	if _, err := url.ParseRequestURI(uri); err != nil {
+		return errors.New("invalid url")
+	}
+	return nil
+}
+
+// numbersOnly determines if the non-numeric numbers are allowed or not.
+//
+// A value can be "*" | "1-59", | "1,9,24" | "3L".
+func validNum(value, max string, numbersOnly bool) bool {
+	if value == "*" {
+		return !numbersOnly
+	}
+
+	maxLen := len(max)
+	lastSpecialIdx := 0
+
+	for i, v := range value {
+		if v == '-' || v == ',' || v == 'L' {
+			if numbersOnly {
+				return false
+			}
+			// We could receive a number like "12--45" and is not checked here
+			// but when compared it will always be higher so it's insignificant
+			if i == 0 || (v != 'L' && i == len(value)-1) {
+				return false
+			}
+			lastValue := value[lastSpecialIdx:i]
+			if higher(lastValue, max, maxLen) {
+				return false
+			}
+			lastSpecialIdx = i + 1 // Do not include the index
+			continue
+		}
+
+		if v < '0' || v > '9' {
+			return false
+		}
+	}
+
+	// No special found, compare numbers
+	if lastSpecialIdx == 0 {
+		return !higher(value, max, maxLen)
+	}
+
+	// Check the last element in case there were special and non-L chars
+	if value[len(value)-1] != 'L' {
+		return !higher(value[lastSpecialIdx+1:], max, maxLen)
+	}
+
+	return true
+}
+
+// higher returns true if value is higher than max
+func higher(value, max string, maxLen int) bool {
+	valueLen := len(value)
+	if valueLen > maxLen {
+		return true
+	}
+	if valueLen == maxLen {
+		return value > max
+	}
+	return false
+}
+
+func validDuration(d string) bool {
+	if d == "0" || d > maxIntStr {
+		return false
+	}
+	for _, v := range d {
+		if v < '0' || v > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func validateULID(id string) error {

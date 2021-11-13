@@ -49,7 +49,7 @@ func (comment) ValidField(field string) bool {
 type event struct{}
 
 func (event) DefaultFields() string {
-	return "id, name, description, virtual, type, ticket_type, public, address, latitude, longitude, start_time, end_time, min_age, slots"
+	return "id, name, description, virtual, type, ticket_type, public, address, latitude, longitude, cron, start_date, end_date, min_age, slots"
 }
 func (event) URLQueryKey() string {
 	return "event.fields"
@@ -67,8 +67,8 @@ func (event) ValidField(field string) bool {
 	switch field {
 	case "id", "created_at", "updated_at", "name", "description",
 		"type", "ticket_type", "public", "virtual", "address", "latitude",
-		"longitude", "slots", "start_time", "end_time", "min_age", "url",
-		"logo_url", "header_url", "members_count":
+		"longitude", "slots", "cron", "start_date", "end_date", "min_age", "url",
+		"logo_url", "header_url":
 		return true
 	}
 	return false

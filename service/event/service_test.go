@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/GGP1/groove/config"
 	"github.com/GGP1/groove/internal/cache"
@@ -129,7 +128,7 @@ func TestInvited(t *testing.T) {
 	count, err := eventSv.GetInvitedCount(ctx, eventID)
 	assert.NoError(t, err)
 
-	assert.Equal(t, *count, uint64(len(users)))
+	assert.Equal(t, count, int64(len(users)))
 	assert.Equal(t, userID, users[0].ID)
 
 	err = eventSv.RemoveEdge(ctx, eventID, dgraph.Invited, userID)
@@ -170,14 +169,13 @@ func TestCreate(t *testing.T) {
 
 	boolean := false
 	createEvent := event.CreateEvent{
-		HostID:    creatorID,
-		Name:      "Create",
-		Type:      event.Ceremony,
-		Public:    &boolean,
-		StartTime: time.Now(),
-		EndTime:   time.Now().Add(time.Second * 1500),
-		MinAge:    18,
-		Slots:     200,
+		HostID: creatorID,
+		Name:   "Create",
+		Type:   event.Ceremony,
+		Public: &boolean,
+		Cron:   "0 0 * * * 60",
+		MinAge: 18,
+		Slots:  200,
 	}
 	err = eventSv.Create(ctx, eventID, createEvent)
 	assert.NoError(t, err)
@@ -271,7 +269,7 @@ func TestSearch(t *testing.T) {
 	err := test.CreateEvent(ctx, db, dc, eventID, "search")
 	assert.NoError(t, err)
 
-	events, err := eventSv.Search(ctx, "sea", params.Query{})
+	events, err := eventSv.Search(ctx, "sea", auth.Session{ID: ulid.NewString()}, params.Query{})
 	assert.NoError(t, err)
 
 	assert.Equal(t, 1, len(events))

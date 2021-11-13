@@ -17,9 +17,9 @@ import (
 
 // Predicate
 const (
-	Banned  Predicate = "banned"
+	Banned  Predicate = "banned" // Events only
 	Invited Predicate = "invited"
-	LikedBy Predicate = "liked_by"
+	LikedBy Predicate = "liked_by" // Events only
 	Friend  Predicate = "friend"
 	Follows Predicate = "follows"
 )
@@ -29,6 +29,9 @@ type Predicate string
 
 // AddEventEdge creates an edge between an event and a user.
 func AddEventEdge(ctx context.Context, dc *dgo.Dgraph, eventID string, predicate Predicate, userID string) error {
+	if predicate != Banned && predicate != LikedBy {
+		return errors.Errorf("only %q and %q predicates can be assigned to an event", Banned, LikedBy)
+	}
 	return Mutation(ctx, dc, func(tx *dgo.Txn) error {
 		req := EventEdgeRequest(eventID, predicate, userID, true)
 		if _, err := tx.Do(ctx, req); err != nil {
@@ -68,6 +71,7 @@ func CreateNode(ctx context.Context, tx *dgo.Txn, model model.Model, id string) 
 		SetNquads: buf.Bytes(),
 	}
 	bufferpool.Put(buf)
+
 	vars := map[string]string{"$id": id}
 	q := `query q($id: string) {
 		node as var(func: eq(` + predicate + `, $id))
@@ -78,9 +82,30 @@ func CreateNode(ctx context.Context, tx *dgo.Txn, model model.Model, id string) 
 		Mutations: []*api.Mutation{mu},
 	}
 	if _, err := tx.Do(ctx, req); err != nil {
-		return errors.Wrapf(err, "creating %s node", object)
+		return errors.Wrapf(err, "dgraph: creating %s node", object)
 	}
 
+	return nil
+}
+
+// DeleteNode removes a node (and all its edges consequently) from dgraph.
+func DeleteNode(ctx context.Context, tx *dgo.Txn, model model.Model, id string) error {
+	predicate, object := model.DgraphRDF()
+	vars := map[string]string{"$id": id}
+	q := `query q($id: string) {
+		target as var(func: eq(` + predicate + `, $id))
+	}`
+	mu := &api.Mutation{
+		DelNquads: []byte("uid(target) * * ."),
+	}
+	req := &api.Request{
+		Vars:      vars,
+		Query:     q,
+		Mutations: []*api.Mutation{mu},
+	}
+	if _, err := tx.Do(ctx, req); err != nil {
+		return errors.Wrapf(err, "dgraph: deleting %s node", object)
+	}
 	return nil
 }
 
@@ -238,10 +263,49 @@ func ParseRDFULIDsWithMap(rdf []byte) map[string]struct{} {
 	return result
 }
 
-// ParseRDFWithMap works like ParseRDFReponse but it parses the predicates as well.
+// ParseRDF parses RDF lines with ULIDs into a map, all other lines are skipped.
 //
 // One order of magnitude faster than using json.
-func ParseRDFWithMap(rdf []byte) (map[string][]string, error) {
+func ParseRDF(rdf []byte) (map[string][]string, error) {
+	if rdf == nil || len(rdf) == 0 {
+		return nil, nil
+	}
+	lines := strings.Split(string(rdf), "\n")
+
+	// Not exactly the size of the map as some lines are predicates and
+	// won't be stored but it's a good approximation. Worst case we allocate n empty spaces
+	// where n is the number of lines containing predicates inside the rdf response
+	mp := make(map[string][]string, len(lines)-1)
+	// Discard the the last line as it's an empty line
+	for _, line := range lines[:len(lines)-1] {
+		quoteIdx := strings.IndexByte(line, '"') + 1
+		if quoteIdx == 0 {
+			continue
+		}
+		lastQuoteIdx := strings.LastIndexByte(line, '"')
+		if lastQuoteIdx == -1 || lastQuoteIdx-quoteIdx != ulid.EncodedSize {
+			continue
+		}
+
+		// Get predicate: <0x2> <predicate> "01FATYMXV9M5K093CK5NX0Y4K9" .
+		predStart := strings.IndexByte(line, '>') + 3
+		start := line[predStart:]
+		predEnd := strings.IndexByte(start, '>')
+		if predStart == 2 || predEnd == -1 {
+			return nil, errors.Errorf("invalid rdf: %q", line)
+		}
+
+		predicate := start[:predEnd]
+		mp[predicate] = append(mp[predicate], line[quoteIdx:lastQuoteIdx])
+	}
+
+	return mp, nil
+}
+
+// ParseRDFByPredicate is like ParseRDF but it maps the results by predicate.
+//
+// Example: ["invited": ["id1", "id2", ..., "idN"]]
+func ParseRDFByPredicate(rdf []byte) (map[string][]string, error) {
 	if rdf == nil || len(rdf) == 0 {
 		return nil, nil
 	}
@@ -256,11 +320,13 @@ func ParseRDFWithMap(rdf []byte) (map[string][]string, error) {
 	for _, line := range lines[:len(lines)-1] {
 		// Get predicate: <0x2> <predicate> <0x1> .
 		predStart := strings.IndexByte(line, '>') + 3
-		predEnd := strings.IndexByte(line[predStart:], '>')
+		start := line[predStart:]
+		predEnd := strings.IndexByte(start, '>')
 		if predStart == 2 || predEnd == -1 {
 			return nil, errors.Errorf("invalid rdf: %q", line)
 		}
-		pred := line[predStart : predStart+predEnd]
+
+		pred := start[:predEnd]
 		// Only update the predicate if it's another one
 		if pred != "event_id" && pred != "user_id" {
 			predicate = pred
@@ -276,6 +342,39 @@ func ParseRDFWithMap(rdf []byte) (map[string][]string, error) {
 	}
 
 	return mp, nil
+}
+
+// ParseRDFPredicate is like ParseRDF but it parses only the lines with the predicate received.
+func ParseRDFPredicate(rdf []byte, predicate string) ([]string, error) {
+	if rdf == nil || len(rdf) == 0 {
+		return nil, nil
+	}
+
+	lines := strings.Split(string(rdf), "\n")
+	slice := make([]string, 0, 0)
+
+	// Discard the the last line as it's an empty line
+	for _, line := range lines[:len(lines)-1] {
+		predStart := strings.IndexByte(line, '>') + 3
+		start := line[predStart:]
+		predEnd := strings.IndexByte(start, '>')
+		if predStart == 2 || predEnd == -1 {
+			return nil, errors.Errorf("invalid rdf: %q", line)
+		}
+
+		pred := start[:predEnd]
+		if pred != predicate {
+			continue
+		}
+
+		quoteIdx := strings.IndexByte(line, '"') + 1
+		if quoteIdx == 0 {
+			return nil, errors.Errorf("invalid rdf: %q", line)
+		}
+		slice = append(slice, line[quoteIdx:quoteIdx+ulid.EncodedSize])
+	}
+
+	return slice, nil
 }
 
 // QueryVars returns the variables used in the query depending on the parameters.
@@ -378,7 +477,7 @@ func parseCount(line string) (*uint64, error) {
 	// Sample line:
 	// <0x1> <count(predicate)> "15" .\n
 	start := strings.IndexByte(line, '"') + 1
-	end := len(line) - 3
+	end := strings.LastIndexByte(line, '"')
 	if start == 0 || end < 1 {
 		return nil, errors.Errorf("invalid rdf: %q", line)
 	}

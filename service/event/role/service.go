@@ -11,18 +11,18 @@ import (
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/roles"
-	"github.com/GGP1/groove/internal/scan"
 	"github.com/GGP1/groove/internal/sqltx"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/auth"
 	"github.com/GGP1/groove/storage/dgraph"
 	"github.com/GGP1/groove/storage/postgres"
+	"github.com/GGP1/sqan"
 
 	"github.com/dgraph-io/dgo/v210"
 	"github.com/pkg/errors"
 )
 
-var errAccessDenied = httperr.New("Access denied", httperr.Forbidden)
+var errAccessDenied = httperr.Forbidden("Access denied")
 
 // Service interface for the roles service.
 type Service interface {
@@ -40,13 +40,19 @@ type Service interface {
 	GetPermissions(ctx context.Context, eventID string) ([]Permission, error)
 	GetRole(ctx context.Context, eventID, name string) (Role, error)
 	GetRoles(ctx context.Context, eventID string) ([]Role, error)
+	GetUserEventsCount(ctx context.Context, userID, roleName string) (int64, error)
 	GetUserRole(ctx context.Context, eventID, userID string) (Role, error)
+	GetUsersByRole(ctx context.Context, eventID, roleName string, params params.Query) ([]model.ListUser, error)
+	GetUsersCountByRole(ctx context.Context, eventID, roleName string) (int64, error)
+	GetUserFriendsByRole(ctx context.Context, eventID, userID, roleName string, params params.Query) ([]model.ListUser, error)
+	GetUserFriendsCountByRole(ctx context.Context, eventID, userID, roleName string) (int64, error)
 	HasRole(ctx context.Context, eventID, userID string) (bool, error)
 	IsHost(ctx context.Context, userID string, eventIDs ...string) (bool, error)
 	PrivacyFilter(ctx context.Context, r *http.Request, eventID string) error
 	RequirePermissions(ctx context.Context, r *http.Request, eventID string, permKeys ...string) error
-	SetRoles(ctx context.Context, eventID, roleName string, userIDs ...string) error
+	SetRole(ctx context.Context, eventID string, setRole SetRole) error
 	SetReservedRole(ctx context.Context, eventID, userID string, roleName roles.Name) error
+	UnsetRole(ctx context.Context, eventID, userID string) error
 	UpdatePermission(ctx context.Context, eventID, key string, permission UpdatePermission) error
 	UpdateRole(ctx context.Context, eventID, name string, role UpdateRole) error
 }
@@ -195,65 +201,46 @@ func (s service) DeleteRole(ctx context.Context, eventID, name string) error {
 	return nil
 }
 
-// GetMembers returns the member list of an event.
-//
-// TODO: return the user role as well?
+// GetMembers returns a list with all the members (non-viewers) of an event.
 func (s service) GetMembers(ctx context.Context, eventID string, params params.Query) ([]model.ListUser, error) {
 	sqlTx := sqltx.FromContext(ctx)
 
-	whereCond := "id IN (SELECT user_id FROM events_users_roles WHERE event_id=$1 AND role_name != 'view_event')"
+	whereCond := "id IN (SELECT user_id FROM events_users_roles WHERE event_id=$1 AND role_name != $2)"
 	q := postgres.SelectWhere(model.User, whereCond, "id", params)
-	rows, err := sqlTx.QueryContext(ctx, q, eventID)
+	rows, err := sqlTx.QueryContext(ctx, q, eventID, roles.Viewer)
 	if err != nil {
 		return nil, err
 	}
 
 	var users []model.ListUser
-	if err := scan.Rows(&users, rows); err != nil {
+	if err := sqan.Rows(&users, rows); err != nil {
 		return nil, err
 	}
 
 	return users, nil
 }
 
-// GetMembersCount returns the number of members of an event.
+// GetMembersCount returns the number of members (non-viewers) of an event.
 func (s service) GetMembersCount(ctx context.Context, eventID string) (int64, error) {
-	sqlTx := sqltx.FromContext(ctx)
-
-	q := "SELECT members_count FROM events WHERE id=$1"
-	return postgres.QueryInt(ctx, sqlTx, q, eventID)
+	q := "SELECT COUNT(*) FROM events_users_roles WHERE event_id=$1 AND role_name != $2"
+	return postgres.QueryInt(ctx, s.db, q, eventID, roles.Viewer)
 }
 
 // GetMembersFriends returns the members of an event that are friends of userID.
 func (s service) GetMembersFriends(ctx context.Context, eventID, userID string, params params.Query) ([]model.ListUser, error) {
-	sqlTx := sqltx.FromContext(ctx)
-
-	q1 := `query q($id: string, $cursor: string, $limit: string) {
-		q(func: eq(user_id, $id)) {
-			friend (orderasc: user_id) (first: $limit, offset: $cursor) {
-				user_id
-			}
-		}
-	}`
-	vars := dgraph.QueryVars(userID, params)
-	res, err := s.dc.NewReadOnlyTxn().QueryRDFWithVars(ctx, q1, vars)
+	friendsIDs, err := s.getFriendsIDsWithParams(ctx, userID, params)
 	if err != nil {
-		return nil, errors.Wrap(err, "dgraph: fetching friends ids")
+		return nil, err
 	}
 
-	friendsIDs := dgraph.ParseRDFULIDs(res.Rdf)
-	if len(friendsIDs) == 0 {
-		return nil, nil
-	}
-
-	q2 := selectMembersFriends(model.User, friendsIDs, params.Fields)
-	rows, err := sqlTx.QueryContext(ctx, q2, eventID)
+	q := selectFriendsQuery(friendsIDs, params.Fields, false)
+	rows, err := s.db.QueryContext(ctx, q, eventID, roles.Viewer)
 	if err != nil {
 		return nil, err
 	}
 
 	var users []model.ListUser
-	if err := scan.Rows(&users, rows); err != nil {
+	if err := sqan.Rows(&users, rows); err != nil {
 		return nil, err
 	}
 
@@ -262,43 +249,26 @@ func (s service) GetMembersFriends(ctx context.Context, eventID, userID string, 
 
 // GetMembersFriendsCount returns the count of the members of an event that are friends of userID.
 func (s service) GetMembersFriendsCount(ctx context.Context, eventID, userID string) (int64, error) {
-	sqlTx := sqltx.FromContext(ctx)
-
-	q1 := `query q($id: string, $cursor: string, $limit: string) {
-		q(func: eq(user_id, $id)) {
-			friend (orderasc: user_id) {
-				user_id
-			}
-		}
-	}`
-
-	res, err := s.dc.NewReadOnlyTxn().QueryRDFWithVars(ctx, q1, map[string]string{"$id": userID})
+	friendsIDs, err := s.getFriendsIDs(ctx, userID)
 	if err != nil {
-		return 0, errors.Wrap(err, "dgraph: fetching friends ids")
+		return 0, err
 	}
 
-	friendsIDs := dgraph.ParseRDFULIDs(res.Rdf)
-	if len(friendsIDs) == 0 {
-		return 0, nil
-	}
-
-	query := "SELECT COUNT(*) FROM events WHERE event_id=$1 AND role_name != 'view_event'"
-	q2 := postgres.AppendInIDs(query, friendsIDs, false)
-	return postgres.QueryInt(ctx, sqlTx, q2, eventID)
+	query := "SELECT COUNT(*) FROM events_users_roles WHERE event_id=$1 AND role_name != $2 AND user_id"
+	q := postgres.AppendInIDs(query, friendsIDs)
+	return postgres.QueryInt(ctx, s.db, q, eventID, roles.Viewer)
 }
 
 // GetPermission returns a permission from an event with the given key.
 func (s service) GetPermission(ctx context.Context, eventID, key string) (Permission, error) {
-	sqlTx := sqltx.FromContext(ctx)
-
 	q := "SELECT name, description, created_at FROM events_permissions WHERE event_id=$1 AND key=$2"
-	row := sqlTx.QueryRowContext(ctx, q, eventID, key)
+	rows, err := s.db.QueryContext(ctx, q, eventID, key)
+	if err != nil {
+		return Permission{}, err
+	}
 
 	permission := Permission{Key: key}
-	if err := row.Scan(&permission.Name, &permission.Description, &permission.CreatedAt); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return Permission{}, errors.Errorf("permission with key %q in event %q does not exists", key, eventID)
-		}
+	if err := sqan.Row(&permission, rows); err != nil {
 		return Permission{}, errors.Wrap(err, "scanning permission")
 	}
 
@@ -307,30 +277,14 @@ func (s service) GetPermission(ctx context.Context, eventID, key string) (Permis
 
 // GetPermissions returns all event's permissions.
 func (s service) GetPermissions(ctx context.Context, eventID string) ([]Permission, error) {
-	sqlTx := sqltx.FromContext(ctx)
-
 	q := "SELECT key, name, description FROM events_permissions WHERE event_id=$1"
-	rows, err := sqlTx.QueryContext(ctx, q, eventID)
+	rows, err := s.db.QueryContext(ctx, q, eventID)
 	if err != nil {
 		return nil, errors.Wrap(err, "querying permissions")
 	}
 
-	var (
-		permissions            []Permission
-		key, name, description string
-	)
-	for rows.Next() {
-		if err := rows.Scan(&key, &name, &description); err != nil {
-			return nil, errors.Wrap(err, "scanning rows")
-		}
-		permissions = append(permissions, Permission{
-			Key:         key,
-			Name:        name,
-			Description: description,
-		})
-	}
-
-	if err := rows.Err(); err != nil {
+	var permissions []Permission
+	if err := sqan.Rows(&permissions, rows); err != nil {
 		return nil, err
 	}
 
@@ -343,10 +297,8 @@ func (s service) GetRole(ctx context.Context, eventID, name string) (Role, error
 		return Role{Name: name, PermissionKeys: keys}, nil
 	}
 
-	sqlTx := sqltx.FromContext(ctx)
-
 	q := "SELECT permission_keys FROM events_roles WHERE event_id=$1 AND name=$2"
-	row := sqlTx.QueryRowContext(ctx, q, eventID, name)
+	row := s.db.QueryRowContext(ctx, q, eventID, name)
 
 	role := Role{Name: name}
 	if err := row.Scan(&role.PermissionKeys); err != nil {
@@ -358,42 +310,32 @@ func (s service) GetRole(ctx context.Context, eventID, name string) (Role, error
 
 // GetRoles returns all event's roles.
 func (s service) GetRoles(ctx context.Context, eventID string) ([]Role, error) {
-	sqlTx := sqltx.FromContext(ctx)
-
 	q := "SELECT name, permission_keys FROM events_roles WHERE event_id=$1"
-	rows, err := sqlTx.QueryContext(ctx, q, eventID)
+	rows, err := s.db.QueryContext(ctx, q, eventID)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching roles")
 	}
 
-	var (
-		role  Role
-		roles []Role
-	)
-	for rows.Next() {
-		if err := rows.Scan(&role.Name, &role.PermissionKeys); err != nil {
-			return nil, errors.Wrap(err, "scanning fields")
-		}
-
-		roles = append(roles, role)
+	var roles []Role
+	if err := sqan.Rows(&roles, rows); err != nil {
+		return nil, errors.Wrap(err, "scanning roles")
 	}
 	// Prepend reserved roles
 	roles = append(reservedRoles, roles...)
 
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
 	return roles, nil
+}
+
+// GetUserEventsCount returns the number of events the user has a role in.
+func (s service) GetUserEventsCount(ctx context.Context, userID, roleName string) (int64, error) {
+	q := "SELECT COUNT(*) FROM events_users_roles WHERE user_id=$1 AND role_name=$2"
+	return postgres.QueryInt(ctx, s.db, q, userID, roleName)
 }
 
 // GetUserRole returns user's role inside the event.
 func (s service) GetUserRole(ctx context.Context, eventID, userID string) (Role, error) {
-	sqlTx := sqltx.FromContext(ctx)
-
-	// TODO: cache?
 	q1 := "SELECT role_name FROM events_users_roles WHERE event_id=$1 AND user_id=$2"
-	roleName, err := postgres.QueryString(ctx, sqlTx, q1, eventID, userID)
+	roleName, err := postgres.QueryString(ctx, s.db, q1, eventID, userID)
 	if err != nil {
 		return Role{}, errors.Errorf("user %q has no role in event %q", userID, eventID)
 	}
@@ -410,24 +352,70 @@ func (s service) GetUserRole(ctx context.Context, eventID, userID string) (Role,
 	return role, nil
 }
 
-// IncMembersCount increments the members count field by one.
-func (s service) IncMembersCount(ctx context.Context, eventID, roleName string) error {
-	if roleName != string(roles.Viewer) {
-		sqlTx := sqltx.FromContext(ctx)
+// GetUsersByRole returns the users with the specified role in the event.
+func (s service) GetUsersByRole(ctx context.Context, eventID, roleName string, params params.Query) ([]model.ListUser, error) {
+	sqlTx := sqltx.FromContext(ctx)
 
-		if _, err := sqlTx.ExecContext(ctx, "UPDATE events SET members_count=members_count+1 WHERE id=$1", eventID); err != nil {
-			return errors.Wrap(err, "incrementing members count")
-		}
+	whereCond := "id IN (SELECT user_id FROM events_users_roles WHERE event_id=$1 AND role_name=$2)"
+	q := postgres.SelectWhere(model.User, whereCond, "id", params)
+	rows, err := sqlTx.QueryContext(ctx, q, eventID, roleName)
+	if err != nil {
+		return nil, err
 	}
-	return nil
+
+	var users []model.ListUser
+	if err := sqan.Rows(&users, rows); err != nil {
+		return nil, err
+	}
+
+	return users, nil
+}
+
+// GetUsersCountByRole returns the number of users with the specified role in the event.
+func (s service) GetUsersCountByRole(ctx context.Context, eventID, roleName string) (int64, error) {
+	q := "SELECT COUNT(*) FROM events_users_roles WHERE event_id=$1 AND role_name=$2"
+	return postgres.QueryInt(ctx, s.db, q, eventID, roleName)
+}
+
+// GetUserFriendsByRole returns a user's friends with a determined role in an event.
+func (s service) GetUserFriendsByRole(ctx context.Context, eventID, userID, roleName string, params params.Query) ([]model.ListUser, error) {
+	sqlTx := sqltx.FromContext(ctx)
+
+	friendsIDs, err := s.getFriendsIDsWithParams(ctx, userID, params)
+	if err != nil {
+		return nil, err
+	}
+
+	q := selectFriendsQuery(friendsIDs, params.Fields, true)
+	rows, err := sqlTx.QueryContext(ctx, q, eventID, roleName)
+	if err != nil {
+		return nil, err
+	}
+
+	var users []model.ListUser
+	if err := sqan.Rows(&users, rows); err != nil {
+		return nil, err
+	}
+
+	return users, nil
+}
+
+// GetUserFriendsCountByRole returns the count of the users with a role in an event that are friends of user.
+func (s service) GetUserFriendsCountByRole(ctx context.Context, eventID, userID, roleName string) (int64, error) {
+	friendsIDs, err := s.getFriendsIDs(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+
+	query := "SELECT COUNT(*) FROM events WHERE event_id=$1 AND role_name=$2 AND id"
+	q := postgres.AppendInIDs(query, friendsIDs)
+	return postgres.QueryInt(ctx, s.db, q, eventID, roleName)
 }
 
 // HasRole returns if the user has a role inside the event or not (if the user is a member).
 func (s service) HasRole(ctx context.Context, eventID, userID string) (bool, error) {
-	sqlTx := sqltx.FromContext(ctx)
-
 	q := "SELECT EXISTS(SELECT 1 FROM events_users_roles WHERE event_id=$1 AND user_id=$2)"
-	return postgres.QueryBool(ctx, sqlTx, q, eventID, userID)
+	return postgres.QueryBool(ctx, s.db, q, eventID, userID)
 }
 
 // IsHost returns if the user's role in the events passed is host.
@@ -457,17 +445,15 @@ func (s service) IsHost(ctx context.Context, userID string, eventIDs ...string) 
 }
 
 // privacyFilter lets through only users that can fetch the event data if it's private,
-// if it's public it lets anyone in. TODO: cache
+// if it's public it lets anyone in. : cache
 func (s service) PrivacyFilter(ctx context.Context, r *http.Request, eventID string) error {
 	session, err := auth.GetSession(ctx, r)
 	if err != nil {
 		return err
 	}
 
-	sqlTx := sqltx.FromContext(ctx)
-
 	var isPublic bool
-	row := sqlTx.QueryRowContext(ctx, "SELECT public FROM events WHERE id=$1", eventID)
+	row := s.db.QueryRowContext(ctx, "SELECT public FROM events WHERE id=$1", eventID)
 	if err := row.Scan(&isPublic); err != nil {
 		return errors.Wrap(err, "privacy filter: fetching event visibility")
 	}
@@ -512,13 +498,15 @@ func (s service) RequirePermissions(ctx context.Context, r *http.Request, eventI
 	return nil
 }
 
-// SetRoles assigns a role to n users inside an event.
-func (s service) SetRoles(ctx context.Context, eventID, roleName string, userIDs ...string) error {
+// SetRole assigns a role to n users inside an event.
+func (s service) SetRole(ctx context.Context, eventID string, setRole SetRole) error {
 	sqlTx := sqltx.FromContext(ctx)
 
-	public, err := postgres.QueryBool(ctx, sqlTx, "SELECT public FROM events WHERE id=$1", eventID)
-	if err != nil {
-		return err
+	row := sqlTx.QueryRowContext(ctx, "SELECT public FROM events WHERE id=$1", eventID)
+
+	var public bool
+	if err := row.Scan(&public); err != nil {
+		return errors.Wrap(err, "scanning public")
 	}
 
 	if !public {
@@ -530,8 +518,8 @@ func (s service) SetRoles(ctx context.Context, eventID, roleName string, userIDs
 		}
 		defer stmt1.Close()
 
-		var hasRole bool // Will be overwritten on each iteration
-		for _, userID := range userIDs {
+		var hasRole bool // Reuse
+		for _, userID := range setRole.UserIDs {
 			if err := stmt1.QueryRowContext(ctx, eventID, userID).Scan(&hasRole); err != nil {
 				return err
 			}
@@ -547,8 +535,8 @@ func (s service) SetRoles(ctx context.Context, eventID, roleName string, userIDs
 	}
 	defer stmt2.Close()
 
-	for _, userID := range userIDs {
-		if _, err := stmt2.ExecContext(ctx, eventID, userID, roleName); err != nil {
+	for _, userID := range setRole.UserIDs {
+		if _, err := stmt2.ExecContext(ctx, eventID, userID, setRole.RoleName); err != nil {
 			return errors.Wrap(err, "setting roles")
 		}
 	}
@@ -558,7 +546,7 @@ func (s service) SetRoles(ctx context.Context, eventID, roleName string, userIDs
 		return errors.Wrap(err, "flushing buffered data")
 	}
 
-	return s.IncMembersCount(ctx, eventID, roleName)
+	return nil
 }
 
 // SetReservedRole assigns a reserved role to a user.
@@ -566,12 +554,14 @@ func (s service) SetReservedRole(ctx context.Context, eventID, userID string, ro
 	sqlTx := sqltx.FromContext(ctx)
 
 	// I'd prefer to use the user service here but it's not possible
-	typ, err := postgres.QueryInt(ctx, sqlTx, "SELECT type FROM users WHERE id=$1", userID)
-	if err != nil {
-		return err
+	row := sqlTx.QueryRowContext(ctx, "SELECT type FROM users WHERE id=$1", userID)
+
+	var typ int64
+	if err := row.Scan(&typ); err != nil {
+		return errors.Wrap(err, "scanning account type")
 	}
-	if typ == int64(model.Organization) {
-		return httperr.New("an organization can't take part in third party events", httperr.Forbidden)
+	if model.UserType(typ) == model.Business && roleName != roles.Host {
+		return httperr.Forbidden("a bussiness can't take part in third party events")
 	}
 
 	q := "INSERT INTO events_users_roles (event_id, user_id, role_name) VALUES ($1, $2, $3)"
@@ -579,7 +569,19 @@ func (s service) SetReservedRole(ctx context.Context, eventID, userID string, ro
 		return errors.Wrap(err, "setting reserved role")
 	}
 
-	return s.IncMembersCount(ctx, eventID, string(roleName))
+	return nil
+}
+
+// UnsetRole removes the role a user had in the event.
+func (s service) UnsetRole(ctx context.Context, eventID, userID string) error {
+	sqlTx := sqltx.FromContext(ctx)
+
+	q := "DELETE FROM events_users_roles WHERE event_id=$1 AND user_id=$2"
+	if _, err := sqlTx.ExecContext(ctx, q, eventID, userID); err != nil {
+		return errors.Wrap(err, "unsetting role")
+	}
+
+	return nil
 }
 
 // UpdatePemission sets new values for a permission.
@@ -611,14 +613,56 @@ func (s service) UpdateRole(ctx context.Context, eventID, name string, role Upda
 	return nil
 }
 
-func selectMembersFriends(model model.Model, friendsIDs, fields []string) string {
+func (s service) getFriendsIDs(ctx context.Context, userID string) ([]string, error) {
+	q := `query q($id: string) {
+		q(func: eq(user_id, $id)) {
+			friend {
+				user_id
+			}
+		}
+	}`
+	return queryFriendIDs(ctx, s.dc, q, map[string]string{"$id": userID})
+}
+
+func (s service) getFriendsIDsWithParams(ctx context.Context, userID string, params params.Query) ([]string, error) {
+	q := `query q($id: string, $cursor: string, $limit: string) {
+		q(func: eq(user_id, $id)) {
+			friend (orderasc: user_id) (first: $limit, offset: $cursor) {
+				user_id
+			}
+		}
+	}`
+	vars := dgraph.QueryVars(userID, params)
+	return queryFriendIDs(ctx, s.dc, q, vars)
+}
+
+func queryFriendIDs(ctx context.Context, dc *dgo.Dgraph, query string, vars map[string]string) ([]string, error) {
+	res, err := dc.NewReadOnlyTxn().QueryRDFWithVars(ctx, query, vars)
+	if err != nil {
+		return nil, errors.Wrap(err, "dgraph: fetching friends")
+	}
+
+	friendsIDs := dgraph.ParseRDFULIDs(res.Rdf)
+	if len(friendsIDs) == 0 {
+		return nil, nil
+	}
+
+	return friendsIDs, nil
+}
+
+func selectFriendsQuery(friendsIDs, fields []string, roleEquals bool) string {
 	buf := bufferpool.Get()
 
+	m := model.User
 	buf.WriteString("SELECT ")
-	postgres.WriteFields(buf, model, fields)
+	postgres.WriteFields(buf, m, fields)
 	buf.WriteString(" FROM ")
-	buf.WriteString(model.Tablename())
-	buf.WriteString(" WHERE id IN (SELECT user_id FROM events_users_roles WHERE event_id=$1 AND role_name != 'view_event' AND user_id IN (")
+	buf.WriteString(m.Tablename())
+	buf.WriteString(" WHERE id IN (SELECT user_id FROM events_users_roles WHERE event_id=$1 AND role_name ")
+	if !roleEquals {
+		buf.WriteRune('!')
+	}
+	buf.WriteString("= $2 AND user_id IN (")
 	for i, id := range friendsIDs {
 		if i != 0 {
 			buf.WriteByte(',')

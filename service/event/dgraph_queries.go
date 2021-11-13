@@ -10,13 +10,11 @@ const (
 	bannedCount
 	bannedLookup
 	isBanned
-	invited
-	invitedLookup
-	invitedCount
-	isInvited
+	eventsLikedByFriends
 	likedBy
 	likedByLookup
 	likedByCount
+	likedByTop
 )
 
 type query uint8
@@ -49,29 +47,12 @@ var getQuery = map[query]string{
 			}
 		}
 	}`,
-	invited: `query q($id: string, $cursor: string, $limit: string) {
-		q(func: eq(event_id, $id)) {
-			invited (orderasc: user_id) (first: $limit, offset: $cursor) {
-				user_id
-			}
-		}
-	}`,
-	invitedCount: `query q($id: string) {
-		q(func: eq(event_id, $id)) {
-			count(invited)
-		}
-	}`,
-	invitedLookup: `query q($id: string, $lookup_id: string) {
-		q(func: eq(event_id, $id)) {
-			invited @filter(eq(user_id, $lookup_id)) {
-				user_id
-			}
-		}
-	}`,
-	isInvited: `query q($id: string, $lookup_id: string) {
-		q(func: eq(event_id, $id)) {
-			invited @filter(eq(user_id, $lookup_id)) {
-				count(user_id)
+	eventsLikedByFriends: `query q($id: string) {
+		q(func: eq(user_id, $id)) {
+			friend {
+				~liked_by {
+					event_id
+				}
 			}
 		}
 	}`,
@@ -94,6 +75,14 @@ var getQuery = map[query]string{
 			}
 		}
 	}`,
+	likedByTop: `{
+		var(func: type("Event")) {
+			likes as count(liked_by)
+		}
+		q(func: type("Event"), orderdesc: val(likes), first: 50) {
+			event_id
+		}
+	}`,
 }
 
 const (
@@ -101,10 +90,6 @@ const (
 	bannedFriends mixedQuery = iota + 1
 	bannedFriendsCount
 	bannedFriendsLookup
-	// get users invited to the event that are friend of user
-	invitedFriends
-	invitedFriendsCount
-	invitedFriendsLookup
 	// get users liking the event that are friend of user
 	likedByFriends
 	likedByFriendsCount
@@ -140,34 +125,6 @@ var getMixedQuery = map[mixedQuery]string{
 
 		q(func: uid(user)) {
 			friend @filter(uid_in(~banned, uid(event)) AND eq(user_id, $lookup_id)) {
-				user_id
-			}
-		}
-	}`,
-	invitedFriends: `query q($event_id: string, $user_id: string, $cursor: string, $limit: string) {
-		user as var(func: eq(user_id, $user_id))
-		event as var(func: eq(event_id, $event_id))
-
-		q(func: uid(user)) {
-			friend @filter(uid_in(~invited, uid(event))) (orderasc: user_id) (first: $limit, offset: $cursor) {
-				user_id
-			}
-		}
-	}`,
-	invitedFriendsCount: `query q($event_id: string, $user_id: string) {
-		user as var(func: eq(user_id, $user_id))
-		event as var(func: eq(event_id, $event_id))
-
-		q(func: uid(user)) {
-			count(friend) @filter(uid_in(~invited, uid(event)))
-		}
-	}`,
-	invitedFriendsLookup: `query q($event_id: string, $user_id: string, $lookup_id: string) {
-		user as var(func: eq(user_id, $user_id))
-		event as var(func: eq(event_id, $event_id))
-
-		q(func: uid(user)) {
-			friend @filter(uid_in(~invited, uid(event)) AND eq(user_id, $lookup_id)) {
 				user_id
 			}
 		}

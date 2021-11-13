@@ -84,8 +84,8 @@ func TestUserHasRole(t *testing.T) {
 func createEvent(id, name string) error {
 	sqlTx := sqltx.FromContext(ctx)
 	q := `INSERT INTO events 
-	(id, name, type, public, virtual, slots, start_time, end_Time) 
-	VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`
-	_, err := sqlTx.ExecContext(ctx, q, id, name, 1, true, false, 100, 15000, 320000)
+	(id, name, type, public, virtual, slots, cron) 
+	VALUES ($1,$2,$3,$4,$5,$6,$7)`
+	_, err := sqlTx.ExecContext(ctx, q, id, name, 1, true, false, 100, "15 20 5 12 2 120")
 	return err
 }

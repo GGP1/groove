@@ -11,6 +11,12 @@ const (
 	blockedBy
 	blockedByCount
 	blockedByLookup
+	followers
+	followersCount
+	followersLookup
+	following
+	followingCount
+	followingLookup
 	friends
 	friendsLookup
 	friendsCount
@@ -84,6 +90,44 @@ var getQuery = map[query]string{
 			}
 		}
 	}`,
+	followers: `query q($id: string, $cursor: string, $limit: string) {
+		q(func: eq(user_id, $id)) {
+			~follows (orderasc: user_id) (first: $limit, offset: $cursor) {
+				user_id
+			}
+		}
+	}`,
+	followersCount: `query q($id: string) {
+		q(func: eq(user_id, $id)) {
+			count(~follows)
+		}
+	}`,
+	followersLookup: `query q($id: string, $lookup_id: string) {
+		q(func: eq(user_id, $id)) {
+			~follows @filter(eq(user_id, $lookup_id)) {
+				user_id
+			}
+		}
+	}`,
+	following: `query q($id: string, $cursor: string, $limit: string) {
+		q(func: eq(user_id, $id)) {
+			follows (orderasc: user_id) (first: $limit, offset: $cursor) {
+				user_id
+			}
+		}
+	}`,
+	followingCount: `query q($id: string) {
+		q(func: eq(user_id, $id)) {
+			count(follows)
+		}
+	}`,
+	followingLookup: `query q($id: string, $lookup_id: string) {
+		q(func: eq(user_id, $id)) {
+			follows @filter(eq(user_id, $lookup_id)) {
+				user_id
+			}
+		}
+	}`,
 	friends: `query q($id: string, $cursor: string, $limit: string) {
 		q(func: eq(user_id, $id)) {
 			friend (orderasc: user_id) (first: $limit, offset: $cursor) {
@@ -112,8 +156,8 @@ var getQuery = map[query]string{
 	}`,
 	invited: `query q($id: string, $cursor: string, $limit: string) {
 		q(func: eq(user_id, $id)) {
-			~invited (orderasc: event_id) (first: $limit, offset: $cursor) {
-				event_id
+			~invited (orderasc: user_id) (first: $limit, offset: $cursor) {
+				user_id
 			}
 		}
 	}`,
@@ -124,8 +168,8 @@ var getQuery = map[query]string{
 	}`,
 	invitedLookup: `query q($id: string, $lookup_id: string) {
 		q(func: eq(user_id, $id)) {
-			~invited @filter(eq(event_id, $lookup_id)) {
-				event_id
+			~invited @filter(eq(user_id, $lookup_id)) {
+				user_id
 			}
 		}
 	}`,
@@ -215,7 +259,7 @@ var getMixedQuery = map[mixedQuery]string{
 		target as var(func: eq(user_id, $friend_id))
 
 		q(func: uid(user)) {
-			friend @filter((NOT uid_in(friend, uid(target))) AND (NOT uid(target)) AND  eq(user_id, $lookup_id)) {
+			friend @filter((NOT uid_in(friend, uid(target))) AND (NOT uid(target)) AND eq(user_id, $lookup_id)) {
 				user_id
 			}
 		}

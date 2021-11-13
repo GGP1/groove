@@ -7,16 +7,6 @@ import (
 	"net/http"
 )
 
-// TODO: maybe it's better to use error types and use status based on those types (type errBanned -> Forbidden, type errLogin -> Unauthorized)
-// Status code
-const (
-	BadRequest   status = http.StatusBadRequest
-	Unauthorized status = http.StatusUnauthorized
-	Forbidden    status = http.StatusForbidden
-)
-
-type status int
-
 // Err represents an error.
 type Err struct {
 	msg    string
@@ -33,7 +23,7 @@ func (e *Err) Status() int {
 }
 
 // New returns a new error containing an status code.
-func New(message string, status status) error {
+func New(message string, status int) error {
 	return &Err{
 		msg:    message,
 		status: int(status),
@@ -41,9 +31,33 @@ func New(message string, status status) error {
 }
 
 // Errorf creates a formatted error.
-func Errorf(status status, format string, args ...interface{}) error {
+func Errorf(status int, format string, args ...interface{}) error {
 	return &Err{
 		msg:    fmt.Sprintf(format, args...),
 		status: int(status),
+	}
+}
+
+// BadRequest returns a custom error that contains a status 400.
+func BadRequest(message string) error {
+	return &Err{
+		msg:    message,
+		status: http.StatusBadRequest,
+	}
+}
+
+// Unauthorized returns a custom error that contains a status 401.
+func Unauthorized(message string) error {
+	return &Err{
+		msg:    message,
+		status: http.StatusUnauthorized,
+	}
+}
+
+// Forbidden returns a custom error that contains a status 400.
+func Forbidden(message string) error {
+	return &Err{
+		msg:    message,
+		status: http.StatusForbidden,
 	}
 }

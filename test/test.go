@@ -4,6 +4,7 @@ package test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net"
 	"testing"
@@ -34,17 +35,11 @@ import (
 
 // CreateEvent creates a new user for testing purposes.
 func CreateEvent(ctx context.Context, db *sql.DB, dc *dgo.Dgraph, id, name string) error {
-	typ := event.GrandPrix
-	public := true
-	virtual := false
-	slots := 100
-	startTime := 150000
-	endTime := 320000
 	q := `INSERT INTO events 
-	(id, name, type, public, virtual, slots, start_time, end_Time) 
-	VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`
-	_, err := db.ExecContext(ctx, q, id, name, typ, public, virtual,
-		slots, startTime, endTime)
+	(id, name, type, public, virtual, slots, cron, start_date, end_date, ticket_type) 
+	VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`
+	_, err := db.ExecContext(ctx, q,
+		id, name, event.GrandPrix, true, false, 100, "48 12 * * * 15", time.Now(), time.Now().Add(time.Hour*2400), 1)
 	if err != nil {
 		return err
 	}
@@ -62,7 +57,7 @@ func CreateUser(ctx context.Context, db *sql.DB, dc *dgo.Dgraph, id, email, user
 	}
 	password = string(pwd)
 	q := "INSERT INTO users (id, name, email, username, password, birth_date, type) VALUES ($1,$2,$3,$4,$5,$6,$7)"
-	_, err = db.ExecContext(ctx, q, id, "test", email, username, password, time.Now(), model.Standard)
+	_, err = db.ExecContext(ctx, q, id, "test", email, username, password, time.Now(), model.Personal)
 	if err != nil {
 		return err
 	}
@@ -94,7 +89,7 @@ func RunDgraph() (*dockertest.Pool, *dockertest.Resource, *dgo.Dgraph, *grpc.Cli
 		return nil, nil, nil, nil, err
 	}
 
-	resource, err := pool.Run("dgraph/standalone", "v21.03.0", nil)
+	resource, err := pool.Run("dgraph/standalone", "v21.03.2", nil)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -121,19 +116,25 @@ func RunDgraph() (*dockertest.Pool, *dockertest.Resource, *dgo.Dgraph, *grpc.Cli
 
 	ctx := context.Background()
 	// Wait for the connection to establish before running tests
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(200 * time.Millisecond)
+	timeout := time.Now().Add(5 * time.Second)
 	for {
-		<-ticker.C
+		if t := <-ticker.C; t.After(timeout) {
+			return nil, nil, nil, nil, errors.New("connection: timeout reached")
+		}
 		state := conn.GetState()
-		if state == connectivity.Ready {
+		if state == connectivity.Ready || state == connectivity.Idle {
 			break
 		}
 	}
 
 	// The connection is established but the server is still initiating
 	// retry creating schema until success
+	timeout = time.Now().Add(5 * time.Second)
 	for {
-		<-ticker.C
+		if t := <-ticker.C; t.After(timeout) {
+			return nil, nil, nil, nil, errors.New("create schema: timeout reached")
+		}
 		if err := dgraph.CreateSchema(ctx, dc); err == nil {
 			break
 		}
@@ -163,7 +164,7 @@ func RunMemcached() (*dockertest.Pool, *dockertest.Resource, cache.Client, error
 		return nil, nil, nil, err
 	}
 
-	resource, err := pool.Run("memcached", "1.6.9-alpine", nil)
+	resource, err := pool.Run("memcached", "1.6.10-alpine", nil)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -171,7 +172,9 @@ func RunMemcached() (*dockertest.Pool, *dockertest.Resource, cache.Client, error
 	var cache cache.Client
 	err = pool.Retry(func() error {
 		cache, err = memcached.NewClient(config.Memcached{
-			Servers: []string{fmt.Sprintf("localhost:%s", resource.GetPort("11211/tcp"))},
+			Servers:      []string{fmt.Sprintf("localhost:%s", resource.GetPort("11211/tcp"))},
+			MaxIdleConns: 1,
+			Timeout:      2 * time.Second,
 		})
 		return err
 	})
@@ -202,7 +205,7 @@ func RunPostgres() (*dockertest.Pool, *dockertest.Resource, *sql.DB, error) {
 	}
 	// The database name will be taken from the user name
 	env := []string{"POSTGRES_USER=postgres", "POSTGRES_PASSWORD=postgres", "listen_addresses = '*'"}
-	resource, err := pool.Run("postgres", "13.2-alpine", env)
+	resource, err := pool.Run("postgres", "14.0-alpine", env)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -221,7 +224,7 @@ func RunPostgres() (*dockertest.Pool, *dockertest.Resource, *sql.DB, error) {
 		return nil, nil, nil, err
 	}
 
-	if err := postgres.CreateTables(context.Background(), db, config.Postgres{Username: "postgres"}); err != nil {
+	if err := postgres.CreateTables(context.Background(), db); err != nil {
 		return nil, nil, nil, err
 	}
 
@@ -248,7 +251,7 @@ func RunRedis() (*dockertest.Pool, *dockertest.Resource, *redis.Client, error) {
 		return nil, nil, nil, err
 	}
 
-	resource, err := pool.Run("redis", "6.2.1-alpine", nil)
+	resource, err := pool.Run("redis", "6.2.5-alpine", nil)
 	if err != nil {
 		return nil, nil, nil, err
 	}

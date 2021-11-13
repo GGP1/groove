@@ -3,6 +3,8 @@ package sqltx
 import (
 	"context"
 	"database/sql"
+
+	"github.com/GGP1/groove/internal/txgroup"
 )
 
 // txKey is the context key for the sql transaction.
@@ -26,5 +28,9 @@ func NewContext(ctx context.Context, tx *sql.Tx) context.Context {
 //
 // It panics if there is no transaction.
 func FromContext(ctx context.Context) *sql.Tx {
-	return ctx.Value(txKey).(*sql.Tx)
+	tx, ok := ctx.Value(txKey).(*sql.Tx)
+	if !ok {
+		tx = txgroup.SQLTx(ctx)
+	}
+	return tx
 }

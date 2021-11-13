@@ -38,7 +38,7 @@ func NewHandler(db *sql.DB, cache cache.Client, service Service) Handler {
 // ClonePermissions clones the permissions from one event to another.
 func (h Handler) ClonePermissions() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
 		var req struct {
 			ExporterEventID string `json:"exporter_event_id,omitempty"`
@@ -49,23 +49,20 @@ func (h Handler) ClonePermissions() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		importerEventID := httprouter.ParamsFromContext(rctx).ByName("id")
+		importerEventID := httprouter.ParamsFromContext(ctx).ByName("id")
 		if err := validate.ULIDs(importerEventID, req.ExporterEventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
-		defer sqlTx.Rollback()
-
 		if err := h.service.RequirePermissions(ctx, r, req.ExporterEventID, permissions.ModifyPermissions); err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
 		}
-		if err := h.service.RequirePermissions(ctx, r, importerEventID, permissions.ModifyPermissions); err != nil {
-			response.Error(w, http.StatusForbidden, err)
-			return
-		}
+
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
+
 		if err := h.service.ClonePermissions(ctx, req.ExporterEventID, importerEventID); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -83,7 +80,7 @@ func (h Handler) ClonePermissions() http.HandlerFunc {
 // CloneRoles imports the roles from an event and saves them into another.
 func (h Handler) CloneRoles() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
 		var req struct {
 			ExporterEventID string `json:"exporter_event_id,omitempty"`
@@ -94,24 +91,20 @@ func (h Handler) CloneRoles() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		importerEventID := httprouter.ParamsFromContext(rctx).ByName("id")
+		importerEventID := httprouter.ParamsFromContext(ctx).ByName("id")
 		if err := validate.ULIDs(importerEventID, req.ExporterEventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
-		defer sqlTx.Rollback()
-
-		// Verify the user has permissions in both events
 		if err := h.service.RequirePermissions(ctx, r, req.ExporterEventID, permissions.ModifyRoles); err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
 		}
-		if err := h.service.RequirePermissions(ctx, r, importerEventID, permissions.ModifyRoles); err != nil {
-			response.Error(w, http.StatusForbidden, err)
-			return
-		}
+
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
+
 		if err := h.service.CloneRoles(ctx, req.ExporterEventID, importerEventID); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -129,19 +122,11 @@ func (h Handler) CloneRoles() http.HandlerFunc {
 // CreatePermission creates a new permission inside an event.
 func (h Handler) CreatePermission() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		eventID, err := params.IDFromCtx(rctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
-		defer sqlTx.Rollback()
-
-		if err := h.service.RequirePermissions(ctx, r, eventID, permissions.ModifyPermissions); err != nil {
-			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
@@ -157,6 +142,9 @@ func (h Handler) CreatePermission() http.Handler {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
+
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
 
 		if err := h.service.CreatePermission(ctx, eventID, permission); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
@@ -175,19 +163,11 @@ func (h Handler) CreatePermission() http.Handler {
 // CreateRole creates a new role inside an event.
 func (h Handler) CreateRole() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		eventID, err := params.IDFromCtx(rctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
-		defer sqlTx.Rollback()
-
-		if err := h.service.RequirePermissions(ctx, r, eventID, permissions.ModifyRoles); err != nil {
-			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
@@ -203,6 +183,9 @@ func (h Handler) CreateRole() http.Handler {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
+
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
 
 		if err := h.service.CreateRole(ctx, eventID, role); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
@@ -221,9 +204,9 @@ func (h Handler) CreateRole() http.Handler {
 // DeletePermission removes a permission from an event.
 func (h Handler) DeletePermission() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		ctxParams := httprouter.ParamsFromContext(rctx)
+		ctxParams := httprouter.ParamsFromContext(ctx)
 		eventID := ctxParams.ByName("id")
 		if err := validate.ULID(eventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
@@ -231,13 +214,9 @@ func (h Handler) DeletePermission() http.HandlerFunc {
 		}
 		key := strings.ToLower(ctxParams.ByName("key"))
 
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
-		if err := h.service.RequirePermissions(ctx, r, eventID, permissions.ModifyPermissions); err != nil {
-			response.Error(w, http.StatusForbidden, err)
-			return
-		}
 		if err := h.service.DeletePermission(ctx, eventID, key); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -255,21 +234,17 @@ func (h Handler) DeletePermission() http.HandlerFunc {
 // DeleteRole removes a role from an event.
 func (h Handler) DeleteRole() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		eventID, roleName, err := params.IDAndNameFromCtx(rctx)
+		eventID, roleName, err := params.IDAndNameFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
-		if err := h.service.RequirePermissions(ctx, r, eventID, permissions.ModifyRoles); err != nil {
-			response.Error(w, http.StatusForbidden, err)
-			return
-		}
 		if err := h.service.DeleteRole(ctx, eventID, roleName); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -287,9 +262,9 @@ func (h Handler) DeleteRole() http.HandlerFunc {
 // GetMembers returns the members of an event.
 func (h Handler) GetMembers() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		eventID, err := params.IDFromCtx(rctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -300,9 +275,6 @@ func (h Handler) GetMembers() http.HandlerFunc {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
-
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, true)
-		defer sqlTx.Rollback()
 
 		if params.Count {
 			count, err := h.service.GetMembersCount(ctx, eventID)
@@ -333,9 +305,9 @@ func (h Handler) GetMembers() http.HandlerFunc {
 // GetMembersFriends returns the members of an event that are friends of a user.
 func (h Handler) GetMembersFriends() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		eventID, err := params.IDFromCtx(rctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -347,14 +319,11 @@ func (h Handler) GetMembersFriends() http.HandlerFunc {
 			return
 		}
 
-		session, err := auth.GetSession(rctx, r)
+		session, err := auth.GetSession(ctx, r)
 		if err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
 		}
-
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, true)
-		defer sqlTx.Rollback()
 
 		if params.Count {
 			count, err := h.service.GetMembersFriendsCount(ctx, eventID, session.ID)
@@ -385,23 +354,15 @@ func (h Handler) GetMembersFriends() http.HandlerFunc {
 // GetPermission returns a permission from an event with the given key.
 func (h Handler) GetPermission() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		ctxParams := httprouter.ParamsFromContext(rctx)
+		ctxParams := httprouter.ParamsFromContext(ctx)
 		eventID := ctxParams.ByName("id")
 		if err := validate.ULID(eventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 		key := strings.ToLower(ctxParams.ByName("key"))
-
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, true)
-		defer sqlTx.Rollback()
-
-		if err := h.service.RequirePermissions(ctx, r, eventID, permissions.ModifyPermissions); err != nil {
-			response.Error(w, http.StatusForbidden, err)
-			return
-		}
 
 		permission, err := h.service.GetPermission(ctx, eventID, key)
 		if err != nil {
@@ -416,25 +377,17 @@ func (h Handler) GetPermission() http.HandlerFunc {
 // GetPermissions retrives all event's permissions.
 func (h Handler) GetPermissions() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		eventID, err := params.IDFromCtx(rctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
 		cacheKey := model.PermissionsCacheKey(eventID)
-		if item, err := h.cache.Get(cacheKey); err == nil {
-			response.EncodedJSON(w, item.Value)
-			return
-		}
-
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, true)
-		defer sqlTx.Rollback()
-
-		if err := h.service.RequirePermissions(ctx, r, eventID, permissions.ModifyPermissions); err != nil {
-			response.Error(w, http.StatusForbidden, err)
+		if v, err := h.cache.Get(cacheKey); err == nil {
+			response.EncodedJSON(w, v)
 			return
 		}
 
@@ -451,19 +404,11 @@ func (h Handler) GetPermissions() http.HandlerFunc {
 // GetRole returns a role from an event with the given name.
 func (h Handler) GetRole() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		eventID, roleName, err := params.IDAndNameFromCtx(rctx)
+		eventID, roleName, err := params.IDAndNameFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, true)
-		defer sqlTx.Rollback()
-
-		if err := h.service.RequirePermissions(ctx, r, eventID, permissions.ModifyRoles); err != nil {
-			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
@@ -480,25 +425,17 @@ func (h Handler) GetRole() http.HandlerFunc {
 // GetRoles retrives all event's roles.
 func (h Handler) GetRoles() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		eventID, err := params.IDFromCtx(rctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
 		cacheKey := model.RolesCacheKey(eventID)
-		if item, err := h.cache.Get(cacheKey); err == nil {
-			response.EncodedJSON(w, item.Value)
-			return
-		}
-
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, true)
-		defer sqlTx.Rollback()
-
-		if err := h.service.RequirePermissions(ctx, r, eventID, permissions.ModifyRoles); err != nil {
-			response.Error(w, http.StatusForbidden, err)
+		if v, err := h.cache.Get(cacheKey); err == nil {
+			response.EncodedJSON(w, v)
 			return
 		}
 
@@ -515,19 +452,11 @@ func (h Handler) GetRoles() http.HandlerFunc {
 // GetUserRole gets the role of a user inside an event
 func (h Handler) GetUserRole() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		eventID, err := params.IDFromCtx(rctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, true)
-		defer sqlTx.Rollback()
-
-		if err := h.service.PrivacyFilter(ctx, r, eventID); err != nil {
-			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
@@ -556,39 +485,30 @@ func (h Handler) GetUserRole() http.HandlerFunc {
 // SetRoles sets a role to n users inside the event passed.
 func (h Handler) SetRoles() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		eventID, err := params.IDFromCtx(rctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
-		defer sqlTx.Rollback()
-
-		if err := h.service.RequirePermissions(ctx, r, eventID, permissions.SetUserRole); err != nil {
-			response.Error(w, http.StatusForbidden, err)
-			return
-		}
-
-		var reqBody struct {
-			UserIDs  []string `json:"user_ids,omitempty"`
-			RoleName string   `json:"role_name,omitempty"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		var setRole SetRole
+		if err := json.NewDecoder(r.Body).Decode(&setRole); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 		defer r.Body.Close()
 
-		if err := validate.ULIDs(reqBody.UserIDs...); err != nil {
+		if err := setRole.Validate(); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		err = h.service.SetRoles(ctx, eventID, reqBody.RoleName, reqBody.UserIDs...)
-		if err != nil {
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
+
+		if err := h.service.SetRole(ctx, eventID, setRole); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -605,23 +525,15 @@ func (h Handler) SetRoles() http.HandlerFunc {
 // UpdatePermission updates a permission.
 func (h Handler) UpdatePermission() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		ctxParams := httprouter.ParamsFromContext(rctx)
+		ctxParams := httprouter.ParamsFromContext(ctx)
 		eventID := ctxParams.ByName("id")
 		if err := validate.ULID(eventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 		key := strings.ToLower(ctxParams.ByName("key"))
-
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
-		defer sqlTx.Rollback()
-
-		if err := h.service.RequirePermissions(ctx, r, eventID, permissions.ModifyPermissions); err != nil {
-			response.Error(w, http.StatusForbidden, err)
-			return
-		}
 
 		var permission UpdatePermission
 		if err := json.NewDecoder(r.Body).Decode(&permission); err != nil {
@@ -634,6 +546,9 @@ func (h Handler) UpdatePermission() http.HandlerFunc {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
+
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
 
 		if err := h.service.UpdatePermission(ctx, eventID, key, permission); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
@@ -652,19 +567,11 @@ func (h Handler) UpdatePermission() http.HandlerFunc {
 // UpdateRole updates a role.
 func (h Handler) UpdateRole() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		eventID, roleName, err := params.IDAndNameFromCtx(rctx)
+		eventID, roleName, err := params.IDAndNameFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
-		defer sqlTx.Rollback()
-
-		if err := h.service.RequirePermissions(ctx, r, eventID, permissions.ModifyRoles); err != nil {
-			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
@@ -679,6 +586,9 @@ func (h Handler) UpdateRole() http.HandlerFunc {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
+
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
 
 		if err := h.service.UpdateRole(ctx, eventID, roleName, role); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)

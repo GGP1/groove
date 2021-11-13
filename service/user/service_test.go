@@ -59,7 +59,7 @@ func TestMain(m *testing.M) {
 	roleService := role.NewService(db, dc, cacheClient)
 	notifService := notification.NewService(db, dc, config.Notifications{}, authService, roleService)
 	admins := map[string]interface{}{adminEmail: struct{}{}}
-	userSv = user.NewService(db, dc, cacheClient, admins, notifService)
+	userSv = user.NewService(db, dc, cacheClient, admins, notifService, roleService)
 	eventSv = event.NewService(db, dc, cacheClient, notifService, roleService)
 
 	code := m.Run()
@@ -275,7 +275,11 @@ func TestGetInvitedEvents(t *testing.T) {
 	err = test.CreateUser(ctx, db, dc, userID, "invited@email.com", "invited", "1")
 	assert.NoError(t, err)
 
-	err = eventSv.AddEdge(ctx, eventID, dgraph.Invited, userID)
+	invite := user.Invite{
+		EventID: eventID,
+		UserIDs: []string{userID},
+	}
+	err = userSv.InviteToEvent(ctx, auth.Session{ID: ulid.NewString()}, invite)
 	assert.NoError(t, err)
 
 	events, err := userSv.GetInvitedEvents(ctx, userID, params.Query{LookupID: eventID})
@@ -294,13 +298,12 @@ func TestGetHostedEvents(t *testing.T) {
 
 	boolean := false
 	createEvent := event.CreateEvent{
-		HostID:    userID,
-		Name:      "TestGetHostedEvents",
-		Type:      event.Talk,
-		Public:    &boolean,
-		Slots:     100,
-		StartTime: time.Now(),
-		EndTime:   time.Now().Add(time.Second * 1500),
+		HostID: userID,
+		Name:   "TestGetHostedEvents",
+		Type:   event.Talk,
+		Public: &boolean,
+		Slots:  100,
+		Cron:   "0 0 * * * 60",
 	}
 	err = eventSv.Create(ctx, eventID, createEvent)
 	assert.NoError(t, err)

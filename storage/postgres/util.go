@@ -25,15 +25,11 @@ func AddPagination(query, paginationField string, params params.Query) string {
 	return q
 }
 
-// AppendInIDs appends an "AND IN (ids...)" string to the query.
-func AppendInIDs(query string, ids []string, not bool) string {
+// AppendInIDs appends an "IN (ids...)" string to the query.
+func AppendInIDs(query string, ids []string) string {
 	buf := bufferpool.Get()
 	buf.WriteString(query)
-	buf.WriteString(" AND id ")
-	if not {
-		buf.WriteString("NOT ")
-	}
-	buf.WriteString("IN (")
+	buf.WriteString(" IN (")
 	for i, id := range ids {
 		if i != 0 {
 			buf.WriteByte(',')
@@ -50,8 +46,21 @@ func AppendInIDs(query string, ids []string, not bool) string {
 }
 
 // BeginTx returns a new sql transaction and a context with it stored.
-func BeginTx(ctx context.Context, db *sql.DB, readOnly bool) (*sql.Tx, context.Context) {
-	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: readOnly})
+func BeginTx(ctx context.Context, db *sql.DB) (*sql.Tx, context.Context) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		panic(err)
+	}
+
+	return tx, sqltx.NewContext(ctx, tx)
+}
+
+// BeginTxOpts is like BeginTx but takes the isolation level as a parameter.
+func BeginTxOpts(ctx context.Context, db *sql.DB, isolation sql.IsolationLevel) (*sql.Tx, context.Context) {
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{
+		ReadOnly:  false,
+		Isolation: isolation,
+	})
 	if err != nil {
 		panic(err)
 	}
@@ -90,8 +99,8 @@ func BulkInsert(ctx context.Context, tx *sql.Tx, table string, fields ...string)
 }
 
 // QueryBool returns a boolean scanned from a single row.
-func QueryBool(ctx context.Context, tx *sql.Tx, query string, args ...interface{}) (bool, error) {
-	row := tx.QueryRowContext(ctx, query, args...)
+func QueryBool(ctx context.Context, db *sql.DB, query string, args ...interface{}) (bool, error) {
+	row := db.QueryRowContext(ctx, query, args...)
 	var b bool
 	if err := row.Scan(&b); err != nil {
 		if err == sql.ErrNoRows {
@@ -104,8 +113,8 @@ func QueryBool(ctx context.Context, tx *sql.Tx, query string, args ...interface{
 }
 
 // QueryInt returns a string scanned from a single row.
-func QueryInt(ctx context.Context, tx *sql.Tx, query string, args ...interface{}) (int64, error) {
-	row := tx.QueryRowContext(ctx, query, args...)
+func QueryInt(ctx context.Context, db *sql.DB, query string, args ...interface{}) (int64, error) {
+	row := db.QueryRowContext(ctx, query, args...)
 	var i int64
 	if err := row.Scan(&i); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -118,8 +127,8 @@ func QueryInt(ctx context.Context, tx *sql.Tx, query string, args ...interface{}
 }
 
 // QueryString returns a string scanned from a single row.
-func QueryString(ctx context.Context, tx *sql.Tx, query string, args ...interface{}) (string, error) {
-	row := tx.QueryRowContext(ctx, query, args...)
+func QueryString(ctx context.Context, db *sql.DB, query string, args ...interface{}) (string, error) {
+	row := db.QueryRowContext(ctx, query, args...)
 	var str string
 	if err := row.Scan(&str); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -131,39 +140,22 @@ func QueryString(ctx context.Context, tx *sql.Tx, query string, args ...interfac
 	return str, nil
 }
 
-// ScanStringSlice returns a slice of strings scanned from sql rows.
-func ScanStringSlice(rows *sql.Rows) ([]string, error) {
-	var (
-		// Reuse string, no need to reset as it will be overwritten every iteration
-		str   string
-		slice []string
-	)
-
-	for rows.Next() {
-		if err := rows.Scan(&str); err != nil {
-			return nil, err
-		}
-		slice = append(slice, str)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return slice, nil
-}
-
 // FullTextSearch returns an SQL query implementing FTS.
 //
 //	SELECT [fields] FROM [table] WHERE search @@ to_tsquery($1) [pagination].
-func FullTextSearch(model model.Model, params params.Query) string {
+func FullTextSearch(m model.Model, params params.Query) string {
 	buf := bufferpool.Get()
 
 	buf.WriteString("SELECT ")
-	WriteFields(buf, model, params.Fields)
+	WriteFields(buf, m, params.Fields)
 	buf.WriteString(" FROM ")
-	buf.WriteString(model.Tablename())
+	buf.WriteString(m.Tablename())
 	buf.WriteString(" WHERE search @@ to_tsquery($1)")
+	if m == model.Event {
+		buf.WriteString(" AND (public=true OR id IN (SELECT event_id FROM events_users_roles WHERE user_id=$2))")
+	} else if m == model.User {
+		buf.WriteString(" AND private=false")
+	}
 	addPagination(buf, "id", params)
 
 	q := buf.String()
@@ -184,7 +176,7 @@ func ToTSQuery(s string) string {
 // [ids] mustn't be a user input.
 //
 // 	SELECT fields FROM table WHERE id IN ('id1','id2',...) ORDER BY id DESC
-func SelectInID(model model.Model, ids, fields []string) string {
+func SelectInID(model model.Model, fields, ids []string) string {
 	buf := bufferpool.Get()
 
 	buf.WriteString("SELECT ")
@@ -231,7 +223,33 @@ func SelectWhere(model model.Model, whereCond, paginationField string, params pa
 
 	q := buf.String()
 	bufferpool.Put(buf)
+	return q
+}
 
+// Union constructs a query from multiple others using the UNION key.
+//	Format: "SELECT [fields] FROM ([query1] UNION [query2] UNION ...) WHERE public=true [pagination]"
+func Union(model model.Model, params params.Query, queries ...string) string {
+	buf := bufferpool.Get()
+
+	buf.WriteString("SELECT ")
+	WriteFields(buf, model, params.Fields)
+	buf.WriteString(" FROM ")
+	buf.WriteString(model.Tablename())
+	buf.WriteString(" WHERE id IN (")
+	for i, query := range queries {
+		if query == "" {
+			continue
+		}
+		if i != 0 {
+			buf.WriteString(" UNION ")
+		}
+		buf.WriteString(query)
+	}
+	buf.WriteString(") AND public=true")
+	addPagination(buf, "id", params)
+
+	q := buf.String()
+	bufferpool.Put(buf)
 	return q
 }
 
@@ -248,6 +266,20 @@ func WriteFields(buf *bytes.Buffer, model model.Model, fields []string) {
 			buf.WriteString(f)
 		}
 	}
+}
+
+// WriteIDs takes a buffer and writes the ids passed along with two braces enclosing them.
+func WriteIDs(buf *bytes.Buffer, ids []string) {
+	buf.WriteRune('(')
+	for i, id := range ids {
+		if i != 0 {
+			buf.WriteByte(',')
+		}
+		buf.WriteByte('\'')
+		buf.WriteString(id)
+		buf.WriteByte('\'')
+	}
+	buf.WriteByte(')')
 }
 
 func addPagination(buf *bytes.Buffer, paginationField string, p params.Query) {

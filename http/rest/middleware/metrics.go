@@ -14,12 +14,12 @@ import (
 
 // MetricsHandler implements a scrapper middleware.
 type MetricsHandler struct {
-	serverIP        string
 	requestInFlight *prometheus.GaugeVec
 	requestCount    *prometheus.CounterVec
 	requestDuration *prometheus.HistogramVec
 	requestSize     *prometheus.HistogramVec
 	responseSize    *prometheus.HistogramVec
+	serverIP        string
 }
 
 // NewMetrics initializes the metrics and returns the handler used to scrap.
@@ -73,7 +73,7 @@ func (m MetricsHandler) Scrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		basicLabels := prometheus.Labels{"server_ip": m.serverIP}
-		httpLabels := prometheus.Labels{"path": cleanPath(r.URL.Path), "method": r.Method, "code": ""}
+		httpLabels := prometheus.Labels{"path": basePath(r.URL.Path), "method": r.Method, "code": ""}
 
 		m.requestCount.With(basicLabels).Inc()
 		inFlight := m.requestInFlight.With(basicLabels)
@@ -83,7 +83,7 @@ func (m MetricsHandler) Scrap(next http.Handler) http.Handler {
 		next.ServeHTTP(interceptor, r)
 
 		m.requestDuration.With(httpLabels).Observe(time.Since(start).Seconds())
-		httpLabels["code"] = sanitizeCode(interceptor.statusCode)
+		httpLabels["code"] = strCode(interceptor.statusCode)
 		m.requestSize.With(httpLabels).Observe(float64(approxReqSize(r)))
 		m.responseSize.With(httpLabels).Observe(float64(interceptor.size))
 		inFlight.Dec()
@@ -142,17 +142,12 @@ func approxReqSize(r *http.Request) int {
 	return s
 }
 
-// cleanPath removes the last element from a url path if it's not the only one.
-func cleanPath(path string) string {
-	last := len(path) - 1
-	if path[last:] == "/" {
-		path = path[:last]
-	}
-	lastIdx := strings.LastIndex(path, "/")
-	if lastIdx < 1 {
+func basePath(path string) string {
+	first := strings.IndexByte(path[1:], '/')
+	if first == -1 {
 		return path
 	}
-	return path[:lastIdx]
+	return path[:first]
 }
 
 // getOutboundIP returns the preferred outbound ip of the current machine.
@@ -167,7 +162,7 @@ func getOutboundIP() string {
 	return localAddr.IP.String()
 }
 
-func sanitizeCode(code int) string {
+func strCode(code int) string {
 	switch code {
 	case 100:
 		return "100"

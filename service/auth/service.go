@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -11,8 +12,8 @@ import (
 	"github.com/GGP1/groove/internal/cookie"
 	"github.com/GGP1/groove/internal/httperr"
 	"github.com/GGP1/groove/internal/log"
-	"github.com/GGP1/groove/internal/scan"
 	"github.com/GGP1/groove/internal/userip"
+	"github.com/GGP1/sqan"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
@@ -71,7 +72,7 @@ func (s service) Login(ctx context.Context, w http.ResponseWriter, r *http.Reque
 	}
 
 	if attempts > 4 {
-		return userSession{}, httperr.Errorf(httperr.Forbidden, "please wait %v before trying again", delay(attempts))
+		return userSession{}, httperr.Forbidden(fmt.Sprintf("please wait %v before trying again", delay(attempts)))
 	}
 
 	query := `SELECT 
@@ -84,20 +85,20 @@ func (s service) Login(ctx context.Context, w http.ResponseWriter, r *http.Reque
 	}
 
 	var user userSession
-	if err := scan.Row(&user, rows); err != nil {
+	if err := sqan.Row(&user, rows); err != nil {
 		_ = s.addDelay(ctx, ip)
 		log.Debug("database error", zap.Error(err))
-		return userSession{}, httperr.New("invalid email or password", httperr.Forbidden)
+		return userSession{}, httperr.Forbidden("invalid email or password")
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(login.Password)); err != nil {
 		_ = s.addDelay(ctx, ip)
 		log.Debug("password mismatch", zap.Error(err))
-		return userSession{}, httperr.New("invalid email or password", httperr.Forbidden)
+		return userSession{}, httperr.Forbidden("invalid email or password")
 	}
 
 	if s.config.VerifyEmails && !user.VerifiedEmail {
-		return userSession{}, httperr.New("please verify your email before logging in", httperr.Forbidden)
+		return userSession{}, httperr.Forbidden("please verify your email before logging in")
 	}
 
 	if login.DeviceToken == "" {

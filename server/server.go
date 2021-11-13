@@ -102,7 +102,7 @@ func (srv *Server) listenAndServe(serverErr chan error) {
 
 	if len(srv.TLSConfig.Certificates) > 0 || srv.TLSConfig.GetCertificate != nil {
 		if srv.letsEncrypt.enabled {
-			// TODO: Test implementation
+			// TODO PRODUCTION: Test implementation
 			certManager := autocert.Manager{
 				Prompt:     func(tosURL string) bool { return srv.letsEncrypt.acceptTOS },
 				HostPolicy: autocert.HostWhitelist(srv.letsEncrypt.hosts...),

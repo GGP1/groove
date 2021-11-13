@@ -1,11 +1,9 @@
 package event
 
 import (
-	"net/url"
 	"time"
 
 	"github.com/GGP1/groove/internal/validate"
-
 	"github.com/pkg/errors"
 )
 
@@ -13,54 +11,52 @@ import (
 //
 // Use pointers to distinguish default values.
 type Event struct {
-	ID          string     `json:"id,omitempty"`
-	Name        string     `json:"name,omitempty"`
-	Description string     `json:"description,omitempty"`
-	Type        eventType  `json:"type,omitempty"`
+	HeaderURL   *string    `json:"header_url,omitempty" db:"header_url"`
+	CreatedAt   *time.Time `json:"created_at,omitempty" db:"created_at"`
+	Slots       *uint64    `json:"slots,omitempty"`
 	Public      *bool      `json:"public,omitempty"`
 	Virtual     *bool      `json:"virtual,omitempty"`
 	Location    *Location  `json:"location,omitempty"`
+	MinAge      *uint16    `json:"min_age,omitempty" db:"min_age"`
+	StartDate   *time.Time `json:"start_date,omitempty" db:"start_date"`
+	EndDate     *time.Time `json:"end_date,omitempty" db:"end_date"`
 	URL         *string    `json:"url,omitempty"`
 	LogoURL     *string    `json:"logo_url,omitempty" db:"logo_url"`
-	HeaderURL   *string    `json:"header_url,omitempty" db:"header_url"`
-	StartTime   *time.Time `json:"start_time,omitempty" db:"start_time"`
-	EndTime     *time.Time `json:"end_time,omitempty" db:"end_time"`
-	MinAge      *uint16    `json:"min_age,omitempty" db:"min_age"`
-	Slots       *uint64    `json:"slots,omitempty"`
-	TicketType  ticketType `json:"ticket_type,omitempty" db:"ticket_type"`
-	CreatedAt   *time.Time `json:"created_at,omitempty" db:"created_at"`
 	UpdatedAt   *time.Time `json:"updated_at,omitempty" db:"updated_at"`
+	Cron        string     `json:"cron,omitempty"`
+	Description string     `json:"description,omitempty"`
+	Name        string     `json:"name,omitempty"`
+	ID          string     `json:"id,omitempty"`
+	TicketType  ticketType `json:"ticket_type,omitempty" db:"ticket_type"`
+	Type        eventType  `json:"type,omitempty"`
 }
 
 // Statistics contains statistics from an event.
-//
-// TODO: consider moving into Event (Stats Statistics)
 type Statistics struct {
 	Banned  *uint64 `json:"banned_count,omitempty"`
-	Members int64   `json:"members_count,omitempty" db:"members_count"`
 	Invited *uint64 `json:"invited_count,omitempty"`
 	Likes   *uint64 `json:"likes_count,omitempty"`
+	Members int64   `json:"members_count,omitempty"`
 }
 
 // CreateEvent is the structure used to create an event.
 type CreateEvent struct {
-	HostID      string     `json:"host_id,omitempty"`
-	Name        string     `json:"name,omitempty"`
-	Description string     `json:"description,omitempty"`
-	Type        eventType  `json:"type,omitempty"`
-	TicketType  ticketType `json:"ticket_type,omitempty" db:"ticket_type"`
+	StartDate   time.Time  `json:"start_date,omitempty" db:"start_date"`
+	EndDate     time.Time  `json:"end_date,omitempty" db:"end_date"`
+	LogoURL     *string    `json:"logo_url,omitempty" db:"logo_url"`
+	URL         *string    `json:"url,omitempty"`
 	Public      *bool      `json:"public,omitempty"`
 	Virtual     *bool      `json:"virtual,omitempty"`
-	URL         *string    `json:"url,omitempty"`
-	LogoURL     *string    `json:"logo_url,omitempty" db:"logo_url"`
 	HeaderURL   *string    `json:"header_url,omitempty" db:"header_url"`
 	Location    *Location  `json:"location,omitempty"`
-	StartTime   time.Time  `json:"start_time,omitempty" db:"start_time"`
-	EndTime     time.Time  `json:"end_time,omitempty" db:"end_time"`
-	// If the event is completely free (no tickets), ask the user if he wants to specify a slots quantity,
-	// else take it from the sum of the available tickets.
-	Slots  uint64 `json:"slots,omitempty"`
-	MinAge uint16 `json:"min_age,omitempty" db:"min_age"`
+	HostID      string     `json:"host_id,omitempty"`
+	Cron        string     `json:"cron,omitempty"`
+	Description string     `json:"description,omitempty"`
+	Name        string     `json:"name,omitempty"`
+	Slots       uint64     `json:"slots,omitempty"`
+	MinAge      uint16     `json:"min_age,omitempty" db:"min_age"`
+	TicketType  ticketType `json:"ticket_type,omitempty" db:"ticket_type"`
+	Type        eventType  `json:"type,omitempty"`
 }
 
 // Validate verifies if the event received is valid.
@@ -68,21 +64,29 @@ func (c CreateEvent) Validate() error {
 	if c.Name == "" {
 		return errors.New("name required")
 	}
-	if len(c.Name) < 3 {
-		return errors.New("name must contain at least 2 characters")
-	}
-	if c.Type < Meeting && c.Type > Campsite {
-		return errors.New("invalid type")
-	}
 	if c.Public == nil {
 		return errors.New("public required")
 	}
 	if c.Virtual == nil {
 		return errors.New("virtual required")
 	}
+	if c.StartDate.IsZero() {
+		return errors.New("start_date required")
+	}
+	if c.EndDate.IsZero() {
+		return errors.New("end_date required")
+	}
+	if len(c.Name) < 3 {
+		return errors.New("name must contain at least 2 characters")
+	} else if len(c.Name) > 60 {
+		return errors.New("name maximum length is 60 characters")
+	}
+	if c.Type < Meeting && c.Type > Campsite {
+		return errors.New("invalid type")
+	}
 	if c.Location != nil {
-		if len(c.Location.Address) > 480 {
-			return errors.New("maximum characters for an address is 480")
+		if len(c.Location.Address) > 120 {
+			return errors.New("maximum characters for an address is 120")
 		}
 		if c.Location.Coordinates.Latitude == 0 {
 			return errors.New("invalid latitude")
@@ -93,41 +97,38 @@ func (c CreateEvent) Validate() error {
 	} else if !*c.Virtual {
 		return errors.New("location required")
 	}
+	if len(c.Name) > 60 {
+		return errors.New("invalid name, maximum length is 60 characters")
+	}
+	if len(c.Description) > 200 {
+		return errors.New("invalid description, maximum length is 200 characters")
+	}
 	if c.URL != nil {
-		if _, err := url.ParseRequestURI(*c.URL); err != nil {
-			return errors.Wrap(err, "invalid url")
+		if err := validate.URL(*c.URL); err != nil {
+			return errors.Wrap(err, "url")
 		}
 	}
 	if c.LogoURL != nil {
-		if _, err := url.ParseRequestURI(*c.LogoURL); err != nil {
-			return errors.Wrap(err, "invalid logo_url")
+		if err := validate.URL(*c.LogoURL); err != nil {
+			return errors.Wrap(err, "logo_url")
 		}
 	}
 	if c.HeaderURL != nil {
-		if _, err := url.ParseRequestURI(*c.HeaderURL); err != nil {
-			return errors.Wrap(err, "invalid header_url")
+		if err := validate.URL(*c.LogoURL); err != nil {
+			return errors.Wrap(err, "header_url")
 		}
 	}
 	if c.TicketType < Free && c.TicketType > Donation {
 		return errors.New("invalid ticket_type")
 	}
-	if c.StartTime.IsZero() {
-		return errors.New("start_time required")
-	}
-	if c.StartTime.Before(time.Now()) {
-		return errors.New("start_time must be sometime in the future")
-	}
-	if c.EndTime.IsZero() {
-		return errors.New("end_time required")
-	}
-	if c.EndTime.Before(c.StartTime) {
-		return errors.New("end_time must be after start_time")
-	}
 	if c.MinAge < 0 || c.MinAge > 100 {
 		return errors.New("min_age must be between 0 and 100")
 	}
-	if c.Slots == 0 {
-		return errors.New("slots required")
+	if err := validate.Cron(c.Cron); err != nil {
+		return errors.Wrap(err, "invalid cron")
+	}
+	if c.EndDate.Before(time.Now()) {
+		return errors.New("invalid end_date")
 	}
 	return nil
 }
@@ -143,8 +144,9 @@ type UpdateEvent struct {
 	LogoURL     *string    `json:"logo_url,omitempty" db:"logo_url"`
 	HeaderURL   *string    `json:"header_url,omitempty" db:"header_url"`
 	Location    *Location  `json:"location,omitempty"`
-	StartTime   *time.Time `json:"start_time,omitempty" db:"start_time"`
-	EndTime     *time.Time `json:"end_time,omitempty" db:"end_time"`
+	Cron        *string    `json:"cron,omitempty"`
+	StartDate   *time.Time `json:"start_date,omitempty" db:"start_date"`
+	EndDate     *time.Time `json:"end_date,omitempty" db:"end_date"`
 	MinAge      *uint16    `json:"min_age,omitempty" db:"min_age"`
 	Slots       *uint64    `json:"slots,omitempty"`
 }
@@ -160,18 +162,18 @@ func (u UpdateEvent) Validate() error {
 		}
 	}
 	if u.URL != nil {
-		if _, err := url.ParseRequestURI(*u.URL); err != nil {
-			return errors.New("invalid url")
+		if err := validate.URL(*u.URL); err != nil {
+			return errors.Wrap(err, "url")
 		}
 	}
 	if u.LogoURL != nil {
-		if _, err := url.ParseRequestURI(*u.LogoURL); err != nil {
-			return errors.New("invalid logo_url")
+		if err := validate.URL(*u.LogoURL); err != nil {
+			return errors.Wrap(err, "logo_url")
 		}
 	}
 	if u.HeaderURL != nil {
-		if _, err := url.ParseRequestURI(*u.HeaderURL); err != nil {
-			return errors.New("invalid header_url")
+		if err := validate.URL(*u.LogoURL); err != nil {
+			return errors.Wrap(err, "header_url")
 		}
 	}
 	if u.Type != nil {
@@ -179,21 +181,19 @@ func (u UpdateEvent) Validate() error {
 			return errors.New("invalid type")
 		}
 	}
-	if u.StartTime != nil || u.EndTime != nil {
-		if u.StartTime == nil || u.EndTime == nil {
-			return errors.New("both start_time and end_time must be modified together")
+	if u.Cron != nil {
+		if err := validate.Cron(*u.Cron); err != nil {
+			return errors.Wrap(err, "invalid cron")
 		}
-		if u.StartTime.IsZero() {
-			return errors.New("invalid start_time")
+	}
+	if u.StartDate != nil {
+		if u.StartDate.IsZero() {
+			return errors.New("invalid start_date")
 		}
-		if u.StartTime.Before(time.Now()) {
-			return errors.New("start_time must be sometime in the future")
-		}
-		if u.EndTime.IsZero() {
-			return errors.New("invalid end_time")
-		}
-		if u.EndTime.Before(*u.StartTime) {
-			return errors.New("end_time must be after start_time")
+	}
+	if u.EndDate != nil {
+		if u.EndDate.IsZero() || u.EndDate.Before(time.Now()) {
+			return errors.New("invalid end_date")
 		}
 	}
 	if u.MinAge != nil {
@@ -222,16 +222,26 @@ type Coordinates struct {
 	Longitude float64 `json:"longitude,omitempty"`
 }
 
-// LocationSearch is the structured used to perform location-based searches.
-type LocationSearch struct {
-	Latitude       float64   `json:"latitude,omitempty"`
-	Longitude      float64   `json:"longitude,omitempty"`
-	LatitudeDelta  float64   `json:"latitude_delta,omitempty"`
-	LongitudeDelta float64   `json:"longitude_delta,omitempty"`
-	DiscardIDs     *[]string `json:"discard_ids,omitempty"`
+// Validate makes sure the coordinates are within the bounds.
+func (c Coordinates) Validate() error {
+	if c.Latitude < -90 || c.Latitude > 90 {
+		return errors.Errorf("invalid latitude (%f), must be a value between -90 and 90", c.Latitude)
+	}
+	if c.Longitude < -180 || c.Longitude > 180 {
+		return errors.Errorf("invalid longitude (%f), must be a value between -180 and 180", c.Latitude)
+	}
+	return nil
 }
 
-// Validate makes sure the query is correct.
+// LocationSearch is the structured used to perform location-based searches.
+type LocationSearch struct {
+	Latitude       float64 `json:"latitude,omitempty"`
+	Longitude      float64 `json:"longitude,omitempty"`
+	LatitudeDelta  float64 `json:"latitude_delta,omitempty"`
+	LongitudeDelta float64 `json:"longitude_delta,omitempty"`
+}
+
+// Validate makes sure the values are correct.
 func (ls LocationSearch) Validate() error {
 	if ls.Latitude < -90 || ls.Latitude > 90 {
 		return errors.Errorf("invalid latitude (%f), must be a value between -90 and 90", ls.Latitude)
@@ -241,11 +251,6 @@ func (ls LocationSearch) Validate() error {
 	}
 	if ls.LatitudeDelta > 1.2 {
 		return errors.Errorf("invalid latitude_delta (%f), maximum value allowed is 1.2", ls.LatitudeDelta)
-	}
-	if ls.DiscardIDs != nil {
-		if err := validate.ULIDs(*ls.DiscardIDs...); err != nil {
-			return err
-		}
 	}
 	return nil
 }

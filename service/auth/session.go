@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	errCorruptedSession               = httperr.New("corrupted session", httperr.Forbidden)
+	errCorruptedSession               = httperr.Forbidden("corrupted session")
 	sessionKey          sessionCtxKey = struct{}{}
 )
 
@@ -29,7 +29,7 @@ const (
 type Session struct {
 	ID       string
 	Username string
-	// TODO: the cookie will be sent over https, meaning that it's infeasible that someone will get access to them, however
+	// TODO PRODUCTION: the cookie will be sent over https, meaning that it's infeasible that someone will get access to them, however
 	// if the cookie gets stolen on the client-side then the attacker could use replay attacks to send requests to the server,
 	// getting access to that user's account. If the client (browser or application) can't be secured maybe the best approach would be
 	// to use a nonce (instead of a salt) that's incremented everytime the user makes a request. It would require one redis call more and replacing the cookie with
@@ -48,7 +48,7 @@ func GetSession(ctx context.Context, r *http.Request) (Session, error) {
 	if !ok {
 		sessionToken, err := cookie.GetValue(r, cookie.Session)
 		if err != nil {
-			return Session{}, httperr.New("log in to access", httperr.Unauthorized)
+			return Session{}, httperr.Unauthorized("log in to access")
 		}
 
 		sess, err := unparseSessionToken(sessionToken)

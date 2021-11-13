@@ -29,7 +29,6 @@ func TestNew(t *testing.T) {
 	srv := httptest.NewServer(router.New(cfg, db, dc, rdb, mc))
 	defer srv.Close()
 
-	// To test endopoints just do srv.URL+"/"+endpointURL
 	res, err := srv.Client().Get(srv.URL)
 	assert.NoError(t, err)
 

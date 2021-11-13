@@ -8,12 +8,9 @@ import (
 
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
-	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/response"
-	"github.com/GGP1/groove/internal/validate"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/event/role"
-	"github.com/GGP1/groove/storage/postgres"
 )
 
 // Handler handles zone service endpoints.
@@ -38,19 +35,11 @@ func NewHandler(db *sql.DB, cache cache.Client, service Service, roleService rol
 // Access checks if the authenticated user is allowed to enter the zone or not.
 func (h Handler) Access() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		eventID, zoneName, err := params.IDAndNameFromCtx(rctx)
+		eventID, zoneName, err := params.IDAndNameFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, true)
-		defer sqlTx.Rollback()
-
-		if err := h.roleService.PrivacyFilter(ctx, r, eventID); err != nil {
-			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
@@ -75,9 +64,9 @@ func (h Handler) Access() http.HandlerFunc {
 // Create creates a new zone inside an event.
 func (h Handler) Create() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		eventID, err := params.IDFromCtx(rctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -90,21 +79,8 @@ func (h Handler) Create() http.Handler {
 		}
 		defer r.Body.Close()
 
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, true)
-		defer sqlTx.Rollback()
-
-		if err := h.roleService.RequirePermissions(ctx, r, eventID, permissions.ModifyZones); err != nil {
-			response.Error(w, http.StatusForbidden, err)
-			return
-		}
-
 		zone.Name = strings.ToLower(zone.Name)
 		if err := h.service.Create(ctx, eventID, zone); err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-
-		if err := sqlTx.Commit(); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -116,28 +92,15 @@ func (h Handler) Create() http.Handler {
 // Delete removes a zone from an event.
 func (h Handler) Delete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		eventID, zoneName, err := params.IDAndNameFromCtx(rctx)
+		eventID, zoneName, err := params.IDAndNameFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, true)
-		defer sqlTx.Rollback()
-
-		if err := h.roleService.RequirePermissions(ctx, r, eventID, permissions.ModifyZones); err != nil {
-			response.Error(w, http.StatusForbidden, err)
-			return
-		}
-
 		if err := h.service.Delete(ctx, eventID, zoneName); err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-
-		if err := sqlTx.Commit(); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -149,24 +112,11 @@ func (h Handler) Delete() http.HandlerFunc {
 // GetByName retrieves a zone in an event with the given name.
 func (h Handler) GetByName() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		eventID, zoneName, err := params.IDAndNameFromCtx(rctx)
+		eventID, zoneName, err := params.IDAndNameFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		if err := validate.ULID(eventID); err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, true)
-		defer sqlTx.Rollback()
-
-		if err := h.roleService.PrivacyFilter(ctx, r, eventID); err != nil {
-			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
@@ -183,25 +133,17 @@ func (h Handler) GetByName() http.Handler {
 // Get fetches all the zones from an event.
 func (h Handler) Get() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		eventID, err := params.IDFromCtx(rctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
 		cacheKey := model.ZonesCacheKey(eventID)
-		if item, err := h.cache.Get(cacheKey); err == nil {
-			response.EncodedJSON(w, item.Value)
-			return
-		}
-
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, true)
-		defer sqlTx.Rollback()
-
-		if err := h.roleService.PrivacyFilter(ctx, r, eventID); err != nil {
-			response.Error(w, http.StatusForbidden, err)
+		if v, err := h.cache.Get(cacheKey); err == nil {
+			response.EncodedJSON(w, v)
 			return
 		}
 
@@ -218,19 +160,11 @@ func (h Handler) Get() http.Handler {
 // Update updates an event's zone.
 func (h Handler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		eventID, zoneName, err := params.IDAndNameFromCtx(rctx)
+		eventID, zoneName, err := params.IDAndNameFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, true)
-		defer sqlTx.Rollback()
-
-		if err := h.roleService.RequirePermissions(ctx, r, eventID, permissions.ModifyRoles); err != nil {
-			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
@@ -241,17 +175,7 @@ func (h Handler) Update() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := zone.Validate(); err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
 		if err := h.service.Update(ctx, eventID, zoneName, zone); err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-
-		if err := sqlTx.Commit(); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}

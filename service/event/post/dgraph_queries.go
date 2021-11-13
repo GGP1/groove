@@ -6,8 +6,10 @@ const (
 	mutateCommentLikes query = iota + 1
 	mutatePostLikes
 	commentLikes
+	commentLikesCount
 	commentLikesLookup
 	postLikes
+	postLikesCount
 	postLikesLookup
 	removeCommentLike
 	removePostLike
@@ -31,6 +33,11 @@ var queries = map[query]string{
 			}
 		}
 	}`,
+	commentLikesCount: `query q($id: string) {
+		q(func: eq(comment_id, $id)) {
+			count(liked_by)
+		}
+	}`,
 	commentLikesLookup: `query q($id: string, $lookup_id: string) {
 		q(func: eq(comment_id, $id)) {
 			liked_by @filter(eq(user_id, $lookup_id)) {
@@ -43,6 +50,11 @@ var queries = map[query]string{
 			liked_by (orderasc: user_id) (first: $limit, offset: $cursor) {
 				user_id
 			}
+		}
+	}`,
+	postLikesCount: `query q($id: string, $cursor: string, $limit: string) {
+		q(func: eq(post_id, $id)) {
+			count(liked_by)
 		}
 	}`,
 	postLikesLookup: `query q($id: string, $lookup_id: string) {

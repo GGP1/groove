@@ -10,12 +10,12 @@ import (
 
 // userSession is used when logging a user in.
 type userSession struct {
-	ID              ulid.ULID      `json:"id"`
+	ProfileImageURL string         `json:"profile_image_url,omitempty" db:"profile_image_url"`
 	Email           string         `json:"email"`
 	Username        string         `json:"username"`
 	Password        string         `json:"-"`
+	ID              ulid.ULID      `json:"id"`
 	VerifiedEmail   bool           `json:"verified_email" db:"verified_email"`
-	ProfileImageURL string         `json:"profile_image_url,omitempty" db:"profile_image_url"`
 	Type            model.UserType `json:"type,omitempty"`
 }
 

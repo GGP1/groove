@@ -51,7 +51,7 @@ func TestReports(t *testing.T) {
 
 	expectedType := "report"
 	t.Run("CreateReport", func(t *testing.T) {
-		report := report.Report{
+		report := report.CreateReport{
 			ReportedID: eventID,
 			ReporterID: userID,
 			Type:       expectedType,
@@ -72,9 +72,9 @@ func TestReports(t *testing.T) {
 
 func createEvent(ctx context.Context, id, name string) error {
 	q := `INSERT INTO events 
-	(id, name, type, public, virtual, slots, start_time, end_Time) 
-	VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`
-	_, err := db.ExecContext(ctx, q, id, name, 1, true, false, 100, 15000, 320000)
+	(id, name, type, public, virtual, slots, cron) 
+	VALUES ($1,$2,$3,$4,$5,$6,$7)`
+	_, err := db.ExecContext(ctx, q, id, name, 1, true, false, 100, "15 20 5 12 2 120")
 	return err
 }
 

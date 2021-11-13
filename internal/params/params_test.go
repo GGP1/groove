@@ -53,10 +53,10 @@ func TestParse(t *testing.T) {
 		{
 			desc:     "Post",
 			model:    model.Post,
-			rawQuery: "cursor=39&limit=8&media.fields=id,url,created_at",
+			rawQuery: "cursor=39&limit=8&post.fields=id,media,created_at",
 			expected: Query{
 				Cursor: "39",
-				Fields: []string{"id", "event_id", "created_at"},
+				Fields: []string{"id", "media", "created_at"},
 				Limit:  "8",
 			},
 		},

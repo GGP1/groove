@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/GGP1/groove/internal/response"
-	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/internal/validate"
 
 	"github.com/julienschmidt/httprouter"
@@ -28,13 +27,12 @@ func (h *Handler) Create() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		var report Report
+		var report CreateReport
 		if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		report.ID = ulid.NewString()
 		if err := h.service.Create(ctx, report); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return

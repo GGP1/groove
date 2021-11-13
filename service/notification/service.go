@@ -7,12 +7,10 @@ import (
 	"time"
 
 	"github.com/GGP1/groove/config"
-	"github.com/GGP1/groove/internal/bufferpool"
 	"github.com/GGP1/groove/internal/httperr"
 	"github.com/GGP1/groove/internal/log"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/roles"
-	"github.com/GGP1/groove/internal/scan"
 	"github.com/GGP1/groove/internal/sqltx"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/model"
@@ -20,6 +18,7 @@ import (
 	"github.com/GGP1/groove/service/event/role"
 	"github.com/GGP1/groove/storage/dgraph"
 	"github.com/GGP1/groove/storage/postgres"
+	"github.com/GGP1/sqan"
 
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/messaging"
@@ -33,14 +32,16 @@ import (
 // NOTE: I'll implement this service using postgres to simplify things but
 // it's probably not the best database for the job as the notifications
 // will be read few times (and deleted once they have been accepted/declined).
-// Here a LSM tree would do better than a B+ one. But it all depends if the users
+// Here a LSM tree would do better than a B/B+ one. But it all depends if the users
 // take actions on notifications or not (if not they will be retrieved multiple times).
 
 // Service represents the notification service.
 type Service interface {
 	Answer(ctx context.Context, id, authUserID string, accepted bool) error
 	Create(ctx context.Context, session auth.Session, notification CreateNotification) error
+	CreateMany(ctx context.Context, session auth.Session, notification CreateNotificationMany) error
 	Delete(ctx context.Context, notificationID string) error
+	DeleteInvitation(ctx context.Context, eventID, senderID, receiverID string) error
 	GetFromUser(ctx context.Context, userID string, params params.Query) ([]Notification, error)
 	GetFromUserCount(ctx context.Context, userID string) (int, error)
 	Send(ctx context.Context, message *messaging.Message)
@@ -50,16 +51,16 @@ type Service interface {
 	UnsuscribeFromTopic(ctx context.Context, session auth.Session, topic topic) error
 }
 
-// https://github.com/firebase/firebase-admin-go/blob/717412a1698e23b42f1c0e454274277c7d743050/snippets/messaging.go
 type service struct {
-	db         *sql.DB
-	dc         *dgo.Dgraph
-	fcm        *messaging.Client
+	dc  *dgo.Dgraph
+	db  *sql.DB
+	fcm *messaging.Client
+
+	roleService role.Service
+	authService auth.Service
+
 	metrics    metrics
 	maxRetries int
-
-	authService auth.Service
-	roleService role.Service
 }
 
 // NewService returns a new notification service.
@@ -98,18 +99,19 @@ func (s service) Answer(ctx context.Context, id, authUserID string, accepted boo
 	s.metrics.incMethodCalls("Answer")
 	sqlTx := sqltx.FromContext(ctx)
 
-	rows, err := sqlTx.QueryContext(ctx, "SELECT * FROM notifications WHERE id=$1", id)
+	q := "SELECT sender_id, receiver_id, event_id, type FROM notifications WHERE id=$1"
+	rows, err := sqlTx.QueryContext(ctx, q, id)
 	if err != nil {
 		return errors.Wrap(err, "querying notification")
 	}
 
 	var notification Notification
-	if err := scan.Row(&notification, rows); err != nil {
+	if err := sqan.Row(&notification, rows); err != nil {
 		return errors.Wrap(err, "scanning notification")
 	}
 
 	if notification.ReceiverID != authUserID {
-		return httperr.New("access denied", httperr.Forbidden)
+		return httperr.Forbidden("access denied")
 	}
 
 	if !accepted {
@@ -155,8 +157,8 @@ func (s service) Create(ctx context.Context, session auth.Session, notification 
 	s.metrics.incMethodCalls("Create")
 	sqlTx := sqltx.FromContext(ctx)
 
-	if notification.SenderID == notification.ReceiverID {
-		return httperr.New("cannot perform this action on your account", httperr.Forbidden)
+	if err := notification.Validate(); err != nil {
+		return httperr.Forbidden(err.Error())
 	}
 
 	q := `INSERT INTO notifications (id, sender_id, receiver_id, event_id, content, type) VALUES ($1, $2, $3, $4, $5, $6)`
@@ -166,17 +168,8 @@ func (s service) Create(ctx context.Context, session auth.Session, notification 
 		return errors.Wrap(err, "creating notification")
 	}
 
-	tokens := s.authService.TokensFromID(ctx, notification.ReceiverID)
-	switch notification.Type {
-	case FriendRequest:
-		s.SendMulticast(ctx, NewFriendRequest(session, tokens))
-	case Invitation:
-		if err := notification.Validate(); err != nil {
-			return err
-		}
-		// TODO: is it necessary to use dgraph edges for this? maybe create an edge between the users to identify
-		// who invited whom
-		err := dgraph.AddEventEdge(ctx, s.dc, *notification.EventID, dgraph.Invited, notification.ReceiverID)
+	if notification.Type == Invitation {
+		err := dgraph.AddEventEdge(ctx, s.dc, notification.SenderID, dgraph.Invited, notification.ReceiverID)
 		if err != nil {
 			return err
 		}
@@ -184,12 +177,63 @@ func (s service) Create(ctx context.Context, session auth.Session, notification 
 		if err != nil {
 			return err
 		}
-		s.SendMulticast(ctx, NewInvitation(session, tokens))
-	case Proposal:
-		s.SendMulticast(ctx, NewProposal(session, tokens))
-	case Mention:
-		s.SendMulticast(ctx, NewMention(session, tokens))
 	}
+
+	tokens := s.authService.TokensFromID(ctx, notification.ReceiverID)
+	message := notificationMessage(notification.Type, session, tokens)
+	s.SendMulticast(ctx, message)
+
+	return nil
+}
+
+// CreateMany is like Create but it creates multiple notifications.
+func (s service) CreateMany(ctx context.Context, session auth.Session, notification CreateNotificationMany) error {
+	s.metrics.incMethodCalls("CreateMany")
+	sqlTx := sqltx.FromContext(ctx)
+
+	fields := []string{"id", "sender_id", "receiver_id", "event_id", "content", "type"}
+	stmt, err := postgres.BulkInsert(ctx, sqlTx, model.Notification.Tablename(), fields...)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	tokens := make([]string, 0, len(notification.ReceiverIDs))
+	for _, receiverID := range notification.ReceiverIDs {
+		_, err := stmt.ExecContext(ctx, ulid.NewString(), notification.SenderID, receiverID,
+			notification.EventID, notification.Content, notification.Type)
+		if err != nil {
+			return err
+		}
+		userTokens := s.authService.TokensFromID(ctx, receiverID)
+		tokens = append(tokens, userTokens...)
+	}
+
+	if _, err := stmt.ExecContext(ctx); err != nil {
+		return errors.Wrap(err, "flush buffered data")
+	}
+
+	if notification.Type == Invitation {
+		dcTx := s.dc.NewTxn()
+		for _, receiverID := range notification.ReceiverIDs {
+			req := dgraph.EventEdgeRequest(*notification.EventID, dgraph.Invited, receiverID, true)
+			if _, err := dcTx.Do(ctx, req); err != nil {
+				return err
+			}
+
+			err = s.roleService.SetReservedRole(ctx, *notification.EventID, receiverID, roles.Viewer)
+			if err != nil {
+				return err
+			}
+		}
+
+		if err := dcTx.Commit(ctx); err != nil {
+			return errors.Wrap(err, "creating nodes edges")
+		}
+	}
+
+	message := notificationMessage(notification.Type, session, tokens)
+	s.SendMulticast(ctx, message)
 
 	return nil
 }
@@ -206,9 +250,21 @@ func (s service) Delete(ctx context.Context, notificationID string) error {
 	return nil
 }
 
+// DeleteInvitation deletes an invitation from the event.
+func (s service) DeleteInvitation(ctx context.Context, eventID, senderID, receiverID string) error {
+	s.metrics.incMethodCalls("DeleteInvitation")
+
+	sqlTx := sqltx.FromContext(ctx)
+
+	q := "DELETE FROM notifications WHERE event_id=$1 AND sender_id=$2 AND receiver_id=$3 AND type=$4"
+	if _, err := sqlTx.ExecContext(ctx, q, eventID, senderID, receiverID, Invitation); err != nil {
+		return errors.Wrap(err, "deleting invitation")
+	}
+
+	return nil
+}
+
 // GetFromUser returns all the user's notifications.
-//
-// Pagination is not enabled in this method.
 func (s service) GetFromUser(ctx context.Context, userID string, params params.Query) ([]Notification, error) {
 	s.metrics.incMethodCalls("GetFromUser")
 	sqlTx := sqltx.FromContext(ctx)
@@ -220,18 +276,14 @@ func (s service) GetFromUser(ctx context.Context, userID string, params params.Q
 		return nil, errors.Wrap(err, "updating seen statuses")
 	}
 
-	buf := bufferpool.Get()
-	buf.WriteString("SELECT ")
-	postgres.WriteFields(buf, model.Notification, params.Fields)
-	buf.WriteString(" FROM notifications WHERE receiver_id=$1")
-	rows, err := sqlTx.QueryContext(ctx, buf.String(), userID)
+	q2 := postgres.SelectWhere(model.Notification, "receiver_id=$1", "id", params)
+	rows, err := sqlTx.QueryContext(ctx, q2, userID)
 	if err != nil {
 		return nil, errors.Wrap(err, "querying notifications")
 	}
-	bufferpool.Put(buf)
 
 	var notifications []Notification
-	if err := scan.Rows(&notifications, rows); err != nil {
+	if err := sqan.Rows(&notifications, rows); err != nil {
 		return nil, errors.Wrap(err, "scanning notifications")
 	}
 
@@ -242,13 +294,11 @@ func (s service) GetFromUser(ctx context.Context, userID string, params params.Q
 func (s service) GetFromUserCount(ctx context.Context, userID string) (int, error) {
 	s.metrics.incMethodCalls("GetFromUserCount")
 
-	rows, err := s.db.QueryContext(ctx, "SELECT COUNT(*) FROM notifications WHERE receiver_id=$1 AND seen=false", userID)
-	if err != nil {
-		return 0, errors.Wrap(err, "querying notifications count")
-	}
+	q := "SELECT COUNT(*) FROM notifications WHERE receiver_id=$1 AND seen=false"
+	row := s.db.QueryRowContext(ctx, q, userID)
 
 	var count int
-	if err := scan.Row(&count, rows); err != nil {
+	if err := row.Scan(&count); err != nil {
 		return 0, errors.Wrap(err, "scanning notifications count")
 	}
 
@@ -323,6 +373,36 @@ func (s service) sendNotification(f func() error) {
 		}
 		s.metrics.sent.Inc()
 	}()
+}
+
+func notificationMessage(typ notifType, session auth.Session, tokens []string) *messaging.MulticastMessage {
+	switch typ {
+	case FriendRequest:
+		return NewFriendRequest(session, tokens)
+	case Invitation:
+		return NewInvitation(session, tokens)
+	case Proposal:
+		return NewProposal(session, tokens)
+	case Mention:
+		return NewMention(session, tokens)
+	default:
+		return nil
+	}
+}
+
+func notificationContent(typ notifType, session auth.Session) string {
+	switch typ {
+	case FriendRequest:
+		return tmplString(friendRequestTmpl, session.Username)
+	case Invitation:
+		return tmplString(invitationTmpl, session.Username)
+	case Proposal:
+		return tmplString(proposalTmpl, session.Username)
+	case Mention:
+		return tmplString(mentionTmpl, session.Username)
+	default:
+		return ""
+	}
 }
 
 const (

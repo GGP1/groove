@@ -9,26 +9,26 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Post ..
+// Post represents an event's post.
 type Post struct {
-	ID            string          `json:"id,omitempty"`
-	EventID       string          `json:"event_id,omitempty" db:"event_id"`
-	Media         *pq.StringArray `json:"media,omitempty"`
-	Content       string          `json:"content,omitempty"`
-	LikesCount    *int            `json:"likes_count,omitempty" db:"likes_count"`
-	CommentsCount *int            `json:"comments_count,omitempty" db:"comments_count"`
 	CreatedAt     *time.Time      `json:"created_at,omitempty" db:"created_at"`
 	UpdatedAt     *time.Time      `json:"updated_at,omitempty" db:"updated_at"`
+	Media         *pq.StringArray `json:"media,omitempty"`
+	LikesCount    *int            `json:"likes_count,omitempty" db:"likes_count"`
+	CommentsCount *int            `json:"comments_count,omitempty" db:"comments_count"`
+	Content       string          `json:"content,omitempty"`
+	ID            string          `json:"id,omitempty"`
+	EventID       string          `json:"event_id,omitempty" db:"event_id"`
 }
 
-// CreatePost ..
+// CreatePost is used for creating posts
 type CreatePost struct {
+	ContainsMentions *bool          `json:"contains_mentions,omitempty"`
 	Content          string         `json:"content,omitempty"`
 	Media            pq.StringArray `json:"media,omitempty"`
-	ContainsMentions *bool          `json:"contains_mentions,omitempty"`
 }
 
-// Validate ..
+// Validate verifies the correctness of the values received.
 func (cp CreatePost) Validate() error {
 	if cp.Content == "" {
 		errors.New("content required")
@@ -36,16 +36,21 @@ func (cp CreatePost) Validate() error {
 	if cp.ContainsMentions == nil {
 		return errors.New("contains_mentions required")
 	}
+	for i, m := range cp.Media {
+		if err := validate.URL(m); err != nil {
+			return errors.Wrapf(err, "media %d", i)
+		}
+	}
 	return nil
 }
 
-// UpdatePost ..
+// UpdatePost contains the fields for updating a post.
 type UpdatePost struct {
 	Content    *string `json:"content,omitempty"`
 	LikesDelta *int    `json:"likes_delta,omitempty"` // Can be + or -
 }
 
-// Validate ..
+// Validate verifies the correctness of the values received.
 func (up UpdatePost) Validate() error {
 	if up.Content != nil && *up.Content == "" {
 		return errors.New("invalid content")
@@ -56,27 +61,39 @@ func (up UpdatePost) Validate() error {
 	return nil
 }
 
-// Comment ..
+// Comment represents a comment.
 //
 // A comment can be a post comment (PostID != null) or a reply on another comment (ParentCommentID != null)
 type Comment struct {
+	CreatedAt       time.Time `json:"created_at,omitempty" db:"created_at"`
+	ParentCommentID *string   `json:"parent_comment_id,omitempty" db:"parent_comment_id"`
+	PostID          *string   `json:"post_id,omitempty" db:"post_id"`
 	ID              string    `json:"id,omitempty"`
-	ParentCommentID string    `json:"parent_comment_id,omitempty" db:"parent_comment_id"`
-	PostID          string    `json:"post_id,omitempty" db:"post_id"`
 	UserID          string    `json:"user_id,omitempty" db:"user_id"`
 	Content         string    `json:"content,omitempty"`
+	Replies         []Reply   `json:"replies,omitempty"`
 	LikesCount      int       `json:"likes_count,omitempty" db:"likes_count"`
 	RepliesCount    int       `json:"replies_count,omitempty" db:"replies_count"`
-	Replies         []Comment `json:"replies,omitempty"`
+}
+
+// Reply is implemented to avoid sql.NullString as its fields are already known.
+type Reply struct {
 	CreatedAt       time.Time `json:"created_at,omitempty" db:"created_at"`
+	ID              string    `json:"id,omitempty"`
+	UserID          string    `json:"user_id,omitempty" db:"user_id"`
+	Content         string    `json:"content,omitempty"`
+	ParentCommentID string    `json:"parent_comment_id,omitempty" db:"parent_comment_id"`
+	Replies         []Reply   `json:"replies,omitempty"`
+	LikesCount      int       `json:"likes_count,omitempty" db:"likes_count"`
+	RepliesCount    int       `json:"replies_count,omitempty" db:"replies_count"`
 }
 
 // CreateComment ..
 type CreateComment struct {
 	ParentCommentID  *string `json:"parent_comment_id,omitempty" db:"parent_comment_id"`
 	PostID           *string `json:"post_id,omitempty" db:"post_id"`
-	Content          string  `json:"content,omitempty"`
 	ContainsMentions *bool   `json:"contains_mentions,omitempty"`
+	Content          string  `json:"content,omitempty"`
 }
 
 // Validate ..

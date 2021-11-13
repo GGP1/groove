@@ -27,7 +27,7 @@ func Connect(ctx context.Context, c config.Postgres) (*sql.DB, error) {
 		return nil, errors.Wrap(err, "ping error")
 	}
 
-	if err := CreateTables(ctx, db, c); err != nil {
+	if err := CreateTables(ctx, db); err != nil {
 		return nil, err
 	}
 
@@ -38,7 +38,7 @@ func Connect(ctx context.Context, c config.Postgres) (*sql.DB, error) {
 }
 
 // CreateTables creates postgres tables.
-func CreateTables(ctx context.Context, db *sql.DB, c config.Postgres) error {
+func CreateTables(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, tables); err != nil {
 		return errors.Wrap(err, "creating tables")
 	}
@@ -49,22 +49,22 @@ const tables = `
 CREATE TABLE IF NOT EXISTS events
 (
 	id varchar(26),
-	name text NOT NULL,
-	description text NOT NULL,
+	name varchar(60) NOT NULL,
+	description varchar(200),
 	type smallint NOT NULL CHECK (type > 0),
 	ticket_type smallint NOT NULL CHECK (ticket_type > 0),
 	virtual bool NOT NULL,
-	members_count integer DEFAULT 0,
-	logo_url text,
-	header_url text,
-	url text,
-	address text,
+	logo_url varchar(240),
+	header_url varchar(240),
+	url varchar(240),
+	address varchar(120),
 	latitude double precision,
 	longitude double precision,
 	public boolean NOT NULL,
 	slots integer NOT NULL CHECK (slots >= 0),
-	start_time timestamp with time zone NOT NULL,
-	end_time timestamp with time zone NOT NULL,
+	cron varchar(40) NOT NULL,
+	start_date timestamp with time zone NOT NULL,
+	end_date timestamp with time zone NOT NULL,
 	min_age smallint DEFAULT 0 CHECK (min_age >= 0),
 	search tsvector,
 	created_at timestamp with time zone DEFAULT NOW(),
@@ -92,13 +92,13 @@ CREATE TRIGGER events_tsvector_update BEFORE INSERT OR UPDATE
 CREATE TABLE IF NOT EXISTS users
 (
     id varchar(26),
-	name varchar NOT NULL,
-    username text NOT NULL UNIQUE,
-    email text NOT NULL UNIQUE,
+	name varchar(40) NOT NULL,
+    username varchar(24) NOT NULL UNIQUE,
+    email varchar(120) NOT NULL UNIQUE,
     password bytea NOT NULL,
-	description varchar(144),
+	description varchar(200),
 	birth_date timestamp,
-	profile_image_url text,
+	profile_image_url varchar(240),
     is_admin boolean DEFAULT false,
 	private boolean DEFAULT false,
 	type smallint NOT NULL CHECK (type > 0 AND type < 3),
@@ -129,9 +129,9 @@ CREATE TRIGGER users_tsvector_update BEFORE INSERT OR UPDATE
 CREATE TABLE IF NOT EXISTS events_permissions
 (
  	event_id varchar(26) NOT NULL,
-	key varchar(20) NOT NULL,
- 	name varchar(20) NOT NULL,
- 	description varchar(80),
+	key varchar(30) NOT NULL,
+ 	name varchar(40) NOT NULL,
+ 	description varchar(200),
     created_at timestamp with time zone DEFAULT NOW(),
 	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,
 	UNIQUE(event_id, key)
@@ -142,7 +142,7 @@ CREATE INDEX ON events_permissions (key);
 CREATE TABLE IF NOT EXISTS events_roles
 (
 	event_id varchar(26) NOT NULL,
-	name varchar(20) NOT NULL,
+	name varchar(40) NOT NULL,
  	permission_keys text[] NOT NULL,
     created_at timestamp with time zone DEFAULT NOW(),
 	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,
@@ -155,7 +155,7 @@ CREATE TABLE IF NOT EXISTS events_users_roles
 (
 	event_id varchar(26) NOT NULL,
 	user_id varchar(26) NOT NULL,
- 	role_name varchar(20) NOT NULL,
+ 	role_name varchar(40) NOT NULL,
 	FOREIGN KEY (event_id) REFERENCES events (id) ON UPDATE CASCADE ON DELETE CASCADE,
  	FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );
@@ -166,9 +166,9 @@ CREATE TABLE IF NOT EXISTS events_tickets
 (
 	event_id varchar(26) NOT NULL,
 	available_count integer NOT NULL CHECK (available_count >= 0),
-	name text NOT NULL,
+	name varchar(60) NOT NULL,
 	cost integer NOT NULL CHECK (cost >= 0),
-	linked_role varchar(20) DEFAULT 'attendant',
+	linked_role varchar(40) DEFAULT 'attendant',
 	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,
 	UNIQUE(event_id, name)
 );
@@ -192,7 +192,7 @@ CREATE TABLE IF NOT EXISTS events_posts_comments
 	id varchar(26),
 	parent_comment_id varchar(26),
 	post_id varchar(26),
-	user_id varchar(26),
+	user_id varchar(26) NOT NULL,
 	content varchar(1024),
 	likes_count integer DEFAULT 0,
 	replies_count integer DEFAULT 0,
@@ -208,9 +208,9 @@ CREATE TABLE IF NOT EXISTS events_products
     id varchar(26),
     event_id varchar(26) NOT NULL,
     stock integer NOT NULL CHECK (stock >= 0),
-    brand text NOT NULL,
-	type text NOT NULL,
-    description text,
+    brand varchar(60) NOT NULL,
+	type varchar(60) NOT NULL,
+    description varchar(200),
     discount integer,
 	taxes integer,
     subtotal integer NOT NULL,
@@ -226,8 +226,8 @@ CREATE TABLE IF NOT EXISTS events_reports
 	id varchar(26),
 	reported_id varchar(26) NOT NULL,
 	reporter_id varchar(26) NOT NULL,
-	type text NOT NULL,
-	details text NOT NULL,
+	type varchar(60) NOT NULL,
+	details varchar(1024) NOT NULL,
     created_at timestamp with time zone DEFAULT NOW(),
 	CONSTRAINT events_reports_pkey PRIMARY KEY (id),
     FOREIGN KEY (reporter_id) REFERENCES users (id) ON DELETE CASCADE
@@ -236,7 +236,7 @@ CREATE TABLE IF NOT EXISTS events_reports
 CREATE TABLE IF NOT EXISTS events_zones
 (
 	event_id varchar(26),
-	name varchar(20) NOT NULL,
+	name varchar(40) NOT NULL,
 	required_permission_keys text[],
     FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,
 	UNIQUE(event_id, name)
@@ -251,7 +251,7 @@ CREATE TABLE IF NOT EXISTS notifications
 	receiver_id varchar(26) NOT NULL,
 	event_id varchar(26),
 	type integer NOT NULL CHECK (type > 0 AND type < 5),
-	content text,
+	content varchar(240),
 	seen boolean DEFAULT FALSE,
     created_at timestamp with time zone DEFAULT NOW(),
 	CONSTRAINT notifications_pkey PRIMARY KEY (id),

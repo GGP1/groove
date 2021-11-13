@@ -7,11 +7,11 @@ import (
 
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
-	"github.com/GGP1/groove/internal/scan"
 	"github.com/GGP1/groove/internal/sqltx"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/storage/postgres"
+	"github.com/GGP1/sqan"
 
 	"github.com/pkg/errors"
 )
@@ -68,16 +68,14 @@ func (s service) Delete(ctx context.Context, eventID, productID string) error {
 
 // Get returns the products from an event.
 func (s service) Get(ctx context.Context, eventID string, params params.Query) ([]Product, error) {
-	sqlTx := sqltx.FromContext(ctx)
-
 	q := postgres.SelectWhere(model.Product, "event_id=$1", "id", params)
-	rows, err := sqlTx.QueryContext(ctx, q, eventID)
+	rows, err := s.db.QueryContext(ctx, q, eventID)
 	if err != nil {
 		return nil, err
 	}
 
 	var products []Product
-	if err := scan.Rows(&products, rows); err != nil {
+	if err := sqan.Rows(&products, rows); err != nil {
 		return nil, err
 	}
 

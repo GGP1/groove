@@ -1,6 +1,7 @@
 package httperr
 
 import (
+	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -8,7 +9,7 @@ import (
 
 func TestNew(t *testing.T) {
 	message := "message error"
-	status := BadRequest
+	status := http.StatusBadRequest
 	err := New(message, status)
 
 	assert.Equal(t, err.Error(), message)
@@ -16,7 +17,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestErrorf(t *testing.T) {
-	status := Forbidden
+	status := http.StatusForbidden
 	expectedMessage := "formatted error"
 
 	err := Errorf(status, "formatted %s", "error")

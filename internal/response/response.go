@@ -21,6 +21,8 @@ import (
 // For example, the canonical key for "accept-encoding" is "Accept-Encoding".
 const contentType = "Content-Type"
 
+var applicationJSON = []string{"application/json; charset=UTF-8"}
+
 type errResponse struct {
 	Status int    `json:"status"`
 	Error  string `json:"error"`
@@ -33,9 +35,9 @@ type msgResponse struct {
 
 // EncodedJSON writes a response from a buffer with json encoded content.
 //
-// The status is predefined as 200 (OK).
+// The status is pre-defined as 200 (OK).
 func EncodedJSON(w http.ResponseWriter, buf []byte) {
-	w.Header()[contentType] = []string{"application/json; charset=UTF-8"}
+	w.Header()[contentType] = applicationJSON
 	w.WriteHeader(http.StatusOK)
 
 	if _, err := w.Write(buf); err != nil {
@@ -67,7 +69,7 @@ func JSON(w http.ResponseWriter, status int, v interface{}) {
 
 	// X-Content-Type-Options is already set in the secure middleware
 	// Save a few bytes allocated by w.Header().Set() to convert header keys to a canonical format
-	w.Header()[contentType] = []string{"application/json; charset=UTF-8"}
+	w.Header()[contentType] = applicationJSON
 	w.WriteHeader(status)
 
 	if _, err := w.Write(buf.Bytes()); err != nil {
@@ -97,7 +99,7 @@ func JSONAndCache(cache cache.Client, w http.ResponseWriter, key string, v inter
 		return
 	}
 
-	w.Header()[contentType] = []string{"application/json; charset=UTF-8"}
+	w.Header()[contentType] = applicationJSON
 	w.WriteHeader(http.StatusOK)
 
 	if _, err := w.Write(value); err != nil {

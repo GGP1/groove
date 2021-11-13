@@ -19,7 +19,7 @@ import (
 func Connect(ctx context.Context, config config.Dgraph) (*dgo.Dgraph, func() error, error) {
 	addr := net.JoinHostPort(config.Host, strconv.Itoa(config.Port))
 	opts := []grpc.DialOption{
-		// TODO: Set transport security
+		// TODO PRODUCTION: Set transport security
 		// grpc.WithTransportCredentials(credentials.NewServerTLSFromCert(&config.TLSCertificates[0])),
 		grpc.WithInsecure(),
 		grpc.WithDefaultCallOptions(grpc.UseCompressor(gzip.Name)),
@@ -52,7 +52,6 @@ const schema = `
 type Event {
 	event_id
 	liked_by
-	invited
 	banned
 }
 
@@ -60,6 +59,7 @@ type User {
 	user_id
 	friend
 	follows
+	invited
 	blocked
 }
 
@@ -76,7 +76,6 @@ type Comment {
 liked_by: [uid] @reverse .
 
 event_id: string @index(hash) .
-invited: [uid] @reverse .
 banned: [uid] @reverse .
 
 post_id: string @index(hash) .
@@ -84,5 +83,6 @@ comment_id: string @index(hash) .
 
 user_id: string @index(hash) .
 friend: [uid] .
-follows: [uid] .
+follows: [uid] @reverse .
+invited: [uid] @reverse .
 blocked: [uid] @reverse .`

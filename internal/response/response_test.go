@@ -53,7 +53,7 @@ func TestError(t *testing.T) {
 		expectedText := "{\"status\":403,\"error\":\"test\"}\n"
 
 		rec := httptest.NewRecorder()
-		response.Error(rec, http.StatusInternalServerError, httperr.New("test", httperr.Forbidden))
+		response.Error(rec, http.StatusInternalServerError, httperr.Forbidden("test"))
 
 		assert.Equal(t, expectedHeaderCT, rec.Header().Get("Content-Type"))
 		assert.Equal(t, expectedStatus, rec.Code)
@@ -84,8 +84,8 @@ func TestJSON(t *testing.T) {
 	assert.Equal(t, expectedText, buf.String())
 }
 
-// Requires dockertest to initialize memcached.
 func TestJSONAndCache(t *testing.T) {
+	// Requires dockertest to initialize memcached.
 	mc := test.StartMemcached(t)
 	expectedHeader := "application/json; charset=UTF-8"
 	expectedStatus := 200
@@ -105,13 +105,13 @@ func TestJSONAndCache(t *testing.T) {
 	assert.NoError(t, err, "Failed reading response body")
 	assert.Equal(t, expectedRes, resContent.String())
 
-	item, err := mc.Get(key)
+	v, err := mc.Get(key)
 	assert.NoError(t, err)
 
 	var cacheContent bytes.Buffer
 	err = json.NewEncoder(&cacheContent).Encode(value)
 	assert.NoError(t, err)
-	assert.Equal(t, cacheContent.Bytes(), item.Value)
+	assert.Equal(t, cacheContent.Bytes(), v)
 }
 
 func TestJSONText(t *testing.T) {

@@ -1,7 +1,6 @@
 package user
 
 import (
-	"net/url"
 	"time"
 
 	"github.com/GGP1/groove/internal/validate"
@@ -12,33 +11,33 @@ import (
 
 // User represents a user inside the system.
 type User struct {
-	ID              string         `json:"id,omitempty"`
-	Name            string         `json:"name,omitempty"`
-	Username        string         `json:"username,omitempty"`
-	Email           string         `json:"email,omitempty"`
-	BirthDate       *time.Time     `json:"birth_date,omitempty" db:"birth_date"`
-	Description     string         `json:"description,omitempty"`
-	ProfileImageURL string         `json:"profile_image_url,omitempty" db:"profile_image_url"`
-	Private         *bool          `json:"private,omitempty"`
-	Type            model.UserType `json:"type,omitempty"`
-	VerifiedEmail   *bool          `json:"verified_email,omitempty" db:"verified_email"`
-	IsAdmin         *bool          `json:"is_admin,omitempty" db:"is_admin"`
-	Invitations     invitations    `json:"invitations,omitempty"`
-	CreatedAt       *time.Time     `json:"created_at,omitempty" db:"created_at"`
-	UpdatedAt       *time.Time     `json:"updated_at,omitempty" db:"updated_at"`
+	Private         *bool             `json:"private,omitempty"`
+	CreatedAt       *time.Time        `json:"created_at,omitempty" db:"created_at"`
+	IsAdmin         *bool             `json:"is_admin,omitempty" db:"is_admin"`
+	VerifiedEmail   *bool             `json:"verified_email,omitempty" db:"verified_email"`
+	BirthDate       *time.Time        `json:"birth_date,omitempty" db:"birth_date"`
+	UpdatedAt       *time.Time        `json:"updated_at,omitempty" db:"updated_at"`
+	ProfileImageURL string            `json:"profile_image_url,omitempty" db:"profile_image_url"`
+	Description     string            `json:"description,omitempty"`
+	Email           string            `json:"email,omitempty"`
+	Username        string            `json:"username,omitempty"`
+	Name            string            `json:"name,omitempty"`
+	ID              string            `json:"id,omitempty"`
+	Type            model.UserType    `json:"type,omitempty"`
+	Invitations     model.Invitations `json:"invitations,omitempty"`
 }
 
 // CreateUser is the structure used for the creation of a user.
 type CreateUser struct {
-	Name            string          `json:"name,omitempty"`
-	Username        string          `json:"username,omitempty"`
-	Email           string          `json:"email,omitempty"`
-	Password        string          `json:"password,omitempty"`
-	BirthDate       *time.Time      `json:"birth_date,omitempty"`
-	Type            *model.UserType `json:"type,omitempty"`
-	Description     string          `json:"description,omitempty"`
-	ProfileImageURL *string         `json:"profile_image_url,omitempty"`
-	Invitations     invitations     `json:"invitations,omitempty"`
+	ProfileImageURL *string           `json:"profile_image_url,omitempty"`
+	BirthDate       *time.Time        `json:"birth_date,omitempty"`
+	Type            *model.UserType   `json:"type,omitempty"`
+	Name            string            `json:"name,omitempty"`
+	Username        string            `json:"username,omitempty"`
+	Password        string            `json:"password,omitempty"`
+	Description     string            `json:"description,omitempty"`
+	Email           string            `json:"email,omitempty"`
+	Invitations     model.Invitations `json:"invitations,omitempty"`
 }
 
 // Validate verifies the user passed is valid.
@@ -70,17 +69,23 @@ func (c CreateUser) Validate() error {
 	if err := c.Type.Validate(); err != nil {
 		return err
 	}
-	if *c.Type == model.Standard {
+	if *c.Type == model.Personal {
 		if c.BirthDate == nil {
 			return errors.New("birth_date required")
 		}
 	}
-	if len(c.Description) > 145 {
-		return errors.New("invalid description length, maximum is 144 characters")
+	if len(c.Name) > 40 {
+		return errors.New("invalid name, maximum length is 40 characters")
+	}
+	if len(c.Email) > 120 {
+		return errors.New("invalid email, maximum length is 120 characters")
+	}
+	if len(c.Description) > 200 {
+		return errors.New("invalid description length, maximum is 200 characters")
 	}
 	if c.ProfileImageURL != nil {
-		if _, err := url.ParseRequestURI(*c.ProfileImageURL); err != nil {
-			return errors.Wrap(err, "invalid profile_image_url")
+		if err := validate.URL(*c.ProfileImageURL); err != nil {
+			return errors.Wrap(err, "profile_image_url")
 		}
 	}
 	return nil
@@ -92,19 +97,21 @@ type Statistics struct {
 	BlockedBy       *uint64 `json:"blocked_by_count,omitempty"`
 	Friends         *uint64 `json:"friends_count,omitempty"`
 	Followers       *uint64 `json:"followers_count,omitempty"`
-	AttendingEvents int64   `json:"attending_events_count,omitempty"`
-	HostedEvents    *uint64 `json:"hosted_events_count,omitempty"`
 	InvitedEvents   *uint64 `json:"invited_events_count,omitempty"`
+	LikedEvents     *uint64 `json:"liked_events_count,omitempty"`
+	AttendingEvents int64   `json:"attending_events_count,omitempty"`
+	HostedEvents    int64   `json:"hosted_events_count,omitempty"`
 }
 
 // UpdateUser is the struct used to update users.
 //
 // Pointers are used to distinguish default values.
 type UpdateUser struct {
-	Name        *string      `json:"name,omitempty"`
-	Username    *string      `json:"username,omitempty"`
-	Private     *bool        `json:"private,omitempty"`
-	Invitations *invitations `json:"invitations,omitempty"`
+	Name            *string            `json:"name,omitempty"`
+	Username        *string            `json:"username,omitempty"`
+	ProfileImageURL *string            `json:"profile_image_url,omitempty" db:"profile_image_url"`
+	Private         *bool              `json:"private,omitempty"`
+	Invitations     *model.Invitations `json:"invitations,omitempty"`
 }
 
 // Validate ..
@@ -112,9 +119,19 @@ func (u UpdateUser) Validate() error {
 	if u == (UpdateUser{}) {
 		return errors.New("no values provided")
 	}
+	if u.Name != nil {
+		if len(*u.Name) > 40 {
+			return errors.New("invalid name, maximum length is 40 characters")
+		}
+	}
 	if u.Username != nil {
 		if len(*u.Username) > 24 {
 			return errors.New("invalid username length, must be lower than 24 characters")
+		}
+	}
+	if u.ProfileImageURL != nil {
+		if err := validate.URL(*u.ProfileImageURL); err != nil {
+			return errors.Wrap(err, "profile_image_url")
 		}
 	}
 	if u.Invitations != nil {
@@ -125,27 +142,10 @@ func (u UpdateUser) Validate() error {
 	return nil
 }
 
-// Invitations settings
-const (
-	Friends invitations = iota + 1
-	Nobody
-)
-
-type invitations uint8
-
-func (i invitations) Validate() error {
-	switch i {
-	case Friends, Nobody:
-		return nil
-	}
-
-	return errors.Errorf("invalid invitations value: %d", i)
-}
-
 // Invite represents an invitation.
 type Invite struct {
-	EventID string `json:"event_id,omitempty"`
-	UserID  string `json:"user_id,omitempty"`
+	EventID string   `json:"event_id,omitempty"`
+	UserIDs []string `json:"user_ids,omitempty"`
 }
 
 // Validate checks the values received are valid.
@@ -153,14 +153,14 @@ func (i Invite) Validate() error {
 	if i.EventID == "" {
 		return errors.New("event_id required")
 	}
-	if i.UserID == "" {
-		return errors.New("user_id required")
+	if len(i.UserIDs) == 0 {
+		return errors.New("user_ids required")
 	}
 	if err := validate.ULID(i.EventID); err != nil {
-		return errors.Wrap(err, "invalid event_id")
+		return errors.Wrap(err, "event_id")
 	}
-	if err := validate.ULID(i.UserID); err != nil {
-		return errors.Wrap(err, "invalid user_id")
+	if err := validate.ULIDs(i.UserIDs...); err != nil {
+		return errors.Wrap(err, "user_ids")
 	}
 	return nil
 }

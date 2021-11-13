@@ -6,11 +6,9 @@ import (
 	"net/http"
 
 	"github.com/GGP1/groove/internal/params"
-	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/internal/validate"
 	"github.com/GGP1/groove/model"
-	"github.com/GGP1/groove/service/event/role"
 	"github.com/GGP1/groove/storage/postgres"
 
 	"github.com/julienschmidt/httprouter"
@@ -20,35 +18,25 @@ import (
 type Handler struct {
 	db *sql.DB
 
-	service     Service
-	roleService role.Service
+	service Service
 }
 
 // NewHandler returns a new ticket handler.
-func NewHandler(db *sql.DB, service Service, roleService role.Service) Handler {
+func NewHandler(db *sql.DB, service Service) Handler {
 	return Handler{
-		db:          db,
-		service:     service,
-		roleService: roleService,
+		db:      db,
+		service: service,
 	}
 }
 
 // Create creates an image/video inside an event.
 func (h Handler) Create() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		eventID, err := params.IDFromCtx(rctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
-		defer sqlTx.Rollback()
-
-		if err := h.roleService.RequirePermissions(ctx, r, eventID, permissions.ModifyProducts); err != nil {
-			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
@@ -63,6 +51,9 @@ func (h Handler) Create() http.Handler {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
+
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
 
 		if err := h.service.Create(ctx, eventID, product); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
@@ -81,9 +72,9 @@ func (h Handler) Create() http.Handler {
 // Delete removes a product from an event.
 func (h Handler) Delete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		ctxParams := httprouter.ParamsFromContext(rctx)
+		ctxParams := httprouter.ParamsFromContext(ctx)
 		eventID := ctxParams.ByName("id")
 		productID := ctxParams.ByName("product_id")
 		if err := validate.ULIDs(eventID, productID); err != nil {
@@ -91,13 +82,9 @@ func (h Handler) Delete() http.HandlerFunc {
 			return
 		}
 
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
-		if err := h.roleService.RequirePermissions(ctx, r, eventID, permissions.ModifyProducts); err != nil {
-			response.Error(w, http.StatusForbidden, err)
-			return
-		}
 		if err := h.service.Delete(ctx, eventID, productID); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -115,19 +102,11 @@ func (h Handler) Delete() http.HandlerFunc {
 // Get gets the products of an event.
 func (h Handler) Get() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		eventID, err := params.IDFromCtx(rctx)
+		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, true)
-		defer sqlTx.Rollback()
-
-		if err := h.roleService.PrivacyFilter(ctx, r, eventID); err != nil {
-			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
@@ -156,21 +135,13 @@ func (h Handler) Get() http.HandlerFunc {
 // Update updates a product of an event.
 func (h Handler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rctx := r.Context()
+		ctx := r.Context()
 
-		ctxParams := httprouter.ParamsFromContext(rctx)
+		ctxParams := httprouter.ParamsFromContext(ctx)
 		eventID := ctxParams.ByName("id")
 		productID := ctxParams.ByName("product_id")
 		if err := validate.ULIDs(eventID, productID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		sqlTx, ctx := postgres.BeginTx(rctx, h.db, false)
-		defer sqlTx.Rollback()
-
-		if err := h.roleService.RequirePermissions(ctx, r, eventID, permissions.ModifyProducts); err != nil {
-			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
@@ -185,6 +156,9 @@ func (h Handler) Update() http.HandlerFunc {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
+
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
 
 		if err := h.service.Update(ctx, eventID, productID, product); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)

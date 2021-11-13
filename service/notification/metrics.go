@@ -23,14 +23,14 @@ func initMetrics() metrics {
 		sent: promauto.NewCounter(prometheus.CounterOpts{
 			Namespace: ns,
 			Subsystem: sub,
-			Name:      "sent_notifications",
+			Name:      "sent_success",
 			Help:      "Total number of successfully sent notifications",
 		}),
 		fail: promauto.NewCounter(prometheus.CounterOpts{
 			Namespace: ns,
 			Subsystem: sub,
-			Name:      "fail_notifications",
-			Help:      "Total number of failed notifications",
+			Name:      "sent_fail",
+			Help:      "Total number of notifications failed to sent",
 		}),
 	}
 }

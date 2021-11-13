@@ -2,13 +2,14 @@ package post_test
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"os"
 	"testing"
 
 	"github.com/GGP1/groove/config"
 	"github.com/GGP1/groove/internal/cache"
-	"github.com/GGP1/groove/internal/sqltx"
+	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/auth"
 	"github.com/GGP1/groove/service/event/post"
@@ -23,8 +24,8 @@ import (
 
 var (
 	postSv      post.Service
+	db          *sql.DB
 	dc          *dgo.Dgraph
-	ctx         context.Context
 	cacheClient cache.Client
 )
 
@@ -41,12 +42,9 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	sqlTx, err := postgres.BeginTx(context.Background(), nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	ctx = sqltx.NewContext(ctx, sqlTx)
+
 	cacheClient = memcached
+	db = postgres
 	dc = dgraph
 
 	authService := auth.NewService(postgres, nil, config.Sessions{})
@@ -56,16 +54,13 @@ func TestMain(m *testing.M) {
 
 	code := m.Run()
 
-	if err := sqlTx.Rollback(); err != nil {
-		log.Fatal(err)
-	}
 	if err := poolPg.Purge(resourcePg); err != nil {
 		log.Fatal(err)
 	}
-	if err := poolDc.Purge(resourceDc); err != nil {
+	if err := conn.Close(); err != nil {
 		log.Fatal(err)
 	}
-	if err := conn.Close(); err != nil {
+	if err := poolDc.Purge(resourceDc); err != nil {
 		log.Fatal(err)
 	}
 	if err := poolMc.Purge(resourceMc); err != nil {
@@ -75,10 +70,33 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func TestCreatePost(t *testing.T) {
-	eventID := ulid.NewString()
+func TestCreateComment(t *testing.T) {
+	ctx := context.Background()
+	g, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(db, dc))
+	userID := ulid.NewString()
+	err := test.CreateUser(ctx, db, dc, userID, "random@email.test", "test", "ao121")
+	assert.NoError(t, err)
 
-	err := createEvent(eventID, "create_media")
+	session := auth.Session{
+		ID: userID,
+	}
+	f := false
+	comment := post.CreateComment{
+		Content:          "post comment",
+		ContainsMentions: &f,
+	}
+	err = postSv.CreateComment(ctx, session, comment)
+	assert.NoError(t, err)
+
+	assert.NoError(t, g.Commit())
+}
+
+func TestCreatePost(t *testing.T) {
+	ctx := context.Background()
+	g, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(db, dc))
+
+	eventID := ulid.NewString()
+	err := test.CreateEvent(ctx, db, dc, eventID, "create_post")
 	assert.NoError(t, err)
 
 	session := auth.Session{ID: ulid.NewString()}
@@ -88,17 +106,14 @@ func TestCreatePost(t *testing.T) {
 	}
 	err = postSv.CreatePost(ctx, session, eventID, post)
 	assert.NoError(t, err)
+
+	assert.NoError(t, g.Commit())
 }
 
-func TestUpdatePost(t *testing.T) {
+func TestPost(t *testing.T) {
 
 }
 
-func createEvent(id, name string) error {
-	sqlTx := sqltx.FromContext(ctx)
-	q := `INSERT INTO events 
-	(id, name, type, public, virtual, slots, start_time, end_Time) 
-	VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`
-	_, err := sqlTx.ExecContext(ctx, q, id, name, 1, true, false, 100, 15000, 320000)
-	return err
+func TestComment(t *testing.T) {
+
 }
