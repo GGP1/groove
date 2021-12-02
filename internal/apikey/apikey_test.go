@@ -59,7 +59,7 @@ func TestFromRequest(t *testing.T) {
 
 	t.Run("Invalid", func(t *testing.T) {
 		apiKey, err := New("invalid_ulid")
-		assert.NoError(t, err)
+		assert.Error(t, err)
 
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set(headerName, apiKey)

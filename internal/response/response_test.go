@@ -33,7 +33,7 @@ func TestError(t *testing.T) {
 	t.Run("Standard error", func(t *testing.T) {
 		expectedHeaderCT := "application/json; charset=UTF-8"
 		expectedStatus := 404
-		expectedText := "{\"status\":404,\"error\":\"test\"}\n"
+		expectedText := "{\"error\":\"test\",\"status\":404}\n"
 
 		rec := httptest.NewRecorder()
 		response.Error(rec, http.StatusNotFound, errors.New("test"))
@@ -51,7 +51,7 @@ func TestError(t *testing.T) {
 	t.Run("Custom error", func(t *testing.T) {
 		expectedHeaderCT := "application/json; charset=UTF-8"
 		expectedStatus := 403
-		expectedText := "{\"status\":403,\"error\":\"test\"}\n"
+		expectedText := "{\"error\":\"test\",\"status\":403}\n"
 
 		rec := httptest.NewRecorder()
 		response.Error(rec, http.StatusInternalServerError, httperr.Forbidden("test"))
