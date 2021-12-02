@@ -73,7 +73,8 @@ func TestCreateProduct(t *testing.T) {
 		Total:       7,
 		Description: "TestCreatePermission",
 	}
-	err = productSv.Create(ctx, eventID, product)
+	id := ulid.NewString()
+	err = productSv.Create(ctx, id, eventID, product)
 	assert.NoError(t, err)
 }
 

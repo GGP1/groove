@@ -15,6 +15,7 @@ import (
 )
 
 var (
+	errLoginToAccess                  = httperr.Unauthorized("log in to access")
 	errCorruptedSession               = httperr.Forbidden("corrupted session")
 	sessionKey          sessionCtxKey = struct{}{}
 )
@@ -48,7 +49,7 @@ func GetSession(ctx context.Context, r *http.Request) (Session, error) {
 	if !ok {
 		sessionToken, err := cookie.GetValue(r, cookie.Session)
 		if err != nil {
-			return Session{}, httperr.Unauthorized("log in to access")
+			return Session{}, errLoginToAccess
 		}
 
 		sess, err := unparseSessionToken(sessionToken)

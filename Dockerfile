@@ -1,6 +1,6 @@
 FROM golang:1.17.1-alpine3.14 as builder
 
-RUN apk add --update --no-cache git ca-certificates && update-ca-certificates
+RUN apk add --update --no-cache ca-certificates && update-ca-certificates
 
 WORKDIR /go/src/app
 

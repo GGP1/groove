@@ -59,11 +59,12 @@ type Service interface {
 	GetFriendsInCommonCount(ctx context.Context, userID, friendID string) (*uint64, error)
 	GetFriendsNotInCommon(ctx context.Context, userID, friendID string, params params.Query) ([]User, error)
 	GetFriendsNotInCommonCount(ctx context.Context, userID, friendID string) (*uint64, error)
-	GetInvitedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
-	GetInvitedEventsCount(ctx context.Context, userID string) (int64, error)
 	GetHostedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
 	GetHostedEventsCount(ctx context.Context, userID string) (int64, error)
+	GetInvitedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
+	GetInvitedEventsCount(ctx context.Context, userID string) (int64, error)
 	GetLikedEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error)
+	GetLikedEventsCount(ctx context.Context, userID string) (*uint64, error)
 	GetStatistics(ctx context.Context, userID string) (Statistics, error)
 	InviteToEvent(ctx context.Context, session auth.Session, invite Invite) error
 	IsAdmin(ctx context.Context, userID string) (bool, error)
@@ -208,6 +209,8 @@ func (s service) CanInvite(ctx context.Context, authUserID, invitedID string) (b
 }
 
 // Create creates a new user.
+//
+// TODO: store API key to return on login (not necessary to return on creation).
 func (s service) Create(ctx context.Context, userID string, user CreateUser) error {
 	s.metrics.incMethodCalls("Create")
 
@@ -333,9 +336,9 @@ func (s service) Follow(ctx context.Context, session auth.Session, businessID st
 func (s service) GetAttendingEvents(ctx context.Context, userID string, params params.Query) ([]event.Event, error) {
 	s.metrics.incMethodCalls("GetAttendingEvents")
 
-	whereCond := "id IN (SELECT event_id FROM events_users_roles WHERE user_id=$1 AND role_name != $2)"
+	whereCond := "id IN (SELECT event_id FROM events_users_roles WHERE user_id=$1 AND role_name NOT IN ($2, $3))"
 	q := postgres.SelectWhere(model.Event, whereCond, "id", params)
-	rows, err := s.db.QueryContext(ctx, q, userID, roles.Viewer)
+	rows, err := s.db.QueryContext(ctx, q, userID, roles.Viewer, roles.Host)
 	if err != nil {
 		return nil, err
 	}
@@ -352,8 +355,8 @@ func (s service) GetAttendingEvents(ctx context.Context, userID string, params p
 func (s service) GetAttendingEventsCount(ctx context.Context, userID string) (int64, error) {
 	s.metrics.incMethodCalls("GetAttendingEventsCount")
 
-	q := "SELECT COUNT(*) FROM events_users_roles WHERE user_id=$1 AND role_name != $2"
-	count, err := postgres.QueryInt(ctx, s.db, q, userID, roles.Viewer)
+	q := "SELECT COUNT(*) FROM events_users_roles WHERE user_id=$1 AND role_name NOT IN ($2, $3)"
+	count, err := postgres.QueryInt(ctx, s.db, q, userID, roles.Viewer, roles.Host)
 	if err != nil {
 		return 0, err
 	}
@@ -570,7 +573,7 @@ func (s service) GetInvitedEvents(ctx context.Context, userID string, params par
 	return s.getUserEvents(ctx, userID, string(roles.Viewer), params)
 }
 
-// GetInvitedEvents returns the number of events that the user is banned from.
+// GetInvitedEventsCount returns the number of events that the user is invited to.
 func (s service) GetInvitedEventsCount(ctx context.Context, userID string) (int64, error) {
 	s.metrics.incMethodCalls("GetInvitedEventsCount")
 
@@ -588,6 +591,13 @@ func (s service) GetLikedEvents(ctx context.Context, userID string, params param
 	return s.getEventsEdge(ctx, userID, query, params)
 }
 
+// GetLikedEventsCount returns the number of events that the user likes.
+func (s service) GetLikedEventsCount(ctx context.Context, userID string) (*uint64, error) {
+	s.metrics.incMethodCalls("GetLikedEventsCount")
+
+	return dgraph.GetCount(ctx, s.dc, getQuery[likedByCount], userID)
+}
+
 // GetStatistics returns a users' predicates statistics.
 func (s service) GetStatistics(ctx context.Context, userID string) (Statistics, error) {
 	s.metrics.incMethodCalls("GetStatistics")
@@ -599,6 +609,7 @@ func (s service) GetStatistics(ctx context.Context, userID string) (Statistics, 
 			count(friend)
 			count(~invited)
 			count(~follows)
+			count(follows)
 			count(~liked_by)
 		}
 	}`
@@ -628,10 +639,11 @@ func (s service) GetStatistics(ctx context.Context, userID string) (Statistics, 
 		Blocked:         mp["blocked"],
 		BlockedBy:       mp["~blocked"],
 		Friends:         mp["friend"],
+		Following:       mp["follows"],
 		Followers:       mp["~follows"],
-		AttendingEvents: attendingCount,
-		HostedEvents:    hostedCount,
-		InvitedEvents:   mp["~invited"],
+		AttendingEvents: &attendingCount,
+		HostedEvents:    &hostedCount,
+		Invitations:     mp["~invited"],
 		LikedEvents:     mp["~liked_by"],
 	}, nil
 }
@@ -650,14 +662,12 @@ func (s service) InviteToEvent(ctx context.Context, session auth.Session, invite
 		}
 	}
 
-	q := `
-	query q($user_id: string, $target_id: string) {
-		user as var(func: eq(user_id, $user_id))
-		target as var(func: eq(user_id, $target_id))
-		}`
 	req := &api.Request{
-		Vars:  map[string]string{"$user_id": session.ID},
-		Query: q,
+		Vars: map[string]string{"$user_id": session.ID},
+		Query: `query q($user_id: string, $target_id: string) {
+			user as var(func: eq(user_id, $user_id))
+			target as var(func: eq(user_id, $target_id))
+		}`,
 		Mutations: []*api.Mutation{{
 			Cond:      "@if(eq(len(user), 1) AND eq(len(target), 1))",
 			SetNquads: dgraph.TripleUID("uid(user)", string(dgraph.Invited), "uid(target)"),
@@ -761,7 +771,7 @@ func (s service) Search(ctx context.Context, query string, params params.Query) 
 	return users, nil
 }
 
-// SendFriendRequest ..
+// SendFriendRequest sends a friend request to the user indicated.
 func (s service) SendFriendRequest(ctx context.Context, session auth.Session, friendID string) error {
 	s.metrics.incMethodCalls("SendFriendRequest")
 
@@ -918,7 +928,7 @@ func (s service) getUsersMixedEdge(ctx context.Context, userID, friendID string,
 func (s service) getUserEvents(ctx context.Context, userID, roleName string, params params.Query) ([]event.Event, error) {
 	whereCond := "id IN (SELECT event_id FROM events_users_roles WHERE user_id=$1 AND role_name=$2)"
 	q := postgres.SelectWhere(model.Event, whereCond, "id", params)
-	rows, err := s.db.QueryContext(ctx, q, userID, roles.Viewer)
+	rows, err := s.db.QueryContext(ctx, q, userID, roleName)
 	if err != nil {
 		return nil, errors.Wrapf(err, "fetching events with role %s", roleName)
 	}

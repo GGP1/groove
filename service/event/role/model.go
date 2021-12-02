@@ -34,7 +34,7 @@ var reservedRoles = []Role{
 // Role represents a set of permissions inside the event.
 type Role struct {
 	Name           string         `json:"name,omitempty"`
-	PermissionKeys pq.StringArray `json:"permission_keys,omitempty"`
+	PermissionKeys pq.StringArray `json:"permission_keys,omitempty" db:"permission_keys"`
 }
 
 // Validate returns an error if the role is invalid.
@@ -75,7 +75,7 @@ func (sr SetRole) Validate() error {
 
 // UpdateRole is the structure used to update roles.
 type UpdateRole struct {
-	PermissionKeys *pq.StringArray `json:"permission_keys,omitempty"`
+	PermissionKeys *pq.StringArray `json:"permission_keys,omitempty" db:"permission_keys"`
 }
 
 // Validate validates update roles fields.
@@ -93,10 +93,10 @@ func (r UpdateRole) Validate() error {
 
 // Permission represents a privilege inside an event.
 type Permission struct {
-	CreatedAt   time.Time `json:"created_at,omitempty" db:"created_at"`
-	Name        string    `json:"name,omitempty"`
-	Key         string    `json:"key,omitempty"`
-	Description string    `json:"description,omitempty"`
+	CreatedAt   *time.Time `json:"created_at,omitempty" db:"created_at"`
+	Name        string     `json:"name,omitempty"`
+	Key         string     `json:"key,omitempty"`
+	Description string     `json:"description,omitempty"`
 }
 
 // Validate returns an error if the permission is invalid.

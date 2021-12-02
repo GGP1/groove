@@ -208,20 +208,6 @@ func TestSelectWhere(t *testing.T) {
 	})
 }
 
-func TestUnion(t *testing.T) {
-	params := params.Query{
-		Fields: []string{"id", "name"},
-		Cursor: params.DefaultCursor,
-		Limit:  "20",
-	}
-	expected := "SELECT id,name FROM events WHERE id IN (SELECT 1 FROM users WHERE name='test' UNION SELECT 1 FROM events_users_roles WHERE role_name='admin') AND public=true ORDER BY id DESC LIMIT 20"
-	q1 := "SELECT 1 FROM users WHERE name='test'"
-	q2 := "SELECT 1 FROM events_users_roles WHERE role_name='admin'"
-
-	got := postgres.Union(model.Event, params, q1, q2)
-	assert.Equal(t, expected, got)
-}
-
 func TestWriteFields(t *testing.T) {
 	fields := []string{"id", "cron", "virtual"}
 	expected := "SELECT id,cron,virtual FROM events"
@@ -247,6 +233,7 @@ func BenchmarkSelectInID(b *testing.B) {
 	ids := []string{ulid.NewString(), ulid.NewString(), ulid.NewString()}
 	fields := []string{"id", "name", "type", "public", "created_at", "slots"}
 
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		postgres.SelectInID(model.User, ids, fields)
 	}
@@ -260,22 +247,8 @@ func BenchmarkSelectWhere(b *testing.B) {
 	whereCond := "event_id=$1"
 	paginationField := "id"
 
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		postgres.SelectWhere(model.Event, whereCond, paginationField, params)
-	}
-}
-
-func BenchmarkUnion(b *testing.B) {
-	params := params.Query{
-		Fields: []string{"id", "name"},
-		Cursor: params.DefaultCursor,
-		Limit:  "20",
-	}
-	q1 := "SELECT 1 FROM users WHERE name='test'"
-	q2 := "SELECT 1 FROM events_users_roles WHERE role_name='admin'"
-	q3 := postgres.AppendInIDs("SELECT 1 FROM notificaitons WHERE id", []string{ulid.NewString(), ulid.NewString(), ulid.NewString()})
-
-	for i := 0; i < b.N; i++ {
-		postgres.Union(model.Event, params, q1, q2, q3)
 	}
 }

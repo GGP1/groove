@@ -4,13 +4,13 @@ import (
 	"time"
 
 	"github.com/GGP1/groove/config"
+
 	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 type metrics struct {
-	lastRun    prometheus.Gauge
 	hits       prometheus.Gauge
 	misses     prometheus.Gauge
 	timeouts   prometheus.Gauge
@@ -22,12 +22,6 @@ type metrics struct {
 func runMetrics(rdb *redis.Client, config config.Redis) {
 	ns, sub := "groove", "redis"
 	m := metrics{
-		lastRun: promauto.NewGauge(prometheus.GaugeOpts{
-			Namespace: ns,
-			Subsystem: sub,
-			Name:      "last_run",
-			Help:      "Last gather date in Unix seconds",
-		}),
 		hits: promauto.NewGauge(prometheus.GaugeOpts{
 			Namespace: ns,
 			Subsystem: sub,
@@ -72,9 +66,8 @@ func runMetrics(rdb *redis.Client, config config.Redis) {
 func (m metrics) Run(rdb *redis.Client, config config.Redis) {
 	go func() {
 		for {
-			time.Sleep(config.MetricsRate)
+			time.Sleep(config.MetricsRate * time.Second)
 			stats := rdb.PoolStats()
-			m.lastRun.SetToCurrentTime()
 			m.hits.Set(float64(stats.Hits))
 			m.misses.Set(float64(stats.Misses))
 			m.timeouts.Set(float64(stats.Timeouts))

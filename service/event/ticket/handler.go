@@ -7,6 +7,7 @@ import (
 
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/response"
+	"github.com/GGP1/groove/internal/validate"
 	"github.com/GGP1/groove/service/auth"
 	"github.com/GGP1/groove/storage/postgres"
 )
@@ -37,7 +38,7 @@ func (h Handler) Available() http.HandlerFunc {
 			return
 		}
 
-		availableTickets, err := h.service.AvailableTickets(ctx, eventID, ticketName)
+		availableTickets, err := h.service.Available(ctx, eventID, ticketName)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -64,11 +65,25 @@ func (h Handler) Buy() http.HandlerFunc {
 			return
 		}
 
+		var body struct {
+			UserIDs []string `json:"user_ids,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		defer r.Body.Close()
+
+		body.UserIDs, err = reduceAndValidate(body.UserIDs)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
 		sqlTx, ctx := postgres.BeginTxOpts(ctx, h.db, sql.LevelSerializable)
 		defer sqlTx.Rollback()
 
-		err = h.service.BuyTicket(ctx, eventID, session.ID, ticketName)
-		if err != nil {
+		if err := h.service.Buy(ctx, session, eventID, ticketName, body.UserIDs); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -93,9 +108,9 @@ func (h Handler) Create() http.HandlerFunc {
 			return
 		}
 
-		var tickets []Ticket
-		if err := json.NewDecoder(r.Body).Decode(&tickets); err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
+		var ticket Ticket
+		if err := json.NewDecoder(r.Body).Decode(&ticket); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 		defer r.Body.Close()
@@ -103,8 +118,7 @@ func (h Handler) Create() http.HandlerFunc {
 		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
-		err = h.service.CreateTickets(ctx, eventID, tickets)
-		if err != nil {
+		if err := h.service.Create(ctx, eventID, ticket); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -114,7 +128,7 @@ func (h Handler) Create() http.HandlerFunc {
 			return
 		}
 
-		response.JSON(w, http.StatusCreated, tickets)
+		response.JSON(w, http.StatusOK, response.Name{Name: ticket.Name})
 	}
 }
 
@@ -132,7 +146,7 @@ func (h Handler) Delete() http.HandlerFunc {
 		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
-		if err := h.service.DeleteTicket(ctx, eventID, ticketName); err != nil {
+		if err := h.service.Delete(ctx, eventID, ticketName); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -157,7 +171,7 @@ func (h Handler) Get() http.HandlerFunc {
 			return
 		}
 
-		tickets, err := h.service.GetTickets(ctx, eventID)
+		tickets, err := h.service.Get(ctx, eventID)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -178,7 +192,7 @@ func (h Handler) GetByName() http.HandlerFunc {
 			return
 		}
 
-		ticket, err := h.service.GetTicket(ctx, eventID, ticketName)
+		ticket, err := h.service.GetByName(ctx, eventID, ticketName)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -208,8 +222,7 @@ func (h Handler) Refund() http.HandlerFunc {
 		sqlTx, ctx := postgres.BeginTxOpts(ctx, h.db, sql.LevelSerializable)
 		defer sqlTx.Rollback()
 
-		err = h.service.RefundTicket(ctx, eventID, session.ID, ticketName)
-		if err != nil {
+		if err := h.service.Refund(ctx, session, eventID, ticketName); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -236,7 +249,7 @@ func (h Handler) Update() http.HandlerFunc {
 
 		var updateTicket UpdateTicket
 		if err := json.NewDecoder(r.Body).Decode(&updateTicket); err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
+			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 		defer r.Body.Close()
@@ -244,7 +257,7 @@ func (h Handler) Update() http.HandlerFunc {
 		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
-		if err := h.service.UpdateTicket(ctx, eventID, ticketName, updateTicket); err != nil {
+		if err := h.service.Update(ctx, eventID, ticketName, updateTicket); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -254,6 +267,30 @@ func (h Handler) Update() http.HandlerFunc {
 			return
 		}
 
-		response.JSON(w, http.StatusOK, updateTicket)
+		response.JSON(w, http.StatusOK, response.Name{Name: ticketName})
 	}
+}
+
+// reduceAndValidate removes duplicates from a slice while verifying that the ids are valid.
+func reduceAndValidate(ids []string) ([]string, error) {
+	if len(ids) == 1 {
+		if err := validate.ULID(ids[0]); err != nil {
+			return nil, err
+		}
+		return ids, nil
+	}
+
+	mp := make(map[string]struct{}, len(ids))
+	result := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := mp[id]; !ok {
+			if err := validate.ULID(id); err != nil {
+				return nil, err
+			}
+			mp[id] = struct{}{}
+			result = append(result, id)
+		}
+	}
+
+	return result, nil
 }

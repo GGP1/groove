@@ -140,11 +140,11 @@ func TestParseLimit(t *testing.T) {
 	t.Run("Default", func(t *testing.T) {
 		got, err := parseLimit("")
 		assert.NoError(t, err)
-		assert.Equal(t, defaultLimit, got)
+		assert.Equal(t, DefaultLimit, got)
 
 		got2, err := parseLimit("-5")
 		assert.NoError(t, err)
-		assert.Equal(t, defaultLimit, got2)
+		assert.Equal(t, DefaultLimit, got2)
 	})
 	t.Run("Invalid", func(t *testing.T) {
 		_, err := parseLimit("abc")
@@ -158,6 +158,7 @@ func TestParseLimit(t *testing.T) {
 
 func BenchmarkParse(b *testing.B) {
 	rawQuery := "cursor=2&limit=20&user.fields=id,username,email,birth_date"
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		Parse(rawQuery, model.User)
 	}
@@ -170,6 +171,7 @@ func BenchmarkIDFromCtx(b *testing.B) {
 	}
 	ctx := context.WithValue(context.Background(), httprouter.ParamsKey, params)
 
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		IDFromCtx(ctx)
 	}

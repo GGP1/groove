@@ -18,6 +18,7 @@ import (
 var (
 	errAccessDenied  = errors.New("access denied")
 	errLoginToAccess = errors.New("log in to access")
+	errBanned        = errors.New("you are banned from this event")
 )
 
 // Auth holds the redis instance used to authenticate users.
@@ -89,8 +90,11 @@ func (a Auth) NotBanned(next http.Handler) http.Handler {
 			return
 		}
 		if isBanned {
-			response.Error(w, http.StatusForbidden, errors.New("you are banned from this event"))
+			response.Error(w, http.StatusForbidden, errBanned)
+			return
 		}
+
+		next.ServeHTTP(w, r)
 	})
 }
 
@@ -205,6 +209,18 @@ func (a *Auth) UserPrivacyFilter(next http.Handler) http.Handler {
 			return
 		}
 
+		session, ok := a.authService.AlreadyLoggedIn(ctx, r)
+		if !ok {
+			response.Error(w, http.StatusUnauthorized, errLoginToAccess)
+			return
+		}
+
+		// If the user is trying to visit his profile, do not check for privacy
+		if session.ID == userID {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		private, err := a.userService.PrivateProfile(ctx, userID)
 		if err != nil {
 			response.Error(w, http.StatusForbidden, err)
@@ -212,12 +228,6 @@ func (a *Auth) UserPrivacyFilter(next http.Handler) http.Handler {
 		}
 
 		if private {
-			session, ok := a.authService.AlreadyLoggedIn(ctx, r)
-			if !ok {
-				response.Error(w, http.StatusUnauthorized, errLoginToAccess)
-				return
-			}
-
 			areFriends, err := a.userService.AreFriends(ctx, session.ID, userID)
 			if err != nil {
 				response.Error(w, http.StatusForbidden, err)

@@ -105,11 +105,11 @@ func (r register) Debug() {
 	debug := r.router.group("/debug")
 	debug.use(r.authMw.AdminsOnly)
 
-	debug.get("/pprof", fnToHandler(pprof.Index))
-	debug.get("/cmdline", fnToHandler(pprof.Cmdline))
-	debug.get("/profile", fnToHandler(pprof.Profile))
-	debug.get("/symbol", fnToHandler(pprof.Symbol))
-	debug.get("/trace", fnToHandler(pprof.Trace))
+	debug.get("/pprof", http.HandlerFunc(pprof.Index))
+	debug.get("/cmdline", http.HandlerFunc(pprof.Cmdline))
+	debug.get("/profile", http.HandlerFunc(pprof.Profile))
+	debug.get("/symbol", http.HandlerFunc(pprof.Symbol))
+	debug.get("/trace", http.HandlerFunc(pprof.Trace))
 	debug.get("/allocs", pprof.Handler("allocs"))
 	debug.get("/heap", pprof.Handler("heap"))
 	debug.get("/goroutine", pprof.Handler("goroutine"))
@@ -121,10 +121,10 @@ func (r register) Debug() {
 func (r register) Events() {
 	events := r.router.group("/events/:id")
 
-	events.get("/", r.event.GetByID(), r.authMw.EventPrivacyFilter)
+	events.get("/", r.event.GetByID(), r.authMw.NotBanned, r.authMw.EventPrivacyFilter)
 	events.delete("/delete", r.event.Delete(), r.authMw.RequirePermissions(permissions.All))
-	events.get("/hosts", r.event.GetHosts(), r.authMw.EventPrivacyFilter)
-	events.get("/stats", r.event.GetStatistics(), r.authMw.EventPrivacyFilter)
+	events.get("/hosts", r.event.GetHosts(), r.authMw.NotBanned, r.authMw.EventPrivacyFilter)
+	events.get("/stats", r.event.GetStatistics(), r.authMw.NotBanned, r.authMw.EventPrivacyFilter)
 	events.put("/update", r.event.Update(), r.authMw.RequirePermissions(permissions.UpdateEvent))
 
 	// /events/:id/bans
@@ -226,8 +226,9 @@ func (r register) Tickets() {
 	tickets.use(r.authMw.NotBanned)
 
 	tickets.get("/", r.ticket.Get())
+	tickets.get("/ticket/:name", r.ticket.GetByName())
 	tickets.get("/available/:name", r.ticket.Available())
-	tickets.get("/buy/:name", r.ticket.Buy())
+	tickets.post("/buy/:name", r.ticket.Buy())
 	tickets.post("/create", r.ticket.Create(), r.authMw.RequirePermissions(permissions.ModifyTickets))
 	tickets.delete("/delete/:name", r.ticket.Delete(), r.authMw.RequirePermissions(permissions.ModifyTickets))
 	tickets.get("/refund/:name", r.ticket.Refund())
@@ -316,9 +317,4 @@ func (r register) Others() {
 	r.router.get("/search/events", r.event.Search(), r.authMw.RequireLogin)
 	r.router.post("/search/events/location", r.event.SearchByLocation(), r.authMw.RequireLogin)
 	r.router.get("/search/users", r.user.Search(), r.authMw.RequireLogin)
-}
-
-// fnToHandler takes a handler function and returns a handler.
-func fnToHandler(f http.HandlerFunc) http.Handler {
-	return f
 }

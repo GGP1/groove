@@ -55,6 +55,7 @@ func BenchmarkRequire(b *testing.B) {
 		SetUserRole,
 		UpdateEvent,
 	}
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = Require(userPermsKeys, required...)
 	}

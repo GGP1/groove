@@ -4,7 +4,6 @@ import (
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -96,45 +95,5 @@ func BenchmarkNew(b *testing.B) {
 	id := ulid.NewString()
 	for i := 0; i < b.N; i++ {
 		New(id)
-	}
-}
-
-var mp = map[uintptr]string{}
-
-func foo() string {
-	fpcs := make([]uintptr, 1)
-	// Skip 2 levels to get the caller
-	if n := runtime.Callers(2, fpcs); n == 0 {
-		return ""
-	}
-
-	fpc := fpcs[0] - 1
-	if v, ok := mp[fpc]; ok {
-		return v
-	}
-
-	caller := runtime.FuncForPC(fpc)
-	if caller == nil {
-		return ""
-	}
-
-	fullName := caller.Name()
-	lastIdx := strings.LastIndexByte(fullName, '.')
-
-	name := fullName[lastIdx+1:]
-	mp[fpc] = name
-
-	return name
-}
-
-func BenchmarkFoo(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		_ = foo()
-	}
-}
-
-func BenchmarkStr(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		_ = "MethodName"
 	}
 }

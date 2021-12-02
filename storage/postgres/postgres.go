@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/GGP1/groove/config"
 	"github.com/GGP1/groove/internal/log"
@@ -21,7 +22,7 @@ func Connect(ctx context.Context, c config.Postgres) (*sql.DB, error) {
 		return nil, errors.Wrap(err, "connecting with postgres")
 	}
 	db.SetMaxIdleConns(c.MaxIdleConns)
-	db.SetConnMaxIdleTime(c.ConnMaxIdleTime)
+	db.SetConnMaxIdleTime(c.ConnMaxIdleTime * time.Second)
 
 	if err := db.PingContext(ctx); err != nil {
 		return nil, errors.Wrap(err, "ping error")
@@ -167,6 +168,7 @@ CREATE TABLE IF NOT EXISTS events_tickets
 	event_id varchar(26) NOT NULL,
 	available_count integer NOT NULL CHECK (available_count >= 0),
 	name varchar(60) NOT NULL,
+	description varchar(200),
 	cost integer NOT NULL CHECK (cost >= 0),
 	linked_role varchar(40) DEFAULT 'attendant',
 	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,

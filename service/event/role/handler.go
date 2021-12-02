@@ -10,6 +10,7 @@ import (
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/response"
+	"github.com/GGP1/groove/internal/sanitize"
 	"github.com/GGP1/groove/internal/validate"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/auth"
@@ -120,8 +121,8 @@ func (h Handler) CloneRoles() http.HandlerFunc {
 }
 
 // CreatePermission creates a new permission inside an event.
-func (h Handler) CreatePermission() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func (h Handler) CreatePermission() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
 		eventID, err := params.IDFromCtx(ctx)
@@ -137,6 +138,7 @@ func (h Handler) CreatePermission() http.Handler {
 		}
 		defer r.Body.Close()
 
+		sanitize.Strings(&permission.Name)
 		permission.Key = strings.ToLower(permission.Key)
 		if err := permission.Validate(); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
@@ -156,13 +158,13 @@ func (h Handler) CreatePermission() http.Handler {
 			return
 		}
 
-		response.JSON(w, http.StatusOK, permission)
-	})
+		response.JSON(w, http.StatusOK, response.Name{Name: permission.Name})
+	}
 }
 
 // CreateRole creates a new role inside an event.
-func (h Handler) CreateRole() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func (h Handler) CreateRole() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
 		eventID, err := params.IDFromCtx(ctx)
@@ -197,8 +199,8 @@ func (h Handler) CreateRole() http.Handler {
 			return
 		}
 
-		response.JSON(w, http.StatusOK, role)
-	})
+		response.JSON(w, http.StatusOK, response.Name{Name: role.Name})
+	}
 }
 
 // DeletePermission removes a permission from an event.
@@ -560,7 +562,7 @@ func (h Handler) UpdatePermission() http.HandlerFunc {
 			return
 		}
 
-		response.JSON(w, http.StatusOK, permission)
+		response.JSON(w, http.StatusOK, response.Name{Name: key})
 	}
 }
 
@@ -600,6 +602,6 @@ func (h Handler) UpdateRole() http.HandlerFunc {
 			return
 		}
 
-		response.JSON(w, http.StatusOK, role)
+		response.JSON(w, http.StatusOK, response.Name{Name: roleName})
 	}
 }

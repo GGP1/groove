@@ -119,7 +119,7 @@ func TestInvited(t *testing.T) {
 	err = test.CreateUser(ctx, db, dc, userID, "invited@email.com", "invited", "1")
 	assert.NoError(t, err)
 
-	err = eventSv.AddEdge(ctx, eventID, dgraph.Invited, userID)
+	err = roleService.SetReservedRole(ctx, eventID, userID, roles.Viewer)
 	assert.NoError(t, err)
 
 	users, err := eventSv.GetInvited(ctx, eventID, params.Query{LookupID: userID})
@@ -131,7 +131,7 @@ func TestInvited(t *testing.T) {
 	assert.Equal(t, count, int64(len(users)))
 	assert.Equal(t, userID, users[0].ID)
 
-	err = eventSv.RemoveEdge(ctx, eventID, dgraph.Invited, userID)
+	err = roleService.UnsetRole(ctx, eventID, userID)
 	assert.NoError(t, err)
 }
 

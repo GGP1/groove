@@ -120,7 +120,6 @@ func Password(password string) error {
 	lowercase := false
 	uppercase := false
 	number := false
-	special := false
 	for _, c := range password {
 		switch {
 		case unicode.IsLower(c):
@@ -129,16 +128,14 @@ func Password(password string) error {
 			uppercase = true
 		case unicode.IsNumber(c):
 			number = true
-		case unicode.IsPunct(c), unicode.IsSymbol(c):
-			special = true
 		}
-		if lowercase && uppercase && number && special {
+		if lowercase && uppercase && number {
 			return nil
 		}
 	}
-	if !lowercase || !uppercase || !number || !special {
+	if !lowercase || !uppercase || !number {
 		return errors.New(
-			"invalid password, it must contain at least one lowercase, one uppercase, one number and one special character",
+			"invalid password, it must contain at least one lowercase, one uppercase and one number",
 		)
 	}
 	return nil

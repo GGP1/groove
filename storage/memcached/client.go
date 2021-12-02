@@ -1,6 +1,8 @@
 package memcached
 
 import (
+	"time"
+
 	"github.com/GGP1/groove/config"
 	"github.com/GGP1/groove/internal/cache"
 
@@ -21,7 +23,7 @@ func NewClient(config config.Memcached) (cache.Client, error) {
 		return nil, err
 	}
 	mc.MaxIdleConns = config.MaxIdleConns
-	mc.Timeout = config.Timeout
+	mc.Timeout = config.Timeout * time.Millisecond
 
 	client := client{
 		mc:              mc,

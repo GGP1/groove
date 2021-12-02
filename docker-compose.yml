@@ -80,10 +80,20 @@ services:
       - ./hide/configs/prometheus.yml/:/etc/prometheus/prometheus.yml:ro
       # - ./hide/certs:/certs/
       # - ./hide/data/prometheus:/prometheus
-    networks: 
+    networks:
       - metrics
 
-  # Enable when necessary, works right away
+  # Enable them when necessary, works right away
+  # redis_exporter:
+  #   image: quay.io/oliver006/redis_exporter:latest
+  #   restart: unless-stopped
+  #   environment:
+  #     REDIS_ADDR: redis://localhost:6379 # -> default, may be changed to "redis:6379" or "redis://redis:6379"
+  #   ports:
+  #      - 9121:9121
+  #   networks:
+  #     - metrics
+
   # node_exporter:
   #   image: quay.io/prometheus/node-exporter:latest
   #   restart: unless-stopped
@@ -94,7 +104,6 @@ services:
   #   networks:
   #     - metrics
 
-  # Enable when necessary, works right away
   # grafana:
   #   image: grafana/grafana:8.1.5
   #   restart: on-failure:5

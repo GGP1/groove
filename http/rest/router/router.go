@@ -49,7 +49,8 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, ca
 
 	if config.RateLimiter.Rate > 0 {
 		rateLimiter := middleware.NewRateLimiter(config.RateLimiter, rdb)
-		router.middlewares = append(router.middlewares, rateLimiter.Limit)
+		// Prepend so it's executed first
+		router.middlewares = append([]Middleware{rateLimiter.Limit}, router.middlewares...)
 	}
 
 	registerEndpoints(router, db, dc, rdb, cache, config)
@@ -125,7 +126,7 @@ func (r *Router) use(middleware ...Middleware) {
 
 func home() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		response.JSONMessage(w, http.StatusOK, "groove")
+		response.JSON(w, http.StatusOK, struct{ Message string }{Message: "groove"})
 	}
 }
 

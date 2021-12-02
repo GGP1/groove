@@ -25,12 +25,6 @@ import (
 
 var errAccessDenied = errors.New("Access denied")
 
-type edgeMuResponse struct {
-	EventID   string           `json:"event_id,omitempty"`
-	Predicate dgraph.Predicate `json:"predicate,omitempty"`
-	UserID    string           `json:"user_id,omitempty"`
-}
-
 // Handler handles events endpoints.
 type Handler struct {
 	db    *sql.DB
@@ -78,11 +72,7 @@ func (h Handler) AddBanned() http.HandlerFunc {
 			return
 		}
 
-		response.JSON(w, http.StatusOK, edgeMuResponse{
-			EventID:   eventID,
-			Predicate: dgraph.Banned,
-			UserID:    reqBody.UserID,
-		})
+		response.NoContent(w)
 	}
 }
 
@@ -122,11 +112,7 @@ func (h Handler) AddInvited() http.HandlerFunc {
 			return
 		}
 
-		response.JSON(w, http.StatusOK, edgeMuResponse{
-			EventID:   eventID,
-			Predicate: dgraph.Invited,
-			UserID:    reqBody.UserID,
-		})
+		response.NoContent(w)
 	}
 }
 
@@ -162,11 +148,7 @@ func (h Handler) AddLike() http.HandlerFunc {
 			return
 		}
 
-		response.JSON(w, http.StatusOK, edgeMuResponse{
-			EventID:   eventID,
-			Predicate: dgraph.LikedBy,
-			UserID:    session.ID,
-		})
+		response.NoContent(w)
 	}
 }
 
@@ -201,14 +183,7 @@ func (h Handler) Create() http.HandlerFunc {
 			return
 		}
 
-		type eventResp struct {
-			ID    string      `json:"id,omitempty"`
-			Event CreateEvent `json:"event,omitempty"`
-		}
-		response.JSON(w, http.StatusCreated, eventResp{
-			ID:    eventID,
-			Event: event,
-		})
+		response.JSON(w, http.StatusCreated, response.ID{ID: eventID})
 	}
 }
 
@@ -267,7 +242,7 @@ func (h Handler) GetBans() http.HandlerFunc {
 		}
 
 		var nextCursor string
-		if len(bans) > 1 {
+		if len(bans) > 0 {
 			nextCursor = bans[len(bans)-1].ID
 		}
 
@@ -316,7 +291,7 @@ func (h Handler) GetBannedFriends() http.HandlerFunc {
 		}
 
 		var nextCursor string
-		if len(users) > 1 {
+		if len(users) > 0 {
 			nextCursor = users[len(users)-1].ID
 		}
 
@@ -332,22 +307,6 @@ func (h Handler) GetByID() http.HandlerFunc {
 		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		session, err := auth.GetSession(ctx, r)
-		if err != nil {
-			response.Error(w, http.StatusForbidden, err)
-			return
-		}
-
-		isBanned, err := h.service.IsBanned(ctx, eventID, session.ID)
-		if err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-		if isBanned {
-			response.Error(w, http.StatusForbidden, errors.New("you are banned from this event"))
 			return
 		}
 
@@ -434,7 +393,7 @@ func (h Handler) GetInvited() http.HandlerFunc {
 		}
 
 		var nextCursor string
-		if len(invited) > 1 {
+		if len(invited) > 0 {
 			nextCursor = invited[len(invited)-1].ID
 		}
 
@@ -483,7 +442,7 @@ func (h Handler) GetInvitedFriends() http.HandlerFunc {
 		}
 
 		var nextCursor string
-		if len(users) > 1 {
+		if len(users) > 0 {
 			nextCursor = users[len(users)-1].ID
 		}
 
@@ -526,7 +485,7 @@ func (h Handler) GetLikes() http.HandlerFunc {
 		}
 
 		var nextCursor string
-		if len(likes) > 1 {
+		if len(likes) > 0 {
 			nextCursor = likes[len(likes)-1].ID
 		}
 
@@ -575,7 +534,7 @@ func (h Handler) GetLikedByFriends() http.HandlerFunc {
 		}
 
 		var nextCursor string
-		if len(users) > 1 {
+		if len(users) > 0 {
 			nextCursor = users[len(users)-1].ID
 		}
 
@@ -619,7 +578,7 @@ func (h Handler) GetRecommended() http.HandlerFunc {
 		}
 
 		var nextCursor string
-		if len(events) > 1 {
+		if len(events) > 0 {
 			nextCursor = events[len(events)-1].ID
 		}
 
@@ -707,11 +666,6 @@ func (h Handler) Join() http.HandlerFunc {
 			return
 		}
 
-		if err := h.service.RemoveEdge(ctx, eventID, dgraph.Invited, session.ID); err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-
 		if err := sqlTx.Commit(); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -749,11 +703,7 @@ func (h Handler) RemoveBanned() http.HandlerFunc {
 			return
 		}
 
-		response.JSON(w, http.StatusOK, edgeMuResponse{
-			EventID:   eventID,
-			Predicate: dgraph.Banned,
-			UserID:    reqBody.UserID,
-		})
+		response.NoContent(w)
 	}
 }
 
@@ -780,11 +730,7 @@ func (h Handler) RemoveLike() http.HandlerFunc {
 			return
 		}
 
-		response.JSON(w, http.StatusOK, edgeMuResponse{
-			EventID:   eventID,
-			Predicate: dgraph.LikedBy,
-			UserID:    reqBody.UserID,
-		})
+		response.NoContent(w)
 	}
 }
 
@@ -893,6 +839,6 @@ func (h Handler) Update() http.HandlerFunc {
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, eventID)
+		response.JSON(w, http.StatusOK, response.ID{ID: eventID})
 	}
 }

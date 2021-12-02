@@ -48,9 +48,11 @@ func (c Claims) Valid() error {
 }
 
 // New returns a new API key.
-//
-// The id passed must be a ULID, not checked here to save resources.
 func New(id string) (string, error) {
+	if err := validate.ULID(id); err != nil {
+		return "", err
+	}
+
 	once.Do(func() {
 		secretKey = []byte(viper.GetString("secrets.apikeys"))
 	})

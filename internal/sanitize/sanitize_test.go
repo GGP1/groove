@@ -43,6 +43,7 @@ func TestStrings(t *testing.T) {
 
 func BenchmarkNormalize(b *testing.B) {
 	str := "BénçhmẬrkstrïng" // Maybe it requires a little more research to estimate a good average input
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		str = Normalize(str)
 	}
@@ -52,6 +53,7 @@ func BenchmarkDirtyStrings(b *testing.B) {
 	operaHouse := "opera house "
 	dance := "dánce"
 	groove := " groove "
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		Strings(&operaHouse, &dance, &groove)
 	}
@@ -61,6 +63,7 @@ func BenchmarkCleanStrings(b *testing.B) {
 	operaHouse := "opera house"
 	dance := "dance"
 	groove := "groove"
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		Strings(&operaHouse, &dance, &groove)
 	}

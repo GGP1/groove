@@ -11,6 +11,7 @@ import (
 
 	"github.com/GGP1/groove/internal/httperr"
 	"github.com/GGP1/groove/internal/response"
+	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/test"
 
 	"github.com/stretchr/testify/assert"
@@ -114,24 +115,6 @@ func TestJSONAndCache(t *testing.T) {
 	assert.Equal(t, cacheContent.Bytes(), v)
 }
 
-func TestJSONText(t *testing.T) {
-	expectedHeader := "application/json; charset=UTF-8"
-	expectedStatus := 200
-	expectedRes := "{\"status\":200,\"message\":\"test\"}\n"
-
-	rec := httptest.NewRecorder()
-	response.JSONMessage(rec, http.StatusOK, "test")
-
-	assert.Equal(t, expectedHeader, rec.Header().Get("Content-Type"))
-	assert.Equal(t, expectedStatus, rec.Code)
-
-	var buf bytes.Buffer
-	_, err := buf.ReadFrom(rec.Body)
-	assert.NoError(t, err, "Failed reading response body")
-
-	assert.Equal(t, expectedRes, buf.String())
-}
-
 func TestNoContent(t *testing.T) {
 	expectedStatus := 204
 	rec := httptest.NewRecorder()
@@ -158,6 +141,7 @@ func BenchmarkEncodedJSON(b *testing.B) {
 	err := json.NewEncoder(&buf).Encode(benchMessage)
 	assert.NoError(b, err)
 
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		response.EncodedJSON(rec, buf.Bytes())
 	}
@@ -165,13 +149,32 @@ func BenchmarkEncodedJSON(b *testing.B) {
 
 func BenchmarkJSON(b *testing.B) {
 	rec := httptest.NewRecorder()
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		response.JSON(rec, 200, benchMessage)
 	}
 }
 
+func BenchmarkJSONCount(b *testing.B) {
+	rec := httptest.NewRecorder()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		response.JSONCount(rec, http.StatusOK, "test_count", 5)
+	}
+}
+
+func BenchmarkJSONCursor(b *testing.B) {
+	cursor := ulid.NewString()
+	b.ResetTimer()
+	rec := httptest.NewRecorder()
+	for i := 0; i < b.N; i++ {
+		response.JSONCursor(rec, cursor, "tests", benchMessage)
+	}
+}
+
 func BenchmarkNoContent(b *testing.B) {
 	rec := httptest.NewRecorder()
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		response.NoContent(rec)
 	}

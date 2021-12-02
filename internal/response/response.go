@@ -24,13 +24,18 @@ const contentType = "Content-Type"
 var applicationJSON = []string{"application/json; charset=UTF-8"}
 
 type errResponse struct {
-	Status int    `json:"status"`
 	Error  string `json:"error"`
+	Status int    `json:"status"`
 }
 
-type msgResponse struct {
-	Status  int         `json:"status"`
-	Message interface{} `json:"message"`
+// ID contains a unique identifier.
+type ID struct {
+	ID string `json:"id,omitempty"`
+}
+
+// Name contains a unique name.
+type Name struct {
+	Name string `json:"name,omitempty"`
 }
 
 // EncodedJSON writes a response from a buffer with json encoded content.
@@ -120,14 +125,6 @@ func JSONCursor(w http.ResponseWriter, nextCursor, fieldName string, items inter
 	JSON(w, http.StatusOK, map[string]interface{}{
 		"next_cursor": nextCursor,
 		fieldName:     items,
-	})
-}
-
-// JSONMessage is the function used to send JSON formatted message responses.
-func JSONMessage(w http.ResponseWriter, status int, message interface{}) {
-	JSON(w, status, msgResponse{
-		Status:  status,
-		Message: message,
 	})
 }
 

@@ -151,6 +151,10 @@ func New() (Config, error) {
 		return Config{}, errors.Wrap(err, "unmarshal configuration")
 	}
 
+	if err := validateValues(config); err != nil {
+		return Config{}, err
+	}
+
 	if err := log.Setup(config.Development, config.Logger.OutFiles); err != nil {
 		return Config{}, err
 	}
@@ -200,6 +204,18 @@ func defaultConfig() (string, error) {
 
 	viper.SetConfigType("yaml")
 	return configPath, nil
+}
+
+func validateValues(config *Config) error {
+	if !config.Development && config.RateLimiter.Rate == 0 {
+		return errors.New("no rate limit provided in production mode")
+	}
+
+	if config.Redis.MetricsRate < 1 || config.Postgres.MetricsRate < 1 {
+		return errors.New("metrics rate too low")
+	}
+
+	return nil
 }
 
 var (

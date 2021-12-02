@@ -10,7 +10,6 @@ import (
 )
 
 type metrics struct {
-	lastRun           prometheus.Gauge
 	open              prometheus.Gauge
 	maxOpen           prometheus.Gauge
 	inUse             prometheus.Gauge
@@ -25,12 +24,6 @@ type metrics struct {
 func runMetrics(db *sql.DB, config config.Postgres) {
 	ns, sub := "groove", "postgres"
 	m := metrics{
-		lastRun: promauto.NewGauge(prometheus.GaugeOpts{
-			Namespace: ns,
-			Subsystem: sub,
-			Name:      "last_run",
-			Help:      "Last gather date in Unix seconds",
-		}),
 		open: promauto.NewGauge(prometheus.GaugeOpts{
 			Namespace: ns,
 			Subsystem: sub,
@@ -93,9 +86,8 @@ func runMetrics(db *sql.DB, config config.Postgres) {
 func (m metrics) Run(db *sql.DB, config config.Postgres) {
 	go func() {
 		for {
-			time.Sleep(config.MetricsRate)
+			time.Sleep(config.MetricsRate * time.Second)
 			stats := db.Stats()
-			m.lastRun.SetToCurrentTime()
 			m.open.Set(float64(stats.OpenConnections))
 			m.maxOpen.Set(float64(stats.MaxOpenConnections))
 			m.inUse.Set(float64(stats.InUse))

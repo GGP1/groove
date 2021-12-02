@@ -173,6 +173,8 @@ var getQuery = map[query]string{
 			}
 		}
 	}`,
+	// TODO: liked_by references that the user liked a post, NOT an event
+	// maybe create post_liked_by and event_liked_by predicates instead of liked_by
 	likedBy: `query q($id: string, $cursor: string, $limit: string) {
 		q(func: eq(user_id, $id)) {
 			~liked_by (orderasc: event_id) (first: $limit, offset: $cursor) {

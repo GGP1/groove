@@ -228,9 +228,8 @@ func TestURL(t *testing.T) {
 }
 
 func BenchmarkCron(b *testing.B) {
-	cron := "30 12 17-26 0,1,4,8,9 0 4789004"
 	for i := 0; i < b.N; i++ {
-		Cron(cron)
+		Cron("30 12 17-26 0,1,4,8,9 0 4789004")
 	}
 }
 

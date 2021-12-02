@@ -11,13 +11,11 @@ import (
 	"github.com/GGP1/groove/config"
 	"github.com/GGP1/groove/internal/cookie"
 	"github.com/GGP1/groove/internal/httperr"
-	"github.com/GGP1/groove/internal/log"
 	"github.com/GGP1/groove/internal/userip"
 	"github.com/GGP1/sqan"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
-	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -75,10 +73,13 @@ func (s service) Login(ctx context.Context, w http.ResponseWriter, r *http.Reque
 		return userSession{}, httperr.Forbidden(fmt.Sprintf("please wait %v before trying again", delay(attempts)))
 	}
 
-	query := `SELECT 
-	id, email, username, password, verified_email, profile_image_url, type
-	FROM users 
-	WHERE username=$1 OR email=$1`
+	// Using union instead of OR allows the engine to use indexes in both lookups, only one index is
+	// used per table (OR would use only one of the two)
+	query := `SELECT id, email, username, password, verified_email, profile_image_url, type
+	FROM users WHERE username=$1 
+	UNION
+	SELECT id, email, username, password, verified_email, profile_image_url, type
+	FROM users WHERE email=$1`
 	rows, err := s.db.QueryContext(ctx, query, login.Username)
 	if err != nil {
 		return userSession{}, errors.Wrap(err, "querying user credentials")
@@ -87,13 +88,11 @@ func (s service) Login(ctx context.Context, w http.ResponseWriter, r *http.Reque
 	var user userSession
 	if err := sqan.Row(&user, rows); err != nil {
 		_ = s.addDelay(ctx, ip)
-		log.Debug("database error", zap.Error(err))
 		return userSession{}, httperr.Forbidden("invalid email or password")
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(login.Password)); err != nil {
 		_ = s.addDelay(ctx, ip)
-		log.Debug("password mismatch", zap.Error(err))
 		return userSession{}, httperr.Forbidden("invalid email or password")
 	}
 

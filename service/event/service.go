@@ -116,12 +116,12 @@ func (s service) AvailableSlots(ctx context.Context, eventID string) (int64, err
 func (s service) Create(ctx context.Context, eventID string, event CreateEvent) error {
 	s.metrics.incMethodCalls("Create")
 
-	sqlTx, _ := postgres.BeginTx(ctx, s.db)
+	sqlTx, ctx := postgres.BeginTx(ctx, s.db)
 	defer sqlTx.Rollback()
 
 	q1 := `INSERT INTO events 
 	(id, name, description, type, ticket_type, virtual, url, logo_url, header_url, address, 
-	latitude, longitude, public, cron, start_date end_date, slots, min_age, updated_at)
+	latitude, longitude, public, cron, start_date, end_date, slots, min_age, updated_at)
 	VALUES 
 	($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`
 	_, err := sqlTx.ExecContext(ctx, q1, eventID, event.Name, event.Description, event.Type,
@@ -317,11 +317,6 @@ func (s service) GetLikedBy(ctx context.Context, eventID string, params params.Q
 func (s service) GetRecommended(ctx context.Context, session auth.Session, userCoords Coordinates, params params.Query) ([]Event, error) {
 	s.metrics.incMethodCalls("GetRecommended")
 
-	latMin := math.Mod(userCoords.Latitude-1, 90)
-	latMax := math.Mod(userCoords.Latitude+1, 90)
-	longMin := math.Mod(userCoords.Longitude-1, 180)
-	longMax := math.Mod(userCoords.Longitude+1, 180)
-
 	query := `query q($user_id: string) {
 		var(func: type("Event")) {
 			likes as count(liked_by)
@@ -352,7 +347,7 @@ func (s service) GetRecommended(ctx context.Context, session auth.Session, userC
 	buf := bufferpool.Get()
 	buf.WriteString("SELECT ")
 	postgres.WriteFields(buf, model.Event, params.Fields)
-	buf.WriteString("public=true AND ((latitude BETWEEN $1 AND $2) AND (longitude BETWEEN $3 AND $4)")
+	buf.WriteString(" FROM events WHERE public=true AND ((latitude BETWEEN $1 AND $2) AND (longitude BETWEEN $3 AND $4)")
 	if len(eventIDs) > 0 {
 		buf.WriteString(" OR id IN ")
 		postgres.WriteIDs(buf, eventIDs)
@@ -366,6 +361,12 @@ func (s service) GetRecommended(ctx context.Context, session auth.Session, userC
 
 	q := postgres.AddPagination(buf.String(), "id", params)
 	bufferpool.Put(buf)
+
+	latMin := math.Mod(userCoords.Latitude-1, 90)
+	latMax := math.Mod(userCoords.Latitude+1, 90)
+	longMin := math.Mod(userCoords.Longitude-1, 180)
+	longMax := math.Mod(userCoords.Longitude+1, 180)
+
 	// Maybe add the events liked by friends in the future
 	// TODO: consider using temporary tables instead of unions
 	rows, err := s.db.QueryContext(ctx, q, latMin, latMax, longMin, longMax)

@@ -11,6 +11,7 @@ import (
 // Ticket represents an event's ticket.
 type Ticket struct {
 	Name           string  `json:"name,omitempty"`
+	Description    string  `json:"description,omitempty"`
 	AvailableCount *uint64 `json:"available_count,omitempty" db:"available_count"`
 	Cost           *uint64 `json:"cost,omitempty"` // 100 = 1 USD
 	// LinkedRole is the role assigned to the user when buying the ticket, default is "attendant"
@@ -24,6 +25,9 @@ func (t Ticket) Validate() error {
 	}
 	if len(t.Name) > 60 {
 		return errors.New("invalid name, maximum length is 60 characters")
+	}
+	if len(t.Description) > 200 {
+		return errors.New("invalid description, maximum length is 200 characters")
 	}
 	if t.AvailableCount == nil {
 		return errors.New("available_count required")
@@ -46,14 +50,16 @@ type UpdateTicket struct {
 	AvailableCount *int64  `json:"available,omitempty" db:"available_count"`
 	Cost           *int64  `json:"cost,omitempty"`
 	LinkedRole     *string `json:"linked_role,omitempty" db:"linked_role"`
+	Description    *string `json:"description,omitempty"`
 }
 
 // Validate verifies if the ticket values for update are valid.
 func (u UpdateTicket) Validate() error {
-	if u.LinkedRole != nil {
-		if *u.LinkedRole == "" {
-			return errors.New("linked_role cannot be empty")
-		}
+	if u.Description != nil && len(*u.Description) > 200 {
+		return errors.New("invalid description, maximum length is 200 characters")
+	}
+	if u.LinkedRole != nil && *u.LinkedRole == "" {
+		return errors.New("linked_role cannot be empty")
 	}
 	if u.AvailableCount != nil && *u.AvailableCount < 0 {
 		return errors.New("available_count must be higher than 0")

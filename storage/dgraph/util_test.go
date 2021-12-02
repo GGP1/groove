@@ -116,6 +116,7 @@ func TestTriple(t *testing.T) {
 
 func BenchmarkParseCount(b *testing.B) {
 	rdf := []byte(`<0x1> <count(predicate)> "15" .`)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = ParseCount(rdf)
 	}
@@ -123,6 +124,7 @@ func BenchmarkParseCount(b *testing.B) {
 
 func BenchmarkParseCountWithMap(b *testing.B) {
 	rdf := []byte(`<0x1> <count(predicate)> "15" .`)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = ParseCountWithMap(rdf)
 	}
@@ -133,6 +135,7 @@ func BenchmarkParseRDFULIDs(b *testing.B) {
 <0x1> <event_id> "01FATYNXRDPTPSJNEJ0DQ5KBAB" .
 <0x1> <event_id> "01FATYMXV9M5K093CK5NX0Y4K9" .
 `)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = ParseRDFULIDs(rdf)
 	}
@@ -161,6 +164,8 @@ func BenchmarkParseJSON(b *testing.B) {
 			} `json:"~invited,omitempty"`
 		}
 	}
+
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = json.Unmarshal(q, &str)
 	}
@@ -171,6 +176,7 @@ func BenchmarkParseRDF(b *testing.B) {
 <0x1> <event_id> "01FATYNXRDPTPSJNEJ0DQ5KBAB" .
 <0x1> <event_id> "01FATYMXV9M5K093CK5NX0Y4K9" .
 `)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = ParseRDF(rdf)
 	}

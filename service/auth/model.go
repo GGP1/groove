@@ -16,7 +16,7 @@ type userSession struct {
 	Password        string         `json:"-"`
 	ID              ulid.ULID      `json:"id"`
 	VerifiedEmail   bool           `json:"verified_email" db:"verified_email"`
-	Type            model.UserType `json:"type,omitempty"`
+	Type            model.UserType `json:"type"`
 }
 
 // Login is used to decode the input received on a Login attempt.

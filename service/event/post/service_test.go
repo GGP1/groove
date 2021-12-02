@@ -80,12 +80,11 @@ func TestCreateComment(t *testing.T) {
 	session := auth.Session{
 		ID: userID,
 	}
-	f := false
 	comment := post.CreateComment{
-		Content:          "post comment",
-		ContainsMentions: &f,
+		Content: "post comment",
 	}
-	err = postSv.CreateComment(ctx, session, comment)
+	commentID := ulid.NewString()
+	err = postSv.CreateComment(ctx, session, commentID, comment)
 	assert.NoError(t, err)
 
 	assert.NoError(t, g.Commit())
@@ -104,7 +103,8 @@ func TestCreatePost(t *testing.T) {
 		Content: "post content",
 		Media:   pq.StringArray{"create_post.com/images/a.jpg"},
 	}
-	err = postSv.CreatePost(ctx, session, eventID, post)
+	postID := ulid.NewString()
+	err = postSv.CreatePost(ctx, session, postID, eventID, post)
 	assert.NoError(t, err)
 
 	assert.NoError(t, g.Commit())

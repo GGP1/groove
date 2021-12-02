@@ -5,6 +5,8 @@ import (
 	"database/sql"
 
 	"github.com/GGP1/groove/internal/cache"
+	"github.com/GGP1/groove/internal/permissions"
+	"github.com/GGP1/groove/internal/sqltx"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/sqan"
 
@@ -35,8 +37,33 @@ func NewService(db *sql.DB, cache cache.Client) Service {
 
 // Create creates a zone inside an event.
 func (s service) Create(ctx context.Context, eventID string, zone Zone) error {
+	sqlTx := sqltx.FromContext(ctx)
+
+	q1 := "SELECT EXISTS(SELECT 1 FROM events_permissions WHERE event_id=$1 AND key=$2)"
+	exists := false
+
+	stmt, err := sqlTx.PrepareContext(ctx, q1)
+	if err != nil {
+		return errors.Wrap(err, "preparing statement")
+	}
+	defer stmt.Close()
+
+	// Check for the existence of the keys used for the role
+	for _, key := range zone.RequiredPermissionKeys {
+		if permissions.Reserved.Exists(key) {
+			continue
+		}
+		row := stmt.QueryRowContext(ctx, eventID, key)
+		if err := row.Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return errors.Errorf("permission with key %q does not exist", key)
+		}
+	}
+
 	q := "INSERT INTO events_zones (event_id, name, required_permission_keys) VALUES ($1, $2, $3)"
-	if _, err := s.db.ExecContext(ctx, q, eventID, zone.Name, zone.RequiredPermissionKeys); err != nil {
+	if _, err := sqlTx.ExecContext(ctx, q, eventID, zone.Name, zone.RequiredPermissionKeys); err != nil {
 		return errors.Wrap(err, "creating zone")
 	}
 	return nil

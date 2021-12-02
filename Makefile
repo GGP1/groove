@@ -4,15 +4,12 @@ COMMIT = $(shell git rev-parse --short HEAD)
 build:
 	@cd cmd && go build -o groove -ldflags="-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)" .
 
-.PHONY: run
 run:
 	@go run cmd/main.go
 
-.PHONY: test
 test:
 	go test ./... -race
 
-.PHONY: docker-build
 docker-build:
 	docker build -t groove_server .
 
@@ -22,10 +19,10 @@ docker-run:
 	-v "./server/certs/:/certs/" \
 	groove_server
 
-.PHONY: rebuild-server
 rebuild-server:
 	docker compose rm -sf server && docker compose up -d --build --no-deps server && docker compose logs -f
 
-.PHONY: remove-images
 remove-images:
 	docker rmi $(docker images -f dangling=true -q | tail -n +2)
+
+.PHONY: run test rebuild-server remove-images

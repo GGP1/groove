@@ -8,7 +8,6 @@ import (
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/sqltx"
-	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/storage/postgres"
 	"github.com/GGP1/sqan"
@@ -18,7 +17,7 @@ import (
 
 // Service interface for the products service.
 type Service interface {
-	Create(ctx context.Context, eventID string, product Product) error
+	Create(ctx context.Context, productID, eventID string, product Product) error
 	Delete(ctx context.Context, eventID, productID string) error
 	Get(ctx context.Context, eventID string, params params.Query) ([]Product, error)
 	Update(ctx context.Context, eventID, productID string, product UpdateProduct) error
@@ -38,14 +37,14 @@ func NewService(db *sql.DB, cache cache.Client) Service {
 }
 
 // Create adds a product to the event.
-func (s service) Create(ctx context.Context, eventID string, product Product) error {
+func (s service) Create(ctx context.Context, productID, eventID string, product Product) error {
 	sqlTx := sqltx.FromContext(ctx)
 
 	q := `INSERT INTO events_products 
 	(id, event_id, stock, brand, type, description, discount, taxes, subtotal, total) 
 	VALUES 
 	($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
-	_, err := sqlTx.ExecContext(ctx, q, ulid.NewString(), product.EventID, product.Stock,
+	_, err := sqlTx.ExecContext(ctx, q, productID, product.EventID, product.Stock,
 		product.Brand, product.Type, product.Description, product.Discount, product.Taxes,
 		product.Subtotal, product.Total)
 	if err != nil {

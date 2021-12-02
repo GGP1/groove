@@ -96,11 +96,12 @@ type Statistics struct {
 	Blocked         *uint64 `json:"blocked_count,omitempty"`
 	BlockedBy       *uint64 `json:"blocked_by_count,omitempty"`
 	Friends         *uint64 `json:"friends_count,omitempty"`
+	Following       *uint64 `json:"following_count,omitempty"`
 	Followers       *uint64 `json:"followers_count,omitempty"`
-	InvitedEvents   *uint64 `json:"invited_events_count,omitempty"`
+	Invitations     *uint64 `json:"invitations_count,omitempty"`
 	LikedEvents     *uint64 `json:"liked_events_count,omitempty"`
-	AttendingEvents int64   `json:"attending_events_count,omitempty"`
-	HostedEvents    int64   `json:"hosted_events_count,omitempty"`
+	AttendingEvents *int64  `json:"attending_events_count,omitempty"`
+	HostedEvents    *int64  `json:"hosted_events_count,omitempty"`
 }
 
 // UpdateUser is the struct used to update users.

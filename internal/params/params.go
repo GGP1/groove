@@ -16,11 +16,11 @@ import (
 const (
 	// DefaultCursor is the one used in case it isn't provided by the client
 	DefaultCursor = "0"
+	// DefaultLimit is the number of objects returned in case none is specified
+	DefaultLimit = "20"
 
 	// maxLimit is the maximum number of objects returned
 	maxLimit = 50
-	// defaultLimit is the number of objects returned in case none is specified
-	defaultLimit = "20"
 )
 
 // Query contains the request parameters provided by the client.
@@ -149,14 +149,14 @@ func parseFields(model model.Model, values url.Values) ([]string, error) {
 func parseLimit(value string) (string, error) {
 	switch value {
 	case "":
-		return defaultLimit, nil
+		return DefaultLimit, nil
 	default:
 		i, err := strconv.Atoi(value)
 		if err != nil {
 			return "", errors.Wrap(err, "invalid number")
 		}
 		if i < 1 {
-			return defaultLimit, nil
+			return DefaultLimit, nil
 		}
 		if i > maxLimit {
 			return "", errors.Errorf("number provided (%d) exceeded maximum (%d)", i, maxLimit)

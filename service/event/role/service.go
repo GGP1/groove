@@ -203,11 +203,9 @@ func (s service) DeleteRole(ctx context.Context, eventID, name string) error {
 
 // GetMembers returns a list with all the members (non-viewers) of an event.
 func (s service) GetMembers(ctx context.Context, eventID string, params params.Query) ([]model.ListUser, error) {
-	sqlTx := sqltx.FromContext(ctx)
-
 	whereCond := "id IN (SELECT user_id FROM events_users_roles WHERE event_id=$1 AND role_name != $2)"
 	q := postgres.SelectWhere(model.User, whereCond, "id", params)
-	rows, err := sqlTx.QueryContext(ctx, q, eventID, roles.Viewer)
+	rows, err := s.db.QueryContext(ctx, q, eventID, roles.Viewer)
 	if err != nil {
 		return nil, err
 	}
@@ -423,7 +421,6 @@ func (s service) IsHost(ctx context.Context, userID string, eventIDs ...string) 
 	sqlTx := sqltx.FromContext(ctx)
 
 	q := "SELECT EXISTS(SELECT 1 FROM events_users_roles WHERE event_id=$1 AND user_id=$2 AND role_name='host')"
-	var isHost bool
 
 	stmt, err := sqlTx.PrepareContext(ctx, q)
 	if err != nil {
@@ -431,6 +428,7 @@ func (s service) IsHost(ctx context.Context, userID string, eventIDs ...string) 
 	}
 	defer stmt.Close()
 
+	var isHost bool
 	for _, eventID := range eventIDs {
 		row := stmt.QueryRowContext(ctx, eventID, userID)
 		if err := row.Scan(&isHost); err != nil {
@@ -445,15 +443,15 @@ func (s service) IsHost(ctx context.Context, userID string, eventIDs ...string) 
 }
 
 // privacyFilter lets through only users that can fetch the event data if it's private,
-// if it's public it lets anyone in. : cache
+// if it's public it lets anyone in. TODO: try to cache
 func (s service) PrivacyFilter(ctx context.Context, r *http.Request, eventID string) error {
 	session, err := auth.GetSession(ctx, r)
 	if err != nil {
 		return err
 	}
 
-	var isPublic bool
 	row := s.db.QueryRowContext(ctx, "SELECT public FROM events WHERE id=$1", eventID)
+	var isPublic bool
 	if err := row.Scan(&isPublic); err != nil {
 		return errors.Wrap(err, "privacy filter: fetching event visibility")
 	}

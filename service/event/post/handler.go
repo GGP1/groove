@@ -8,6 +8,7 @@ import (
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/internal/txgroup"
+	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/internal/validate"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/auth"
@@ -59,7 +60,8 @@ func (h Handler) CreateComment() http.HandlerFunc {
 		atom, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc))
 		defer atom.Rollback()
 
-		if err := h.service.CreateComment(ctx, session, comment); err != nil {
+		commentID := ulid.NewString()
+		if err := h.service.CreateComment(ctx, session, commentID, comment); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -69,13 +71,13 @@ func (h Handler) CreateComment() http.HandlerFunc {
 			return
 		}
 
-		response.NoContent(w)
+		response.JSON(w, http.StatusCreated, response.ID{ID: commentID})
 	}
 }
 
 // CreatePost creates a post in an event.
-func (h Handler) CreatePost() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func (h Handler) CreatePost() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
 		session, err := auth.GetSession(ctx, r)
@@ -90,9 +92,6 @@ func (h Handler) CreatePost() http.Handler {
 			return
 		}
 
-		txg, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc))
-		defer txg.Rollback()
-
 		var post CreatePost
 		if err := json.NewDecoder(r.Body).Decode(&post); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
@@ -105,7 +104,11 @@ func (h Handler) CreatePost() http.Handler {
 			return
 		}
 
-		if err := h.service.CreatePost(ctx, session, eventID, post); err != nil {
+		txg, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc))
+		defer txg.Rollback()
+
+		postID := ulid.NewString()
+		if err := h.service.CreatePost(ctx, session, postID, eventID, post); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -115,8 +118,8 @@ func (h Handler) CreatePost() http.Handler {
 			return
 		}
 
-		response.JSONMessage(w, http.StatusCreated, eventID)
-	})
+		response.JSON(w, http.StatusCreated, response.ID{ID: postID})
+	}
 }
 
 // DeleteComment removes a comment from a conversation/post.
@@ -401,7 +404,7 @@ func (h Handler) GetPostLikes() http.HandlerFunc {
 		}
 
 		var nextCursor string
-		if len(users) > 1 {
+		if len(users) > 0 {
 			nextCursor = users[len(users)-1].ID
 		}
 
@@ -439,16 +442,7 @@ func (h Handler) LikeComment() http.HandlerFunc {
 			return
 		}
 
-		type res struct {
-			CommentID string `json:"comment_id,omitempty"`
-			Predicate string `json:"predicate,omitempty"`
-			UserID    string `json:"user_id,omitempty"`
-		}
-		response.JSON(w, http.StatusOK, res{
-			CommentID: commentID,
-			Predicate: "liked_by",
-			UserID:    session.ID,
-		})
+		response.NoContent(w)
 	}
 }
 
@@ -482,16 +476,7 @@ func (h Handler) LikePost() http.HandlerFunc {
 			return
 		}
 
-		type res struct {
-			PostID    string `json:"comment_id,omitempty"`
-			Predicate string `json:"predicate,omitempty"`
-			UserID    string `json:"user_id,omitempty"`
-		}
-		response.JSON(w, http.StatusOK, res{
-			PostID:    postID,
-			Predicate: "liked_by",
-			UserID:    session.ID,
-		})
+		response.NoContent(w)
 	}
 }
 
@@ -523,7 +508,7 @@ func (h Handler) UpdatePost() http.HandlerFunc {
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, postID)
+		response.JSON(w, http.StatusOK, response.ID{ID: postID})
 	}
 }
 
@@ -550,7 +535,7 @@ func (h Handler) UserLikedComment() http.HandlerFunc {
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, liked)
+		response.JSON(w, http.StatusOK, liked)
 	}
 }
 
@@ -577,6 +562,6 @@ func (h Handler) UserLikedPost() http.HandlerFunc {
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, liked)
+		response.JSON(w, http.StatusOK, liked)
 	}
 }

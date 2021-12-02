@@ -16,7 +16,6 @@ import (
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/auth"
 	"github.com/GGP1/groove/service/event/role"
-	"github.com/GGP1/groove/storage/dgraph"
 	"github.com/GGP1/groove/storage/postgres"
 	"github.com/GGP1/sqan"
 
@@ -115,15 +114,18 @@ func (s service) Answer(ctx context.Context, id, authUserID string, accepted boo
 	}
 
 	if !accepted {
-		if _, err := sqlTx.ExecContext(ctx, "DELETE FROM notifications WHERE id=$1", id); err != nil {
-			return errors.Wrap(err, "deleting notification")
+		if err := s.Delete(ctx, id); err != nil {
+			return err
+		}
+		if notification.Type == Invitation {
+			return s.roleService.UnsetRole(ctx, *notification.EventID, notification.ReceiverID)
 		}
 		return nil
 	}
 
 	switch notification.Type {
 	case Invitation: // Add receiver as an attendant of the event
-		return s.roleService.SetReservedRole(ctx, notification.EventID.String, notification.ReceiverID, roles.Attendant)
+		return s.roleService.SetReservedRole(ctx, *notification.EventID, notification.ReceiverID, roles.Attendant)
 	case FriendRequest: // Execute friendship (add friend edges)
 		vars := map[string]string{"$user_id": notification.SenderID, "$friend_id": notification.ReceiverID}
 		query := `query q($user_id: string, $friend_id: string) {
@@ -146,7 +148,7 @@ func (s service) Answer(ctx context.Context, id, authUserID string, accepted boo
 		}
 
 		return nil
-	case Proposal: // TODO: Increment counter
+	case Proposal: // TODO: Handle
 	}
 
 	return nil
@@ -169,10 +171,6 @@ func (s service) Create(ctx context.Context, session auth.Session, notification 
 	}
 
 	if notification.Type == Invitation {
-		err := dgraph.AddEventEdge(ctx, s.dc, notification.SenderID, dgraph.Invited, notification.ReceiverID)
-		if err != nil {
-			return err
-		}
 		err = s.roleService.SetReservedRole(ctx, *notification.EventID, notification.ReceiverID, roles.Viewer)
 		if err != nil {
 			return err
@@ -214,21 +212,11 @@ func (s service) CreateMany(ctx context.Context, session auth.Session, notificat
 	}
 
 	if notification.Type == Invitation {
-		dcTx := s.dc.NewTxn()
 		for _, receiverID := range notification.ReceiverIDs {
-			req := dgraph.EventEdgeRequest(*notification.EventID, dgraph.Invited, receiverID, true)
-			if _, err := dcTx.Do(ctx, req); err != nil {
-				return err
-			}
-
-			err = s.roleService.SetReservedRole(ctx, *notification.EventID, receiverID, roles.Viewer)
+			err := s.roleService.SetReservedRole(ctx, *notification.EventID, receiverID, roles.Viewer)
 			if err != nil {
 				return err
 			}
-		}
-
-		if err := dcTx.Commit(ctx); err != nil {
-			return errors.Wrap(err, "creating nodes edges")
 		}
 	}
 

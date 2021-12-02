@@ -9,6 +9,9 @@ import (
 	"github.com/pkg/errors"
 )
 
+// TODO: add LoggedInUserLiked to both post and comment to check if the user requesting the posts
+// liked them
+
 // Post represents an event's post.
 type Post struct {
 	CreatedAt     *time.Time      `json:"created_at,omitempty" db:"created_at"`
@@ -23,18 +26,14 @@ type Post struct {
 
 // CreatePost is used for creating posts
 type CreatePost struct {
-	ContainsMentions *bool          `json:"contains_mentions,omitempty"`
-	Content          string         `json:"content,omitempty"`
-	Media            pq.StringArray `json:"media,omitempty"`
+	Content string         `json:"content,omitempty"`
+	Media   pq.StringArray `json:"media,omitempty"`
 }
 
 // Validate verifies the correctness of the values received.
 func (cp CreatePost) Validate() error {
 	if cp.Content == "" {
 		errors.New("content required")
-	}
-	if cp.ContainsMentions == nil {
-		return errors.New("contains_mentions required")
 	}
 	for i, m := range cp.Media {
 		if err := validate.URL(m); err != nil {
@@ -68,32 +67,31 @@ type Comment struct {
 	CreatedAt       time.Time `json:"created_at,omitempty" db:"created_at"`
 	ParentCommentID *string   `json:"parent_comment_id,omitempty" db:"parent_comment_id"`
 	PostID          *string   `json:"post_id,omitempty" db:"post_id"`
+	LikesCount      *int      `json:"likes_count,omitempty" db:"likes_count"`
+	RepliesCount    *int      `json:"replies_count,omitempty" db:"replies_count"`
 	ID              string    `json:"id,omitempty"`
 	UserID          string    `json:"user_id,omitempty" db:"user_id"`
 	Content         string    `json:"content,omitempty"`
 	Replies         []Reply   `json:"replies,omitempty"`
-	LikesCount      int       `json:"likes_count,omitempty" db:"likes_count"`
-	RepliesCount    int       `json:"replies_count,omitempty" db:"replies_count"`
 }
 
 // Reply is implemented to avoid sql.NullString as its fields are already known.
 type Reply struct {
 	CreatedAt       time.Time `json:"created_at,omitempty" db:"created_at"`
-	ID              string    `json:"id,omitempty"`
+	RepliesCount    *int      `json:"replies_count,omitempty" db:"replies_count"`
+	LikesCount      *int      `json:"likes_count,omitempty" db:"likes_count"`
 	UserID          string    `json:"user_id,omitempty" db:"user_id"`
 	Content         string    `json:"content,omitempty"`
 	ParentCommentID string    `json:"parent_comment_id,omitempty" db:"parent_comment_id"`
+	ID              string    `json:"id,omitempty"`
 	Replies         []Reply   `json:"replies,omitempty"`
-	LikesCount      int       `json:"likes_count,omitempty" db:"likes_count"`
-	RepliesCount    int       `json:"replies_count,omitempty" db:"replies_count"`
 }
 
 // CreateComment ..
 type CreateComment struct {
-	ParentCommentID  *string `json:"parent_comment_id,omitempty" db:"parent_comment_id"`
-	PostID           *string `json:"post_id,omitempty" db:"post_id"`
-	ContainsMentions *bool   `json:"contains_mentions,omitempty"`
-	Content          string  `json:"content,omitempty"`
+	ParentCommentID *string `json:"parent_comment_id,omitempty" db:"parent_comment_id"`
+	PostID          *string `json:"post_id,omitempty" db:"post_id"`
+	Content         string  `json:"content,omitempty"`
 }
 
 // Validate ..
@@ -116,9 +114,6 @@ func (cc CreateComment) Validate() error {
 	}
 	if cc.Content == "" {
 		return errors.New("content required")
-	}
-	if cc.ContainsMentions == nil {
-		return errors.New("contains_mentions required")
 	}
 	return nil
 }

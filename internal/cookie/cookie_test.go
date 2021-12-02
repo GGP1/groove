@@ -157,6 +157,7 @@ func BenchmarkGet(b *testing.B) {
 		Path:  "/",
 	})
 
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		Get(r, name)
 	}
@@ -164,7 +165,7 @@ func BenchmarkGet(b *testing.B) {
 
 func BenchmarkSet(b *testing.B) {
 	w := httptest.NewRecorder()
-
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		Set(w, "bench", "@*s6%C>USkyaip8~ I7/P_!jAl&JZ45W", "/")
 	}
@@ -172,7 +173,7 @@ func BenchmarkSet(b *testing.B) {
 
 func BenchmarkSetHost(b *testing.B) {
 	w := httptest.NewRecorder()
-
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		SetHost(w, "bench", "@*s6%C>USkyaip8~ I7/P_!jAl&JZ45W")
 	}

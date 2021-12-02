@@ -226,33 +226,6 @@ func SelectWhere(model model.Model, whereCond, paginationField string, params pa
 	return q
 }
 
-// Union constructs a query from multiple others using the UNION key.
-//	Format: "SELECT [fields] FROM ([query1] UNION [query2] UNION ...) WHERE public=true [pagination]"
-func Union(model model.Model, params params.Query, queries ...string) string {
-	buf := bufferpool.Get()
-
-	buf.WriteString("SELECT ")
-	WriteFields(buf, model, params.Fields)
-	buf.WriteString(" FROM ")
-	buf.WriteString(model.Tablename())
-	buf.WriteString(" WHERE id IN (")
-	for i, query := range queries {
-		if query == "" {
-			continue
-		}
-		if i != 0 {
-			buf.WriteString(" UNION ")
-		}
-		buf.WriteString(query)
-	}
-	buf.WriteString(") AND public=true")
-	addPagination(buf, "id", params)
-
-	q := buf.String()
-	bufferpool.Put(buf)
-	return q
-}
-
 // WriteFields writes the fields passed to the query.
 func WriteFields(buf *bytes.Buffer, model model.Model, fields []string) {
 	if fields == nil {
@@ -291,7 +264,7 @@ func addPagination(buf *bytes.Buffer, paginationField string, p params.Query) {
 		buf.WriteByte('\'')
 		return
 	}
-	if p.Cursor != params.DefaultCursor {
+	if p.Cursor != params.DefaultCursor && p.Cursor != "" {
 		buf.WriteString(" AND ")
 		buf.WriteString(paginationField)
 		buf.WriteString(" < '")
@@ -300,6 +273,9 @@ func addPagination(buf *bytes.Buffer, paginationField string, p params.Query) {
 	}
 	buf.WriteString(" ORDER BY ")
 	buf.WriteString(paginationField)
+	if p.Limit == "" {
+		p.Limit = params.DefaultLimit
+	}
 	buf.WriteString(" DESC LIMIT ")
 	buf.WriteString(p.Limit)
 }

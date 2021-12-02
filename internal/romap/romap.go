@@ -3,9 +3,8 @@ package romap
 
 // ReadOnlyMap is a map that cannot be modified.
 type ReadOnlyMap struct {
-	// caseSensitive bool
-	keys []string
 	mp   map[string]interface{}
+	keys []string
 }
 
 // New returns a new read-only map.

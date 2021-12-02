@@ -11,7 +11,6 @@ import (
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/roles"
 	"github.com/GGP1/groove/internal/txgroup"
-	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/auth"
 	"github.com/GGP1/groove/service/notification"
@@ -25,8 +24,8 @@ import (
 
 // Service interface for the post service.
 type Service interface {
-	CreateComment(ctx context.Context, session auth.Session, comment CreateComment) error
-	CreatePost(ctx context.Context, session auth.Session, eventID string, post CreatePost) error
+	CreateComment(ctx context.Context, session auth.Session, commentID string, comment CreateComment) error
+	CreatePost(ctx context.Context, session auth.Session, postID, eventID string, post CreatePost) error
 	DeleteComment(ctx context.Context, commentID string, session auth.Session) error
 	DeletePost(ctx context.Context, eventID, postID string) error
 	GetComment(ctx context.Context, commentID string) (Comment, error)
@@ -103,6 +102,9 @@ func (s service) ContentMentions(ctx context.Context, session auth.Session, cont
 			username := content[i+1 : end]
 			i = end
 
+			// TODO: save mention dgraph edge between users?
+			// What happens when two users already have mentioned each other, the query is discarted?
+			// Resources are wasted?
 			row := stmt.QueryRowContext(ctx, username)
 			var userID string
 			if err := row.Scan(&userID); err != nil {
@@ -120,11 +122,10 @@ func (s service) ContentMentions(ctx context.Context, session auth.Session, cont
 }
 
 // CreateComments creates a comment inside a post.
-func (s service) CreateComment(ctx context.Context, session auth.Session, comment CreateComment) error {
+func (s service) CreateComment(ctx context.Context, session auth.Session, commentID string, comment CreateComment) error {
 	sqlTx := txgroup.SQLTx(ctx)
 	dcTx := txgroup.DgraphTx(ctx)
 
-	commentID := ulid.NewString()
 	q := "INSERT INTO events_posts_comments (id, parent_comment_id, post_id, user_id, content) VALUES ($1, $2, $3, $4, $5)"
 	_, err := sqlTx.ExecContext(ctx, q, commentID,
 		comment.ParentCommentID, comment.PostID, session.ID, comment.Content)
@@ -142,30 +143,25 @@ func (s service) CreateComment(ctx context.Context, session auth.Session, commen
 		}
 	}
 
-	if *comment.ContainsMentions {
-		if err := s.ContentMentions(ctx, session, comment.Content); err != nil {
-			return err
-		}
+	if err := s.ContentMentions(ctx, session, comment.Content); err != nil {
+		return err
 	}
 
 	return dgraph.CreateNode(ctx, dcTx, model.Comment, commentID)
 }
 
 // CreatePost adds a post to the event.
-func (s service) CreatePost(ctx context.Context, session auth.Session, eventID string, post CreatePost) error {
+func (s service) CreatePost(ctx context.Context, session auth.Session, postID, eventID string, post CreatePost) error {
 	sqlTx := txgroup.SQLTx(ctx)
 	dcTx := txgroup.DgraphTx(ctx)
 
-	postID := ulid.NewString()
 	q := "INSERT INTO events_posts (id, event_id, content, media) VALUES ($1, $2, $3, $4)"
 	if _, err := sqlTx.ExecContext(ctx, q, postID, eventID, post.Content, post.Media); err != nil {
 		return errors.Wrap(err, "creating post")
 	}
 
-	if *post.ContainsMentions {
-		if err := s.ContentMentions(ctx, session, post.Content); err != nil {
-			return err
-		}
+	if err := s.ContentMentions(ctx, session, post.Content); err != nil {
+		return err
 	}
 
 	return dgraph.CreateNode(ctx, dcTx, model.Post, postID)
@@ -266,12 +262,16 @@ func (s service) GetHomePosts(ctx context.Context, session auth.Session, params 
 
 // GetPost returns a post from an event.
 func (s service) GetPost(ctx context.Context, eventID, postID string) (Post, error) {
-	q := "SELECT id, event_id, content, media, likes_count, comments_count FROM events_posts WHERE event_id=$1 AND id=$2"
+	q := `SELECT 
+	id, event_id, content, media, likes_count, comments_count, created_at, updated_at
+	FROM events_posts WHERE event_id=$1 AND id=$2`
 	row := s.db.QueryRowContext(ctx, q, eventID, postID)
 
 	var post Post
-	if err := row.Scan(&post.ID, &post.EventID, &post.Content,
-		&post.Media, &post.LikesCount, &post.CommentsCount); err != nil {
+	err := row.Scan(&post.ID, &post.EventID, &post.Content,
+		&post.Media, &post.LikesCount, &post.CommentsCount,
+		&post.CreatedAt, &post.UpdatedAt)
+	if err != nil {
 		return Post{}, errors.Wrap(err, "fetching post")
 	}
 

@@ -147,7 +147,7 @@ func basePath(path string) string {
 	if first == -1 {
 		return path
 	}
-	return path[:first]
+	return path[:first+1]
 }
 
 // getOutboundIP returns the preferred outbound ip of the current machine.

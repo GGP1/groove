@@ -69,11 +69,7 @@ func (h Handler) AddFriend() http.HandlerFunc {
 			return
 		}
 
-		type resp struct {
-			ID       string `json:"id,omitempty"`
-			FriendID string `json:"friend_id,omitempty"`
-		}
-		response.JSON(w, http.StatusOK, resp{ID: userID, FriendID: reqBody.FriendID})
+		response.NoContent(w)
 	}
 }
 
@@ -100,11 +96,7 @@ func (h Handler) Block() http.HandlerFunc {
 			return
 		}
 
-		type resp struct {
-			ID        string `json:"id,omitempty"`
-			BlockedID string `json:"blocked_id,omitempty"`
-		}
-		response.JSON(w, http.StatusOK, resp{ID: userID, BlockedID: reqBody.BlockedID})
+		response.NoContent(w)
 	}
 }
 
@@ -226,7 +218,12 @@ func (h Handler) GetAttendingEvents() http.HandlerFunc {
 			return
 		}
 
-		response.JSON(w, http.StatusOK, events)
+		var nextCursor string
+		if len(events) > 1 {
+			nextCursor = events[len(events)-1].ID
+		}
+
+		response.JSONCursor(w, nextCursor, "events", events)
 	}
 }
 
@@ -264,7 +261,12 @@ func (h Handler) GetBannedEvents() http.HandlerFunc {
 			return
 		}
 
-		response.JSON(w, http.StatusOK, events)
+		var nextCursor string
+		if len(events) > 1 {
+			nextCursor = events[len(events)-1].ID
+		}
+
+		response.JSONCursor(w, nextCursor, "events", events)
 	}
 }
 
@@ -416,7 +418,7 @@ func (h Handler) GetFollowers() http.HandlerFunc {
 		}
 
 		var nextCursor string
-		if len(followers) > 1 {
+		if len(followers) > 0 {
 			nextCursor = followers[len(followers)-1].ID
 		}
 
@@ -502,7 +504,7 @@ func (h Handler) GetFriends() http.HandlerFunc {
 		}
 
 		var nextCursor string
-		if len(friends) > 1 {
+		if len(friends) > 0 {
 			nextCursor = friends[len(friends)-1].ID
 		}
 
@@ -547,7 +549,7 @@ func (h Handler) GetFriendsInCommon() http.HandlerFunc {
 		}
 
 		var nextCursor string
-		if len(friends) > 1 {
+		if len(friends) > 0 {
 			nextCursor = friends[len(friends)-1].ID
 		}
 
@@ -592,7 +594,7 @@ func (h Handler) GetFriendsNotInCommon() http.HandlerFunc {
 		}
 
 		var nextCursor string
-		if len(friends) > 1 {
+		if len(friends) > 0 {
 			nextCursor = friends[len(friends)-1].ID
 		}
 
@@ -675,7 +677,12 @@ func (h Handler) GetInvitedEvents() http.HandlerFunc {
 			return
 		}
 
-		response.JSON(w, http.StatusOK, events)
+		var nextCursor string
+		if len(events) > 0 {
+			nextCursor = events[len(events)-1].ID
+		}
+
+		response.JSONCursor(w, nextCursor, "events", events)
 	}
 }
 
@@ -695,13 +702,29 @@ func (h Handler) GetLikedEvents() http.HandlerFunc {
 			return
 		}
 
+		if params.Count {
+			count, err := h.service.GetLikedEventsCount(ctx, userID)
+			if err != nil {
+				response.Error(w, http.StatusInternalServerError, err)
+				return
+			}
+
+			response.JSONCount(w, http.StatusOK, "liked_events_count", count)
+			return
+		}
+
 		events, err := h.service.GetLikedEvents(ctx, userID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		response.JSON(w, http.StatusOK, events)
+		var nextCursor string
+		if len(events) > 0 {
+			nextCursor = events[len(events)-1].ID
+		}
+
+		response.JSONCursor(w, nextCursor, "events", events)
 	}
 }
 
@@ -788,11 +811,7 @@ func (h Handler) RemoveFriend() http.HandlerFunc {
 			return
 		}
 
-		type resp struct {
-			ID       string `json:"id,omitempty"`
-			FriendID string `json:"friend_id,omitempty"`
-		}
-		response.JSON(w, http.StatusOK, resp{ID: userID, FriendID: reqBody.FriendID})
+		response.NoContent(w)
 	}
 }
 
@@ -847,6 +866,11 @@ func (h Handler) SendFriendRequest() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
+		if err := validate.ULID(reqBody.UserID); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
 		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
@@ -887,11 +911,7 @@ func (h Handler) Unblock() http.HandlerFunc {
 			return
 		}
 
-		type resp struct {
-			ID          string `json:"id,omitempty"`
-			UnblockedID string `json:"unblocked_id,omitempty"`
-		}
-		response.JSON(w, http.StatusOK, resp{ID: userID, UnblockedID: reqBody.BlockedID})
+		response.NoContent(w)
 	}
 }
 
@@ -931,6 +951,6 @@ func (h Handler) Update() http.HandlerFunc {
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, userID)
+		response.JSON(w, http.StatusOK, response.ID{ID: userID})
 	}
 }

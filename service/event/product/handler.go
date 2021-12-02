@@ -7,6 +7,7 @@ import (
 
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/response"
+	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/internal/validate"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/storage/postgres"
@@ -30,8 +31,8 @@ func NewHandler(db *sql.DB, service Service) Handler {
 }
 
 // Create creates an image/video inside an event.
-func (h Handler) Create() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func (h Handler) Create() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
 		eventID, err := params.IDFromCtx(ctx)
@@ -55,7 +56,8 @@ func (h Handler) Create() http.Handler {
 		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
-		if err := h.service.Create(ctx, eventID, product); err != nil {
+		productID := ulid.NewString()
+		if err := h.service.Create(ctx, productID, eventID, product); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -65,8 +67,8 @@ func (h Handler) Create() http.Handler {
 			return
 		}
 
-		response.JSON(w, http.StatusOK, product)
-	})
+		response.JSON(w, http.StatusCreated, response.ID{ID: productID})
+	}
 }
 
 // Delete removes a product from an event.
@@ -128,7 +130,6 @@ func (h Handler) Get() http.HandlerFunc {
 		}
 
 		response.JSONCursor(w, nextCursor, "products", products)
-
 	}
 }
 
@@ -170,6 +171,6 @@ func (h Handler) Update() http.HandlerFunc {
 			return
 		}
 
-		response.JSONMessage(w, http.StatusOK, eventID)
+		response.JSON(w, http.StatusOK, response.ID{ID: productID})
 	}
 }

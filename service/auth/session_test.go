@@ -99,6 +99,7 @@ func BenchmarkGetSession(b *testing.B) {
 		Path:  "/",
 	})
 
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		GetSession(ctx, r)
 	}
@@ -109,6 +110,8 @@ func BenchmarkParseSessionToken(b *testing.B) {
 	username := "username"
 	deviceToken := "TSnuFRAAsXDknfcMbn7GZITJx5EMWyNfzCNuR1BdPymmgxcDm58Inzqw5x2v58lA"
 	typ := model.UserType(2)
+
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		parseSessionToken(id, username, deviceToken, typ)
 	}
@@ -121,6 +124,7 @@ func BenchmarkUnparseSessionToken(b *testing.B) {
 	typ := model.UserType(1)
 	token := parseSessionToken(id, username, deviceToken, typ)
 
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		unparseSessionToken(token)
 	}
