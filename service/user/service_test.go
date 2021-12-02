@@ -39,15 +39,15 @@ const adminEmail = "admin@email.com"
 // unique users for each one of them
 
 func TestMain(m *testing.M) {
-	poolPg, resourcePg, postgres, err := test.RunPostgres()
+	pgContainer, postgres, err := test.RunPostgres()
 	if err != nil {
 		log.Fatal(err)
 	}
-	poolDc, resourceDc, dgraph, conn, err := test.RunDgraph()
+	dcContainer, dgraph, conn, err := test.RunDgraph()
 	if err != nil {
 		log.Fatal(err)
 	}
-	poolMc, resourceMc, memcached, err := test.RunMemcached()
+	mcContainer, memcached, err := test.RunMemcached()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -64,16 +64,16 @@ func TestMain(m *testing.M) {
 
 	code := m.Run()
 
-	if err := poolPg.Purge(resourcePg); err != nil {
+	if err := pgContainer.Close(); err != nil {
 		log.Fatal(err)
 	}
 	if err := conn.Close(); err != nil {
 		log.Fatal(err)
 	}
-	if err := poolDc.Purge(resourceDc); err != nil {
+	if err := dcContainer.Close(); err != nil {
 		log.Fatal(err)
 	}
-	if err := poolMc.Purge(resourceMc); err != nil {
+	if err := mcContainer.Close(); err != nil {
 		log.Fatal(err)
 	}
 

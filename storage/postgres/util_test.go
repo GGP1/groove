@@ -71,7 +71,7 @@ func TestAppendInIDs(t *testing.T) {
 }
 
 func TestBeginTx(t *testing.T) {
-	pool, rsrc, db, err := test.RunPostgres()
+	container, db, err := test.RunPostgres()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestBeginTx(t *testing.T) {
 		assert.NoError(t, tx.Rollback())
 	})
 
-	assert.NoError(t, pool.Purge(rsrc))
+	assert.NoError(t, container.Close())
 }
 
 func TestFullTextSearch(t *testing.T) {

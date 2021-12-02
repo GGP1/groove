@@ -21,7 +21,7 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	poolPg, resourcePg, postgres, err := test.RunPostgres()
+	pgContainer, postgres, err := test.RunPostgres()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func TestMain(m *testing.M) {
 
 	code := m.Run()
 
-	if err := poolPg.Purge(resourcePg); err != nil {
+	if err := pgContainer.Close(); err != nil {
 		log.Fatal(err)
 	}
 

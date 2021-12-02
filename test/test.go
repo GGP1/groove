@@ -22,6 +22,7 @@ import (
 	"github.com/dgraph-io/dgo/v210/protos/api"
 	"github.com/go-redis/redis/v8"
 	"github.com/ory/dockertest/v3"
+	"github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/grpc"
@@ -32,6 +33,8 @@ import (
 	// connection with postgres
 	_ "github.com/lib/pq"
 )
+
+const resourceExpiration uint = 120 // Seconds
 
 // CreateEvent creates a new user for testing purposes.
 func CreateEvent(ctx context.Context, db *sql.DB, dc *dgo.Dgraph, id, name string) error {
@@ -67,31 +70,37 @@ func CreateUser(ctx context.Context, db *sql.DB, dc *dgo.Dgraph, id, email, user
 	})
 }
 
-// NewResource returns a new pool, a docker container and handles its purge.
-func NewResource(t testing.TB, repository, tags string, env []string) (*dockertest.Pool, *dockertest.Resource) {
+// NewDockerContainer returns a pool with a connection to the docker API
+// and a docker container configured to be removed after its use.
+func NewDockerContainer(repository, tag string, env []string) (*dockertest.Pool, *dockertest.Resource, error) {
 	pool, err := dockertest.NewPool("")
-	assert.NoError(t, err)
+	if err != nil {
+		return nil, nil, err
+	}
 
-	resource, err := pool.Run(repository, tags, env)
-	assert.NoError(t, err)
-
-	t.Cleanup(func() {
-		assert.NoError(t, pool.Purge(resource), "Couldn't free resources")
+	container, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: repository,
+		Tag:        tag,
+		Env:        env,
+	}, func(config *docker.HostConfig) {
+		config.AutoRemove = true
+		config.RestartPolicy = docker.RestartPolicy{
+			Name: "no",
+		}
 	})
+	if err != nil {
+		return nil, nil, err
+	}
+	container.Expire(resourceExpiration)
 
-	return pool, resource
+	return pool, container, nil
 }
 
 // RunDgraph initializes a docker container with memcached running in it.
-func RunDgraph() (*dockertest.Pool, *dockertest.Resource, *dgo.Dgraph, *grpc.ClientConn, error) {
-	pool, err := dockertest.NewPool("")
+func RunDgraph() (*dockertest.Resource, *dgo.Dgraph, *grpc.ClientConn, error) {
+	pool, container, err := NewDockerContainer("dgraph/standalone", "v21.03.2", nil)
 	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-
-	resource, err := pool.Run("dgraph/standalone", "v21.03.2", nil)
-	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	var (
@@ -100,7 +109,7 @@ func RunDgraph() (*dockertest.Pool, *dockertest.Resource, *dgo.Dgraph, *grpc.Cli
 	)
 	err = pool.Retry(func() error {
 		conn, err = grpc.Dial(
-			net.JoinHostPort("localhost", resource.GetPort("9080/tcp")),
+			net.JoinHostPort("localhost", container.GetPort("9080/tcp")),
 			grpc.WithInsecure(),
 			grpc.WithDefaultCallOptions(grpc.UseCompressor(gzip.Name)),
 		)
@@ -111,7 +120,7 @@ func RunDgraph() (*dockertest.Pool, *dockertest.Resource, *dgo.Dgraph, *grpc.Cli
 		return nil
 	})
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	ctx := context.Background()
@@ -120,7 +129,7 @@ func RunDgraph() (*dockertest.Pool, *dockertest.Resource, *dgo.Dgraph, *grpc.Cli
 	timeout := time.Now().Add(5 * time.Second)
 	for {
 		if t := <-ticker.C; t.After(timeout) {
-			return nil, nil, nil, nil, errors.New("connection: timeout reached")
+			return nil, nil, nil, errors.New("connection: timeout reached")
 		}
 		state := conn.GetState()
 		if state == connectivity.Ready || state == connectivity.Idle {
@@ -133,7 +142,7 @@ func RunDgraph() (*dockertest.Pool, *dockertest.Resource, *dgo.Dgraph, *grpc.Cli
 	timeout = time.Now().Add(5 * time.Second)
 	for {
 		if t := <-ticker.C; t.After(timeout) {
-			return nil, nil, nil, nil, errors.New("create schema: timeout reached")
+			return nil, nil, nil, errors.New("create schema: timeout reached")
 		}
 		if err := dgraph.CreateSchema(ctx, dc); err == nil {
 			break
@@ -141,79 +150,45 @@ func RunDgraph() (*dockertest.Pool, *dockertest.Resource, *dgo.Dgraph, *grpc.Cli
 	}
 	ticker.Stop()
 
-	return pool, resource, dc, conn, nil
-}
-
-// StartDgraph initializes a docker container with dgraph running in it.
-func StartDgraph(t testing.TB) *dgo.Dgraph {
-	pool, resource, dc, conn, err := RunDgraph()
-	assert.NoError(t, err)
-
-	t.Cleanup(func() {
-		assert.NoError(t, conn.Close(), "Couldn't close the connection")
-		assert.NoError(t, pool.Purge(resource), "Couldn't free resources")
-	})
-
-	return dc
+	return container, dc, conn, nil
 }
 
 // RunMemcached initializes a docker container with memcached running in it.
-func RunMemcached() (*dockertest.Pool, *dockertest.Resource, cache.Client, error) {
-	pool, err := dockertest.NewPool("")
+func RunMemcached() (*dockertest.Resource, cache.Client, error) {
+	pool, container, err := NewDockerContainer("memcached", "1.6.10-alpine", nil)
 	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	resource, err := pool.Run("memcached", "1.6.10-alpine", nil)
-	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	var cache cache.Client
 	err = pool.Retry(func() error {
 		cache, err = memcached.NewClient(config.Memcached{
-			Servers:      []string{fmt.Sprintf("localhost:%s", resource.GetPort("11211/tcp"))},
+			Servers:      []string{fmt.Sprintf("localhost:%s", container.GetPort("11211/tcp"))},
 			MaxIdleConns: 1,
 			Timeout:      2 * time.Second,
 		})
 		return err
 	})
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
-	return pool, resource, cache, nil
-}
-
-// StartMemcached starts a memcached container and makes the cleanup.
-func StartMemcached(t testing.TB) cache.Client {
-	pool, resource, mc, err := RunMemcached()
-	assert.NoError(t, err)
-
-	t.Cleanup(func() {
-		assert.NoError(t, pool.Purge(resource), "Couldn't free resources")
-	})
-
-	return mc
+	return container, cache, nil
 }
 
 // RunPostgres initializes a docker container with postgres running in it.
-func RunPostgres() (*dockertest.Pool, *dockertest.Resource, *sql.DB, error) {
-	pool, err := dockertest.NewPool("")
-	if err != nil {
-		return nil, nil, nil, err
-	}
+func RunPostgres() (*dockertest.Resource, *sql.DB, error) {
 	// The database name will be taken from the user name
 	env := []string{"POSTGRES_USER=postgres", "POSTGRES_PASSWORD=postgres", "listen_addresses = '*'"}
-	resource, err := pool.Run("postgres", "14.0-alpine", env)
+	pool, container, err := NewDockerContainer("postgres", "14.0-alpine", env)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	var db *sql.DB
 	err = pool.Retry(func() error {
 		url := fmt.Sprintf("host=localhost port=%s user=postgres password=postgres dbname=postgres sslmode=disable",
-			resource.GetPort("5432/tcp"))
+			container.GetPort("5432/tcp"))
 		db, err = sql.Open("postgres", url)
 		if err != nil {
 			return err
@@ -221,64 +196,84 @@ func RunPostgres() (*dockertest.Pool, *dockertest.Resource, *sql.DB, error) {
 		return db.Ping()
 	})
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	if err := postgres.CreateTables(context.Background(), db); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
-	return pool, resource, db, nil
-}
-
-// StartPostgres starts a postgres container and makes the cleanup.
-func StartPostgres(t testing.TB) *sql.DB {
-	pool, resource, db, err := RunPostgres()
-	assert.NoError(t, err)
-
-	t.Cleanup(func() {
-		assert.NoError(t, db.Close(), "Couldn't close the connection with postgres")
-		assert.NoError(t, pool.Purge(resource), "Couldn't free resources")
-	})
-
-	return db
+	return container, db, nil
 }
 
 // RunRedis initializes a docker container with redis running in it.
-func RunRedis() (*dockertest.Pool, *dockertest.Resource, *redis.Client, error) {
-	pool, err := dockertest.NewPool("")
+func RunRedis() (*dockertest.Resource, *redis.Client, error) {
+	pool, container, err := NewDockerContainer("redis", "6.2.5-alpine", nil)
 	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	resource, err := pool.Run("redis", "6.2.5-alpine", nil)
-	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	var rdb *redis.Client
 	err = pool.Retry(func() error {
 		rdb = redis.NewClient(&redis.Options{
 			Network: "tcp",
-			Addr:    net.JoinHostPort("localhost", resource.GetPort("6379/tcp")),
+			Addr:    net.JoinHostPort("localhost", container.GetPort("6379/tcp")),
 		})
 		return rdb.Ping(rdb.Context()).Err()
 	})
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
-	return pool, resource, rdb, nil
+	return container, rdb, nil
+}
+
+// StartDgraph initializes a docker container with dgraph running in it.
+func StartDgraph(t testing.TB) *dgo.Dgraph {
+	container, dc, conn, err := RunDgraph()
+	assert.NoError(t, err)
+
+	t.Cleanup(func() {
+		assert.NoError(t, conn.Close(), "Couldn't close the connection")
+		assert.NoError(t, container.Close(), "Couldn't remove container")
+	})
+
+	return dc
+}
+
+// StartMemcached starts a memcached container and makes the cleanup.
+func StartMemcached(t testing.TB) cache.Client {
+	container, mc, err := RunMemcached()
+	assert.NoError(t, err)
+
+	t.Cleanup(func() {
+		assert.NoError(t, container.Close(), "Couldn't remove container")
+	})
+
+	return mc
+}
+
+// StartPostgres starts a postgres container and makes the cleanup.
+func StartPostgres(t testing.TB) *sql.DB {
+	container, db, err := RunPostgres()
+	assert.NoError(t, err)
+
+	t.Cleanup(func() {
+		assert.NoError(t, db.Close(), "Couldn't close the connection with postgres")
+		assert.NoError(t, container.Close(), "Couldn't remove container")
+	})
+
+	return db
 }
 
 // StartRedis starts a redis container and makes the cleanup.
 func StartRedis(t testing.TB) *redis.Client {
-	pool, resource, rdb, err := RunRedis()
+	container, rdb, err := RunRedis()
 	assert.NoError(t, err)
 
 	t.Cleanup(func() {
 		assert.NoError(t, rdb.Close(), "Couldn't close connection with redis")
-		assert.NoError(t, pool.Purge(resource), "Couldn't free resources")
+		assert.NoError(t, container.Close(), "Couldn't remove container")
 	})
 
 	return rdb
