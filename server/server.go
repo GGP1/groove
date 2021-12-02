@@ -28,10 +28,10 @@ type Server struct {
 
 // letsEncrypt contains the configuration necessary for the Lets Encrypt service.
 type letsEncrypt struct {
-	enabled   bool
-	acceptTOS bool
 	cache     string
 	hosts     []string
+	enabled   bool
+	acceptTOS bool
 }
 
 // New create and returns a server.
