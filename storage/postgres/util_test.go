@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/GGP1/groove/internal/params"
-	"github.com/GGP1/groove/internal/sqltx"
+	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/storage/postgres"
@@ -79,7 +79,7 @@ func TestBeginTx(t *testing.T) {
 	t.Run("BeginTx", func(t *testing.T) {
 		tx, ctx := postgres.BeginTx(context.Background(), db)
 
-		got := sqltx.FromContext(ctx)
+		got := txgroup.SQLTx(ctx)
 		assert.Equal(t, got, tx)
 
 		assert.NoError(t, tx.Rollback())
@@ -88,7 +88,7 @@ func TestBeginTx(t *testing.T) {
 	t.Run("BeginTxOpts", func(t *testing.T) {
 		tx, ctx := postgres.BeginTxOpts(context.Background(), db, sql.LevelDefault)
 
-		got := sqltx.FromContext(ctx)
+		got := txgroup.SQLTx(ctx)
 		assert.Equal(t, got, tx)
 
 		assert.NoError(t, tx.Rollback())

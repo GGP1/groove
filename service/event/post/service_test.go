@@ -72,7 +72,7 @@ func TestMain(m *testing.M) {
 
 func TestCreateComment(t *testing.T) {
 	ctx := context.Background()
-	g, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(db, dc))
+	g, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(db, dc)...)
 	userID := ulid.NewString()
 	err := test.CreateUser(ctx, db, dc, userID, "random@email.test", "test", "ao121")
 	assert.NoError(t, err)
@@ -92,7 +92,7 @@ func TestCreateComment(t *testing.T) {
 
 func TestCreatePost(t *testing.T) {
 	ctx := context.Background()
-	g, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(db, dc))
+	g, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(db, dc)...)
 
 	eventID := ulid.NewString()
 	err := test.CreateEvent(ctx, db, dc, eventID, "create_post")

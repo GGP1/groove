@@ -6,7 +6,7 @@ import (
 
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/roles"
-	"github.com/GGP1/groove/internal/sqltx"
+	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/service/auth"
 	"github.com/GGP1/groove/service/event/role"
 	"github.com/GGP1/groove/storage/postgres"
@@ -65,7 +65,7 @@ func (s service) Available(ctx context.Context, eventID, ticketName string) (int
 
 // Buy performs the operations necessary when a ticket is bought.
 func (s service) Buy(ctx context.Context, session auth.Session, eventID, ticketName string, userIDs []string) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	// TODO: create auth user payment with a pending status. Add cost to RETURNING to get the ticket's cost.
 	// Updating will fail if there are not enough available tickets but it's not the best way to check it
@@ -85,7 +85,7 @@ func (s service) Buy(ctx context.Context, session auth.Session, eventID, ticketN
 
 // Create adds a ticket to the event.
 func (s service) Create(ctx context.Context, eventID string, ticket Ticket) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	if ticket.LinkedRole != "" && !roles.Reserved.Exists(ticket.LinkedRole) {
 		row := sqlTx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM events_roles WHERE name=$1)", ticket.LinkedRole)
@@ -114,7 +114,7 @@ func (s service) Create(ctx context.Context, eventID string, ticket Ticket) erro
 
 // Delete removes a ticket from the event.
 func (s service) Delete(ctx context.Context, eventID, ticketName string) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	q := "DELETE FROM events_tickets WHERE event_id=$1 AND name=$2"
 	if _, err := sqlTx.ExecContext(ctx, q, eventID, ticketName); err != nil {
@@ -157,7 +157,7 @@ func (s service) Get(ctx context.Context, eventID string) ([]Ticket, error) {
 
 // Refund performs the operations necessary when a ticket is refunded.
 func (s service) Refund(ctx context.Context, session auth.Session, eventID, ticketName string) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	// TODO: refund auth user with the ticket cost - penalties/fees and remove the pending state.
 	// ONLY if the had previously bought a ticket
@@ -170,7 +170,7 @@ func (s service) Refund(ctx context.Context, session auth.Session, eventID, tick
 
 // Update updates a ticket from the event.
 func (s service) Update(ctx context.Context, eventID, ticketName string, updateTicket UpdateTicket) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	q := `UPDATE events_tickets SET 
 	description = COALESCE($3,description),

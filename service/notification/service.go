@@ -11,7 +11,7 @@ import (
 	"github.com/GGP1/groove/internal/log"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/roles"
-	"github.com/GGP1/groove/internal/sqltx"
+	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/auth"
@@ -96,7 +96,7 @@ func NewService(
 // Answer handles the accept or decline of a notification.
 func (s service) Answer(ctx context.Context, id, authUserID string, accepted bool) error {
 	s.metrics.incMethodCalls("Answer")
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	q := "SELECT sender_id, receiver_id, event_id, type FROM notifications WHERE id=$1"
 	rows, err := sqlTx.QueryContext(ctx, q, id)
@@ -157,7 +157,7 @@ func (s service) Answer(ctx context.Context, id, authUserID string, accepted boo
 // Create creates a new notification.
 func (s service) Create(ctx context.Context, session auth.Session, notification CreateNotification) error {
 	s.metrics.incMethodCalls("Create")
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	if err := notification.Validate(); err != nil {
 		return httperr.Forbidden(err.Error())
@@ -187,7 +187,7 @@ func (s service) Create(ctx context.Context, session auth.Session, notification 
 // CreateMany is like Create but it creates multiple notifications.
 func (s service) CreateMany(ctx context.Context, session auth.Session, notification CreateNotificationMany) error {
 	s.metrics.incMethodCalls("CreateMany")
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	fields := []string{"id", "sender_id", "receiver_id", "event_id", "content", "type"}
 	stmt, err := postgres.BulkInsert(ctx, sqlTx, model.Notification.Tablename(), fields...)
@@ -229,7 +229,7 @@ func (s service) CreateMany(ctx context.Context, session auth.Session, notificat
 // Delete removes a notification from the database
 func (s service) Delete(ctx context.Context, notificationID string) error {
 	s.metrics.incMethodCalls("Delete")
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	if _, err := sqlTx.ExecContext(ctx, "DELETE FROM notifications WHERE id=$1", notificationID); err != nil {
 		return errors.Wrap(err, "deleting notification")
@@ -242,7 +242,7 @@ func (s service) Delete(ctx context.Context, notificationID string) error {
 func (s service) DeleteInvitation(ctx context.Context, eventID, senderID, receiverID string) error {
 	s.metrics.incMethodCalls("DeleteInvitation")
 
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	q := "DELETE FROM notifications WHERE event_id=$1 AND sender_id=$2 AND receiver_id=$3 AND type=$4"
 	if _, err := sqlTx.ExecContext(ctx, q, eventID, senderID, receiverID, Invitation); err != nil {
@@ -255,7 +255,7 @@ func (s service) DeleteInvitation(ctx context.Context, eventID, senderID, receiv
 // GetFromUser returns all the user's notifications.
 func (s service) GetFromUser(ctx context.Context, userID string, params params.Query) ([]Notification, error) {
 	s.metrics.incMethodCalls("GetFromUser")
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	// Update-then-select has better performance and produces less garbage
 	// than update-returning when querying already seen notifications.

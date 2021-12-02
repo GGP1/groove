@@ -10,7 +10,7 @@ import (
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/roles"
-	"github.com/GGP1/groove/internal/sqltx"
+	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event/role"
 	"github.com/GGP1/groove/test"
@@ -45,7 +45,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	ctx = sqltx.NewContext(ctx, sqlTx)
+	_, ctx = txgroup.WithContext(ctx, txgroup.NewSQLTx(sqlTx))
 	cacheClient = memcached
 
 	roleSv = role.NewService(postgres, dgraph, cacheClient)
@@ -228,7 +228,7 @@ func TestRoles(t *testing.T) {
 }
 
 func createEvent(id, name string) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 	q := `INSERT INTO events 
 	(id, name, type, public, virtual, slots, cron) 
 	VALUES ($1,$2,$3,$4,$5,$6,$7)`
@@ -237,7 +237,7 @@ func createEvent(id, name string) error {
 }
 
 func createUser(id, email, username string) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 	q := "INSERT INTO users (id, name, email, username, password, birth_date) VALUES ($1,$2,$3,$4,$5,$6)"
 	_, err := sqlTx.ExecContext(ctx, q, id, "test", email, username, "password", time.Now())
 

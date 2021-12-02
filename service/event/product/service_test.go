@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/GGP1/groove/internal/cache"
-	"github.com/GGP1/groove/internal/sqltx"
+	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/event/product"
 	"github.com/GGP1/groove/test"
@@ -35,7 +35,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	ctx = sqltx.NewContext(ctx, sqlTx)
+	_, ctx = txgroup.WithContext(ctx, txgroup.NewSQLTx(sqlTx))
 	cacheClient = memcached
 
 	productSv = product.NewService(postgres, cacheClient)
@@ -82,7 +82,7 @@ func TestUserHasRole(t *testing.T) {
 }
 
 func createEvent(id, name string) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 	q := `INSERT INTO events 
 	(id, name, type, public, virtual, slots, cron) 
 	VALUES ($1,$2,$3,$4,$5,$6,$7)`

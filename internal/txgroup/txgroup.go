@@ -22,12 +22,17 @@ type Group struct {
 
 type unique string
 
-// WithContext returns a transactions manager containing a context with all the transactions stored in it.
-func WithContext(ctx context.Context, txs []Tx) (*Group, context.Context) {
+// NewContext returns a new context with the transactions stored in it.
+func NewContext(ctx context.Context, txs ...Tx) context.Context {
 	for _, tx := range txs {
 		ctx = context.WithValue(ctx, unique(tx.Key()), tx)
 	}
-	return &Group{txs: txs}, ctx
+	return ctx
+}
+
+// WithContext returns a transactions manager containing a context with all the transactions stored in it.
+func WithContext(ctx context.Context, txs ...Tx) (*Group, context.Context) {
+	return &Group{txs: txs}, NewContext(ctx, txs...)
 }
 
 // AddTx adds a new transaction to the group.
@@ -53,9 +58,9 @@ func (a *Group) Commit() error {
 func (a *Group) Rollback() error {
 	var err error
 	for _, tx := range a.txs {
-		if err := tx.Rollback(); err != nil {
+		if rbErr := tx.Rollback(); rbErr != nil {
 			a.errOnce.Do(func() {
-				err = fmt.Errorf("%s rollback: %w", tx.Key(), err)
+				err = fmt.Errorf("%s rollback: %w", tx.Key(), rbErr)
 			})
 		}
 	}

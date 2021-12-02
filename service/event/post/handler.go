@@ -57,7 +57,7 @@ func (h Handler) CreateComment() http.HandlerFunc {
 			return
 		}
 
-		atom, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc))
+		atom, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc)...)
 		defer atom.Rollback()
 
 		commentID := ulid.NewString()
@@ -104,7 +104,7 @@ func (h Handler) CreatePost() http.HandlerFunc {
 			return
 		}
 
-		txg, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc))
+		txg, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc)...)
 		defer txg.Rollback()
 
 		postID := ulid.NewString()
@@ -139,7 +139,7 @@ func (h Handler) DeleteComment() http.HandlerFunc {
 			return
 		}
 
-		txg, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc))
+		txg, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc)...)
 		defer txg.Rollback()
 
 		if err := h.service.DeleteComment(ctx, commentID, session); err != nil {
@@ -169,7 +169,7 @@ func (h Handler) DeletePost() http.HandlerFunc {
 			return
 		}
 
-		txg, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc))
+		txg, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc)...)
 		defer txg.Rollback()
 
 		if err := h.service.DeletePost(ctx, eventID, postID); err != nil {
@@ -429,7 +429,7 @@ func (h Handler) LikeComment() http.HandlerFunc {
 			return
 		}
 
-		txg, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc))
+		txg, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc)...)
 		defer txg.Rollback()
 
 		if err := h.service.LikeComment(ctx, commentID, session.ID); err != nil {
@@ -463,7 +463,7 @@ func (h Handler) LikePost() http.HandlerFunc {
 			return
 		}
 
-		txg, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc))
+		txg, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc)...)
 		defer txg.Rollback()
 
 		if err := h.service.LikePost(ctx, postID, session.ID); err != nil {

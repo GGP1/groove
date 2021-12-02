@@ -11,7 +11,7 @@ import (
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/roles"
-	"github.com/GGP1/groove/internal/sqltx"
+	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/auth"
 	"github.com/GGP1/groove/storage/dgraph"
@@ -74,7 +74,7 @@ func NewService(db *sql.DB, dc *dgo.Dgraph, cache cache.Client) Service {
 
 // ClonePermissions takes the permissions from the exporter event and creates them in the importer event.
 func (s service) ClonePermissions(ctx context.Context, exporterEventID, importerEventID string) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	create := "CREATE TEMPORARY TABLE perm_temp AS (SELECT * FROM events_permissions WHERE event_id=$1)"
 	if _, err := sqlTx.ExecContext(ctx, create, exporterEventID); err != nil {
@@ -98,7 +98,7 @@ func (s service) ClonePermissions(ctx context.Context, exporterEventID, importer
 //
 // It also takes care of cloning permissions.
 func (s service) CloneRoles(ctx context.Context, exporterEventID, importerEventID string) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	// Clone permissions as they are required to create roles.
 	if err := s.ClonePermissions(ctx, exporterEventID, importerEventID); err != nil {
@@ -125,7 +125,7 @@ func (s service) CloneRoles(ctx context.Context, exporterEventID, importerEventI
 
 // CreatePermission creates a permission inside the event.
 func (s service) CreatePermission(ctx context.Context, eventID string, permission Permission) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	q := "INSERT INTO events_permissions (event_id, key, name, description) VALUES ($1, $2, $3, $4)"
 	_, err := sqlTx.ExecContext(ctx, q, eventID, permission.Key, permission.Name, permission.Description)
@@ -142,7 +142,7 @@ func (s service) CreatePermission(ctx context.Context, eventID string, permissio
 
 // CreateRole creates a new role inside an event.
 func (s service) CreateRole(ctx context.Context, eventID string, role Role) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	q1 := "SELECT EXISTS(SELECT 1 FROM events_permissions WHERE event_id=$1 AND key=$2)"
 	exists := false
@@ -181,7 +181,7 @@ func (s service) CreateRole(ctx context.Context, eventID string, role Role) erro
 
 // DeletePermission removes a permission from the event.
 func (s service) DeletePermission(ctx context.Context, eventID, key string) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	q := "DELETE FROM events_permissions WHERE event_id=$1 AND key=$2"
 	if _, err := sqlTx.ExecContext(ctx, q, eventID, key); err != nil {
@@ -192,7 +192,7 @@ func (s service) DeletePermission(ctx context.Context, eventID, key string) erro
 
 // DeleteRole removes a role from the event.
 func (s service) DeleteRole(ctx context.Context, eventID, name string) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	q := "DELETE FROM events_roles WHERE event_id=$1 AND name=$2"
 	if _, err := sqlTx.ExecContext(ctx, q, eventID, name); err != nil {
@@ -352,7 +352,7 @@ func (s service) GetUserRole(ctx context.Context, eventID, userID string) (Role,
 
 // GetUsersByRole returns the users with the specified role in the event.
 func (s service) GetUsersByRole(ctx context.Context, eventID, roleName string, params params.Query) ([]model.ListUser, error) {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	whereCond := "id IN (SELECT user_id FROM events_users_roles WHERE event_id=$1 AND role_name=$2)"
 	q := postgres.SelectWhere(model.User, whereCond, "id", params)
@@ -377,7 +377,7 @@ func (s service) GetUsersCountByRole(ctx context.Context, eventID, roleName stri
 
 // GetUserFriendsByRole returns a user's friends with a determined role in an event.
 func (s service) GetUserFriendsByRole(ctx context.Context, eventID, userID, roleName string, params params.Query) ([]model.ListUser, error) {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	friendsIDs, err := s.getFriendsIDsWithParams(ctx, userID, params)
 	if err != nil {
@@ -418,7 +418,7 @@ func (s service) HasRole(ctx context.Context, eventID, userID string) (bool, err
 
 // IsHost returns if the user's role in the events passed is host.
 func (s service) IsHost(ctx context.Context, userID string, eventIDs ...string) (bool, error) {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	q := "SELECT EXISTS(SELECT 1 FROM events_users_roles WHERE event_id=$1 AND user_id=$2 AND role_name='host')"
 
@@ -498,7 +498,7 @@ func (s service) RequirePermissions(ctx context.Context, r *http.Request, eventI
 
 // SetRole assigns a role to n users inside an event.
 func (s service) SetRole(ctx context.Context, eventID string, setRole SetRole) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	row := sqlTx.QueryRowContext(ctx, "SELECT public FROM events WHERE id=$1", eventID)
 
@@ -549,7 +549,7 @@ func (s service) SetRole(ctx context.Context, eventID string, setRole SetRole) e
 
 // SetReservedRole assigns a reserved role to a user.
 func (s service) SetReservedRole(ctx context.Context, eventID, userID string, roleName roles.Name) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	// I'd prefer to use the user service here but it's not possible
 	row := sqlTx.QueryRowContext(ctx, "SELECT type FROM users WHERE id=$1", userID)
@@ -572,7 +572,7 @@ func (s service) SetReservedRole(ctx context.Context, eventID, userID string, ro
 
 // UnsetRole removes the role a user had in the event.
 func (s service) UnsetRole(ctx context.Context, eventID, userID string) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	q := "DELETE FROM events_users_roles WHERE event_id=$1 AND user_id=$2"
 	if _, err := sqlTx.ExecContext(ctx, q, eventID, userID); err != nil {
@@ -584,7 +584,7 @@ func (s service) UnsetRole(ctx context.Context, eventID, userID string) error {
 
 // UpdatePemission sets new values for a permission.
 func (s service) UpdatePermission(ctx context.Context, eventID, key string, permission UpdatePermission) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	q := `UPDATE events_permissions SET 
 	name = COALESCE($3,name), 
@@ -599,7 +599,7 @@ func (s service) UpdatePermission(ctx context.Context, eventID, key string, perm
 
 // UpdateRole sets new values for a role.
 func (s service) UpdateRole(ctx context.Context, eventID, name string, role UpdateRole) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	q := `UPDATE events_roles SET
 	permission_keys = COALESCE($3,permission_keys)

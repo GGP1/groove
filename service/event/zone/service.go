@@ -6,7 +6,7 @@ import (
 
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/permissions"
-	"github.com/GGP1/groove/internal/sqltx"
+	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/sqan"
 
@@ -37,7 +37,7 @@ func NewService(db *sql.DB, cache cache.Client) Service {
 
 // Create creates a zone inside an event.
 func (s service) Create(ctx context.Context, eventID string, zone Zone) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	q1 := "SELECT EXISTS(SELECT 1 FROM events_permissions WHERE event_id=$1 AND key=$2)"
 	exists := false

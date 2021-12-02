@@ -12,7 +12,7 @@ import (
 	"github.com/GGP1/groove/internal/log"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/roles"
-	"github.com/GGP1/groove/internal/sqltx"
+	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/auth"
 	"github.com/GGP1/groove/service/event"
@@ -185,7 +185,7 @@ func (s service) Block(ctx context.Context, userID, blockedID string) error {
 
 func (s service) CanInvite(ctx context.Context, authUserID, invitedID string) (bool, error) {
 	s.metrics.incMethodCalls("CanInvite")
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	var invitations model.Invitations
 	q := "SELECT invitations FROM users WHERE id=$1"
@@ -857,7 +857,7 @@ func (s service) Update(ctx context.Context, userID string, user UpdateUser) err
 		return httperr.Forbidden("cannot update an business' visibility")
 	}
 
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	q := `UPDATE users SET
 	name = COALESCE($2,name),

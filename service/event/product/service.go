@@ -7,7 +7,7 @@ import (
 
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
-	"github.com/GGP1/groove/internal/sqltx"
+	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/storage/postgres"
 	"github.com/GGP1/sqan"
@@ -38,7 +38,7 @@ func NewService(db *sql.DB, cache cache.Client) Service {
 
 // Create adds a product to the event.
 func (s service) Create(ctx context.Context, productID, eventID string, product Product) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	q := `INSERT INTO events_products 
 	(id, event_id, stock, brand, type, description, discount, taxes, subtotal, total) 
@@ -56,7 +56,7 @@ func (s service) Create(ctx context.Context, productID, eventID string, product 
 
 // Delete removes a product from an event.
 func (s service) Delete(ctx context.Context, eventID, productID string) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	q := "DELETE FROM events_products WHERE event_id=$1 AND id=$2"
 	if _, err := sqlTx.ExecContext(ctx, q, eventID, productID); err != nil {
@@ -83,7 +83,7 @@ func (s service) Get(ctx context.Context, eventID string, params params.Query) (
 
 // Update updates an event product.
 func (s service) Update(ctx context.Context, eventID, productID string, product UpdateProduct) error {
-	sqlTx := sqltx.FromContext(ctx)
+	sqlTx := txgroup.SQLTx(ctx)
 
 	q := `UPDATE events_products SET
 	brand = COALESCE($3,brand),

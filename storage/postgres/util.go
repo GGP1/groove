@@ -8,7 +8,7 @@ import (
 
 	"github.com/GGP1/groove/internal/bufferpool"
 	"github.com/GGP1/groove/internal/params"
-	"github.com/GGP1/groove/internal/sqltx"
+	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/model"
 
 	"github.com/pkg/errors"
@@ -52,7 +52,7 @@ func BeginTx(ctx context.Context, db *sql.DB) (*sql.Tx, context.Context) {
 		panic(err)
 	}
 
-	return tx, sqltx.NewContext(ctx, tx)
+	return tx, txgroup.NewContext(ctx, txgroup.NewSQLTx(tx))
 }
 
 // BeginTxOpts is like BeginTx but takes the isolation level as a parameter.
@@ -65,7 +65,7 @@ func BeginTxOpts(ctx context.Context, db *sql.DB, isolation sql.IsolationLevel) 
 		panic(err)
 	}
 
-	return tx, sqltx.NewContext(ctx, tx)
+	return tx, txgroup.NewContext(ctx, txgroup.NewSQLTx(tx))
 }
 
 // BulkInsert returns a statement to be executed multiple times to copy data into the target table.

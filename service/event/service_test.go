@@ -11,7 +11,7 @@ import (
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/roles"
-	"github.com/GGP1/groove/internal/sqltx"
+	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/service/auth"
 	"github.com/GGP1/groove/service/event"
@@ -54,7 +54,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	ctx = sqltx.NewContext(ctx, sqlTx)
+	_, ctx = txgroup.WithContext(ctx, txgroup.NewSQLTx(sqlTx))
 	dc = dgraph
 	cacheClient = memcached
 
