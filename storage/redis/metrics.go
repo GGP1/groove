@@ -60,20 +60,20 @@ func runMetrics(rdb *redis.Client, config config.Redis) {
 		}),
 	}
 
-	m.Run(rdb, config)
+	if config.MetricsRate != 0 {
+		go m.Run(rdb, config)
+	}
 }
 
 func (m metrics) Run(rdb *redis.Client, config config.Redis) {
-	go func() {
-		for {
-			time.Sleep(config.MetricsRate * time.Second)
-			stats := rdb.PoolStats()
-			m.hits.Set(float64(stats.Hits))
-			m.misses.Set(float64(stats.Misses))
-			m.timeouts.Set(float64(stats.Timeouts))
-			m.openConns.Set(float64(stats.TotalConns))
-			m.idleConns.Set(float64(stats.IdleConns))
-			m.staleConns.Set(float64(stats.StaleConns))
-		}
-	}()
+	for {
+		time.Sleep(config.MetricsRate * time.Second)
+		stats := rdb.PoolStats()
+		m.hits.Set(float64(stats.Hits))
+		m.misses.Set(float64(stats.Misses))
+		m.timeouts.Set(float64(stats.Timeouts))
+		m.openConns.Set(float64(stats.TotalConns))
+		m.idleConns.Set(float64(stats.IdleConns))
+		m.staleConns.Set(float64(stats.StaleConns))
+	}
 }

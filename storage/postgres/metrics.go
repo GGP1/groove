@@ -80,23 +80,23 @@ func runMetrics(db *sql.DB, config config.Postgres) {
 		}),
 	}
 
-	m.Run(db, config)
+	if config.MetricsRate != 0 {
+		go m.Run(db, config)
+	}
 }
 
 func (m metrics) Run(db *sql.DB, config config.Postgres) {
-	go func() {
-		for {
-			time.Sleep(config.MetricsRate * time.Second)
-			stats := db.Stats()
-			m.open.Set(float64(stats.OpenConnections))
-			m.maxOpen.Set(float64(stats.MaxOpenConnections))
-			m.inUse.Set(float64(stats.InUse))
-			m.idle.Set(float64(stats.Idle))
-			m.wait.Set(float64(stats.WaitCount))
-			m.waitDuration.Set(float64(stats.WaitDuration))
-			m.maxIdleClosed.Set(float64(stats.MaxIdleClosed))
-			m.maxIdleTimeClosed.Set(float64(stats.MaxIdleTimeClosed))
-			m.maxLifetimeClosed.Set(float64(stats.MaxLifetimeClosed))
-		}
-	}()
+	for {
+		time.Sleep(config.MetricsRate * time.Second)
+		stats := db.Stats()
+		m.open.Set(float64(stats.OpenConnections))
+		m.maxOpen.Set(float64(stats.MaxOpenConnections))
+		m.inUse.Set(float64(stats.InUse))
+		m.idle.Set(float64(stats.Idle))
+		m.wait.Set(float64(stats.WaitCount))
+		m.waitDuration.Set(float64(stats.WaitDuration))
+		m.maxIdleClosed.Set(float64(stats.MaxIdleClosed))
+		m.maxIdleTimeClosed.Set(float64(stats.MaxIdleTimeClosed))
+		m.maxLifetimeClosed.Set(float64(stats.MaxLifetimeClosed))
+	}
 }

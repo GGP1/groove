@@ -211,8 +211,11 @@ func validateValues(config *Config) error {
 		return errors.New("no rate limit provided in production mode")
 	}
 
-	if config.Redis.MetricsRate < 1 || config.Postgres.MetricsRate < 1 {
-		return errors.New("metrics rate too low")
+	if config.Redis.MetricsRate != 0 && config.Redis.MetricsRate < 1 {
+		return errors.New("redis metrics rate too low")
+	}
+	if config.Postgres.MetricsRate != 0 && config.Postgres.MetricsRate < 1 {
+		return errors.New("postgres metrics rate too low")
 	}
 
 	return nil
@@ -250,8 +253,8 @@ var (
 			"sslCert":         "",
 			"sslKey":          "",
 			"maxIdleConns":    50,
-			"maxConnIdleTime": time.Minute * 5,
-			"metricsRate":     time.Minute * 5,
+			"maxConnIdleTime": 300, // Seconds
+			"metricsRate":     60,  // Seconds
 		},
 		"rateLimiter": map[string]interface{}{
 			"rate": 5,
@@ -261,8 +264,8 @@ var (
 			"port":         6379,
 			"password":     "redis",
 			"poolSize":     0, // Use default (GOMAXPROCS * 10)
-			"minIdleConns": 5,
-			"metricsRate":  time.Minute * 5,
+			"minIdleConns": 10,
+			"metricsRate":  60, // Seconds
 		},
 		"secrets": map[string]interface{}{
 			"encryption": "{X]_?4-6)hgp(P_w9nTO8f =2Gki",
@@ -278,9 +281,9 @@ var (
 				"hosts":     []string{},
 			},
 			"timeout": map[string]interface{}{
-				"read":     5,
-				"write":    5,
-				"shutdown": 5,
+				"read":     5, // Seconds
+				"write":    5, // Seconds
+				"shutdown": 5, // Seconds
 			},
 		},
 		"sessions": map[string]interface{}{
