@@ -15,6 +15,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+var errTooManyRequests = errors.New("Too Many Requests")
+
 const (
 	rlRemaining = "RateLimit-Remaining"
 	rlLimit     = "RateLimit-Limit"
@@ -25,17 +27,15 @@ const (
 // RateLimiter uses a leaky bucket algorithm for limiting the requests to the API from the same host.
 type RateLimiter struct {
 	limiter *redis_rate.Limiter
-	config  config.RateLimiter
+	limit   redis_rate.Limit
 }
 
 // NewRateLimiter returns a rate limiter with the configuration values passed.
 func NewRateLimiter(config config.RateLimiter, rdb *redis.Client) RateLimiter {
-	rl := RateLimiter{
+	return RateLimiter{
 		limiter: redis_rate.NewLimiter(rdb),
-		config:  config,
+		limit:   redis_rate.PerMinute(config.Rate),
 	}
-
-	return rl
 }
 
 // Limit make sure no one abuses the API by using token bucket algorithm.
@@ -43,11 +43,7 @@ func (rl RateLimiter) Limit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		rate := redis_rate.Limit{
-			Rate:   rl.config.Rate,
-			Period: time.Minute,
-			Burst:  rl.config.Rate,
-		}
+		rl.limit.Period = time.Minute
 		key, err := apikey.FromRequest(r)
 		if err != nil {
 			if errors.Is(err, apikey.ErrInvalidAPIKey) {
@@ -61,10 +57,10 @@ func (rl RateLimiter) Limit(next http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			rate.Period = 15 * time.Minute
+			rl.limit.Period *= 15
 		}
 
-		res, err := rl.limiter.Allow(ctx, key, rate)
+		res, err := rl.limiter.Allow(ctx, key, rl.limit)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -77,7 +73,7 @@ func (rl RateLimiter) Limit(next http.Handler) http.Handler {
 			header[rlLimit] = []string{strconv.Itoa(res.Limit.Rate)}
 			header[rlReset] = []string{strconv.Itoa(int(res.ResetAfter / time.Second))}
 			header[retryAfter] = []string{strconv.Itoa(int(res.RetryAfter / time.Second))}
-			response.Error(w, http.StatusTooManyRequests, errors.New("Too Many Requests"))
+			response.Error(w, http.StatusTooManyRequests, errTooManyRequests)
 			return
 		}
 
