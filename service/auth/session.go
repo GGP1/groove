@@ -28,13 +28,8 @@ const (
 
 // Session contains the information about the user session.
 type Session struct {
-	ID       string
-	Username string
-	// TODO PRODUCTION: the cookie will be sent over https, meaning that it's infeasible that someone will get access to them, however
-	// if the cookie gets stolen on the client-side then the attacker could use replay attacks to send requests to the server,
-	// getting access to that user's account. If the client (browser or application) can't be secured maybe the best approach would be
-	// to use a nonce (instead of a salt) that's incremented everytime the user makes a request. It would require one redis call more and replacing the cookie with
-	// the new value each time but it mitigates the attack.
+	ID          string
+	Username    string
 	DeviceToken string
 	Type        model.UserType
 }
