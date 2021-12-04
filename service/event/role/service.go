@@ -133,7 +133,7 @@ func (s service) CreatePermission(ctx context.Context, eventID string, permissio
 		return errors.Wrap(err, "creating permission")
 	}
 
-	if err := s.cache.Delete(model.PermissionsCacheKey(eventID)); err != nil {
+	if err := s.cache.Delete(cache.PermissionsKey(eventID)); err != nil {
 		return errors.Wrap(err, "deleting permission")
 	}
 
@@ -172,7 +172,7 @@ func (s service) CreateRole(ctx context.Context, eventID string, role Role) erro
 		return errors.Wrap(err, "creating role")
 	}
 
-	if err := s.cache.Delete(model.RolesCacheKey(eventID)); err != nil {
+	if err := s.cache.Delete(cache.RolesKey(eventID)); err != nil {
 		return errors.Wrap(err, "deleting roles")
 	}
 
@@ -421,7 +421,6 @@ func (s service) IsHost(ctx context.Context, userID string, eventIDs ...string) 
 	sqlTx := txgroup.SQLTx(ctx)
 
 	q := "SELECT EXISTS(SELECT 1 FROM events_users_roles WHERE event_id=$1 AND user_id=$2 AND role_name='host')"
-
 	stmt, err := sqlTx.PrepareContext(ctx, q)
 	if err != nil {
 		return false, errors.Wrap(err, "prepraring statement")

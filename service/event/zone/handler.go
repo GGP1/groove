@@ -9,7 +9,6 @@ import (
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/response"
-	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/event/role"
 	"github.com/GGP1/groove/storage/postgres"
 )
@@ -126,7 +125,7 @@ func (h Handler) Get() http.HandlerFunc {
 			return
 		}
 
-		cacheKey := model.ZonesCacheKey(eventID)
+		cacheKey := cache.ZonesKey(eventID)
 		if v, err := h.cache.Get(cacheKey); err == nil {
 			response.EncodedJSON(w, v)
 			return

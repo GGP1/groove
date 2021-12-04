@@ -387,7 +387,7 @@ func (h Handler) GetPermissions() http.HandlerFunc {
 			return
 		}
 
-		cacheKey := model.PermissionsCacheKey(eventID)
+		cacheKey := cache.PermissionsKey(eventID)
 		if v, err := h.cache.Get(cacheKey); err == nil {
 			response.EncodedJSON(w, v)
 			return
@@ -435,7 +435,7 @@ func (h Handler) GetRoles() http.HandlerFunc {
 			return
 		}
 
-		cacheKey := model.RolesCacheKey(eventID)
+		cacheKey := cache.RolesKey(eventID)
 		if v, err := h.cache.Get(cacheKey); err == nil {
 			response.EncodedJSON(w, v)
 			return

@@ -7,7 +7,6 @@ import (
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/txgroup"
-	"github.com/GGP1/groove/model"
 	"github.com/GGP1/sqan"
 
 	"github.com/pkg/errors"
@@ -76,7 +75,7 @@ func (s service) Delete(ctx context.Context, eventID, name string) error {
 		return errors.Wrap(err, "deleting zone")
 	}
 
-	if err := s.cache.Delete(model.ZonesCacheKey(eventID)); err != nil {
+	if err := s.cache.Delete(cache.ZonesKey(eventID)); err != nil {
 		return errors.Wrap(err, "deleting zone")
 	}
 
