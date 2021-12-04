@@ -630,22 +630,10 @@ func (h Handler) Join() http.HandlerFunc {
 			return
 		}
 
+		// The EventPrivacyFilter middleware already checks if the user can view a private event
 		if event.TicketType == Paid {
 			response.Error(w, http.StatusBadRequest, errors.New("event is paid, buy a ticket to join"))
 			return
-		}
-
-		if !*event.Public {
-			// Event is private, require invitation
-			isInvited, err := h.service.IsInvited(ctx, eventID, session.ID)
-			if err != nil {
-				response.Error(w, http.StatusInternalServerError, err)
-				return
-			}
-			if !isInvited {
-				response.Error(w, http.StatusForbidden, errors.New("you are not invited to the event"))
-				return
-			}
 		}
 
 		availableSlots, err := h.service.AvailableSlots(ctx, eventID)

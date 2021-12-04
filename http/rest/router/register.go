@@ -124,6 +124,7 @@ func (r register) Events() {
 	events.get("/", r.event.GetByID(), r.authMw.NotBanned, r.authMw.EventPrivacyFilter)
 	events.delete("/delete", r.event.Delete(), r.authMw.RequirePermissions(permissions.All))
 	events.get("/hosts", r.event.GetHosts(), r.authMw.NotBanned, r.authMw.EventPrivacyFilter)
+	events.post("/join", r.event.Join(), r.authMw.NotBanned, r.authMw.EventPrivacyFilter)
 	events.get("/stats", r.event.GetStatistics(), r.authMw.NotBanned, r.authMw.EventPrivacyFilter)
 	events.put("/update", r.event.Update(), r.authMw.RequirePermissions(permissions.UpdateEvent))
 
