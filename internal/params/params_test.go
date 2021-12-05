@@ -20,7 +20,37 @@ func TestIDFromCtx(t *testing.T) {
 
 	got, err := IDFromCtx(ctx)
 	assert.NoError(t, err)
-	assert.Equal(t, id, got)
+	assert.Equal(t, got, id)
+}
+
+func TestIDAndNameFromCtx(t *testing.T) {
+	id := ulid.NewString()
+	name := "name"
+	params := httprouter.Params{
+		{Key: "id", Value: id},
+		{Key: "name", Value: name},
+	}
+	ctx := context.WithValue(context.Background(), httprouter.ParamsKey, params)
+
+	gotID, gotName, err := IDAndNameFromCtx(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, id, gotID)
+	assert.Equal(t, name, gotName)
+}
+
+func TestIDAndKeyFromCtx(t *testing.T) {
+	id := ulid.NewString()
+	key := "key"
+	params := httprouter.Params{
+		{Key: "id", Value: ulid.NewString()},
+		{Key: "key", Value: key},
+	}
+	ctx := context.WithValue(context.Background(), httprouter.ParamsKey, params)
+
+	gotID, gotKey, err := IDAndKeyFromCtx(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, id, gotID)
+	assert.Equal(t, key, gotKey)
 }
 
 func TestParse(t *testing.T) {

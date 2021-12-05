@@ -157,13 +157,13 @@ func (s service) Answer(ctx context.Context, id, authUserID string, accepted boo
 // Create creates a new notification.
 func (s service) Create(ctx context.Context, session auth.Session, notification CreateNotification) error {
 	s.metrics.incMethodCalls("Create")
-	sqlTx := txgroup.SQLTx(ctx)
 
 	if err := notification.Validate(); err != nil {
 		return httperr.Forbidden(err.Error())
 	}
 
 	q := `INSERT INTO notifications (id, sender_id, receiver_id, event_id, content, type) VALUES ($1, $2, $3, $4, $5, $6)`
+	sqlTx := txgroup.SQLTx(ctx)
 	_, err := sqlTx.ExecContext(ctx, q, ulid.NewString(), notification.SenderID,
 		notification.ReceiverID, notification.EventID, notification.Content, notification.Type)
 	if err != nil {

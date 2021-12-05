@@ -70,14 +70,6 @@ func (h *Handler) Login() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := login.Validate(); err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		login.Username = sanitize.Normalize(login.Username)
-		login.Password = sanitize.Normalize(login.Password)
-
 		userSession, err := h.service.Login(ctx, w, r, login)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)

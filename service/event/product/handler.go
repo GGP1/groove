@@ -48,11 +48,6 @@ func (h Handler) Create() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := product.Validate(); err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
 		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
@@ -152,11 +147,6 @@ func (h Handler) Update() http.HandlerFunc {
 			return
 		}
 		defer r.Body.Close()
-
-		if err := product.Validate(); err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
 
 		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()

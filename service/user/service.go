@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/GGP1/groove/internal/cache"
@@ -12,6 +13,7 @@ import (
 	"github.com/GGP1/groove/internal/log"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/roles"
+	"github.com/GGP1/groove/internal/sanitize"
 	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/auth"
@@ -214,6 +216,10 @@ func (s service) CanInvite(ctx context.Context, authUserID, invitedID string) (b
 func (s service) Create(ctx context.Context, userID string, user CreateUser) error {
 	s.metrics.incMethodCalls("Create")
 
+	if err := user.Validate(); err != nil {
+		return httperr.BadRequest(err.Error())
+	}
+
 	sqlTx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return errors.Wrap(err, "starting transaction")
@@ -231,6 +237,8 @@ func (s service) Create(ctx context.Context, userID string, user CreateUser) err
 		isAdmin = true
 	}
 
+	user.Username = strings.ToLower(user.Username)
+	sanitize.Strings(&user.Username, &user.Name)
 	// Use default invitations settings depending on the user type
 	switch *user.Type {
 	case model.Personal:
@@ -652,6 +660,10 @@ func (s service) GetStatistics(ctx context.Context, userID string) (Statistics, 
 func (s service) InviteToEvent(ctx context.Context, session auth.Session, invite Invite) error {
 	s.metrics.incMethodCalls("InviteToEvent")
 
+	if err := invite.Validate(); err != nil {
+		return httperr.BadRequest(err.Error())
+	}
+
 	for _, userID := range invite.UserIDs {
 		canInvite, err := s.CanInvite(ctx, session.ID, userID)
 		if err != nil {
@@ -848,6 +860,10 @@ func (s service) Unblock(ctx context.Context, userID string, blockedID string) e
 // Update updates a user.
 func (s service) Update(ctx context.Context, userID string, user UpdateUser) error {
 	s.metrics.incMethodCalls("Update")
+
+	if err := user.Validate(); err != nil {
+		return httperr.BadRequest(err.Error())
+	}
 
 	typ, err := s.Type(ctx, userID)
 	if err != nil {

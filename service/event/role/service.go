@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"net/http"
+	"strings"
 
 	"github.com/GGP1/groove/internal/bufferpool"
 	"github.com/GGP1/groove/internal/cache"
@@ -11,6 +12,7 @@ import (
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/roles"
+	"github.com/GGP1/groove/internal/sanitize"
 	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/auth"
@@ -125,9 +127,14 @@ func (s service) CloneRoles(ctx context.Context, exporterEventID, importerEventI
 
 // CreatePermission creates a permission inside the event.
 func (s service) CreatePermission(ctx context.Context, eventID string, permission Permission) error {
-	sqlTx := txgroup.SQLTx(ctx)
+	sanitize.Strings(&permission.Name)
+	permission.Key = strings.ToLower(permission.Key)
+	if err := permission.Validate(); err != nil {
+		return httperr.BadRequest(err.Error())
+	}
 
 	q := "INSERT INTO events_permissions (event_id, key, name, description) VALUES ($1, $2, $3, $4)"
+	sqlTx := txgroup.SQLTx(ctx)
 	_, err := sqlTx.ExecContext(ctx, q, eventID, permission.Key, permission.Name, permission.Description)
 	if err != nil {
 		return errors.Wrap(err, "creating permission")
@@ -142,11 +149,15 @@ func (s service) CreatePermission(ctx context.Context, eventID string, permissio
 
 // CreateRole creates a new role inside an event.
 func (s service) CreateRole(ctx context.Context, eventID string, role Role) error {
-	sqlTx := txgroup.SQLTx(ctx)
+	role.Name = strings.ToLower(role.Name)
+	if err := role.Validate(); err != nil {
+		return httperr.BadRequest(err.Error())
+	}
 
 	q1 := "SELECT EXISTS(SELECT 1 FROM events_permissions WHERE event_id=$1 AND key=$2)"
 	exists := false
 
+	sqlTx := txgroup.SQLTx(ctx)
 	stmt, err := sqlTx.PrepareContext(ctx, q1)
 	if err != nil {
 		return errors.Wrap(err, "preparing statement")
@@ -496,9 +507,12 @@ func (s service) RequirePermissions(ctx context.Context, r *http.Request, eventI
 }
 
 // SetRole assigns a role to n users inside an event.
-func (s service) SetRole(ctx context.Context, eventID string, setRole SetRole) error {
-	sqlTx := txgroup.SQLTx(ctx)
+func (s service) SetRole(ctx context.Context, eventID string, role SetRole) error {
+	if err := role.Validate(); err != nil {
+		return httperr.BadRequest(err.Error())
+	}
 
+	sqlTx := txgroup.SQLTx(ctx)
 	row := sqlTx.QueryRowContext(ctx, "SELECT public FROM events WHERE id=$1", eventID)
 
 	var public bool
@@ -516,7 +530,7 @@ func (s service) SetRole(ctx context.Context, eventID string, setRole SetRole) e
 		defer stmt1.Close()
 
 		var hasRole bool // Reuse
-		for _, userID := range setRole.UserIDs {
+		for _, userID := range role.UserIDs {
 			if err := stmt1.QueryRowContext(ctx, eventID, userID).Scan(&hasRole); err != nil {
 				return err
 			}
@@ -532,8 +546,8 @@ func (s service) SetRole(ctx context.Context, eventID string, setRole SetRole) e
 	}
 	defer stmt2.Close()
 
-	for _, userID := range setRole.UserIDs {
-		if _, err := stmt2.ExecContext(ctx, eventID, userID, setRole.RoleName); err != nil {
+	for _, userID := range role.UserIDs {
+		if _, err := stmt2.ExecContext(ctx, eventID, userID, role.RoleName); err != nil {
 			return errors.Wrap(err, "setting roles")
 		}
 	}
@@ -548,9 +562,8 @@ func (s service) SetRole(ctx context.Context, eventID string, setRole SetRole) e
 
 // SetReservedRole assigns a reserved role to a user.
 func (s service) SetReservedRole(ctx context.Context, eventID, userID string, roleName roles.Name) error {
-	sqlTx := txgroup.SQLTx(ctx)
-
 	// I'd prefer to use the user service here but it's not possible
+	sqlTx := txgroup.SQLTx(ctx)
 	row := sqlTx.QueryRowContext(ctx, "SELECT type FROM users WHERE id=$1", userID)
 
 	var typ int64
@@ -583,12 +596,15 @@ func (s service) UnsetRole(ctx context.Context, eventID, userID string) error {
 
 // UpdatePemission sets new values for a permission.
 func (s service) UpdatePermission(ctx context.Context, eventID, key string, permission UpdatePermission) error {
-	sqlTx := txgroup.SQLTx(ctx)
+	if err := permission.Validate(); err != nil {
+		return httperr.BadRequest(err.Error())
+	}
 
 	q := `UPDATE events_permissions SET 
 	name = COALESCE($3,name), 
 	description = COALESCE($4,description) 
 	WHERE event_id=$1 AND key=$2`
+	sqlTx := txgroup.SQLTx(ctx)
 	if _, err := sqlTx.ExecContext(ctx, q, eventID, key, permission.Name, permission.Description); err != nil {
 		return errors.Wrap(err, "updating permission")
 	}
@@ -598,11 +614,14 @@ func (s service) UpdatePermission(ctx context.Context, eventID, key string, perm
 
 // UpdateRole sets new values for a role.
 func (s service) UpdateRole(ctx context.Context, eventID, name string, role UpdateRole) error {
-	sqlTx := txgroup.SQLTx(ctx)
+	if err := role.Validate(); err != nil {
+		return httperr.BadRequest(err.Error())
+	}
 
 	q := `UPDATE events_roles SET
 	permission_keys = COALESCE($3,permission_keys)
 	WHERE event_id=$1 AND name=$2`
+	sqlTx := txgroup.SQLTx(ctx)
 	if _, err := sqlTx.ExecContext(ctx, q, eventID, name, role.PermissionKeys); err != nil {
 		return errors.Wrap(err, "updating role")
 	}

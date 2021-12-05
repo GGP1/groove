@@ -180,11 +180,6 @@ func (h Handler) Update() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := zone.Validate(); err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
 		if err := h.service.Update(ctx, eventID, zoneName, zone); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return

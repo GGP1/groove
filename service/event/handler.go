@@ -10,7 +10,6 @@ import (
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/internal/roles"
-	"github.com/GGP1/groove/internal/sanitize"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/internal/validate"
 	"github.com/GGP1/groove/model"
@@ -157,6 +156,12 @@ func (h Handler) Create() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
+		session, err := auth.GetSession(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
 		var event CreateEvent
 		if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
@@ -164,18 +169,6 @@ func (h Handler) Create() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := event.Validate(); err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		session, err := auth.GetSession(ctx, r)
-		if err != nil {
-			response.Error(w, http.StatusForbidden, err)
-			return
-		}
-
-		sanitize.Strings(&event.Name)
 		eventID := ulid.NewString()
 		event.HostID = session.ID
 		if err := h.service.Create(ctx, eventID, event); err != nil {
@@ -566,11 +559,6 @@ func (h Handler) GetRecommended() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := userCoords.Validate(); err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
 		events, err := h.service.GetRecommended(ctx, session, userCoords, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
@@ -784,11 +772,6 @@ func (h Handler) SearchByLocation() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if err := location.Validate(); err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
 		events, err := h.service.SearchByLocation(ctx, session, location)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
@@ -816,11 +799,6 @@ func (h Handler) Update() http.HandlerFunc {
 			return
 		}
 		defer r.Body.Close()
-
-		if err := uptEvent.Validate(); err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
 
 		if err := h.service.Update(ctx, eventID, uptEvent); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)

@@ -5,6 +5,11 @@ import (
 	"unicode/utf8"
 )
 
+// NameOrKey sanitizes a key used to identify resources inside an event.
+func NameOrKey(key string) string {
+	return strings.TrimSpace(strings.ToLower(key))
+}
+
 // Normalize replaces latin script letters with unique and equivalent characters.
 //
 // Usually only names, emails and usernames should be normalized.

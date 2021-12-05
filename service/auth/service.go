@@ -11,6 +11,7 @@ import (
 	"github.com/GGP1/groove/config"
 	"github.com/GGP1/groove/internal/cookie"
 	"github.com/GGP1/groove/internal/httperr"
+	"github.com/GGP1/groove/internal/sanitize"
 	"github.com/GGP1/groove/internal/userip"
 	"github.com/GGP1/sqan"
 
@@ -62,6 +63,12 @@ func (s service) AlreadyLoggedIn(ctx context.Context, r *http.Request) (Session,
 
 // Login attempts to log a user in.
 func (s service) Login(ctx context.Context, w http.ResponseWriter, r *http.Request, login Login) (userSession, error) {
+	if err := login.Validate(); err != nil {
+		return userSession{}, httperr.BadRequest(err.Error())
+	}
+	login.Username = sanitize.Normalize(login.Username)
+	login.Password = sanitize.Normalize(login.Password)
+
 	// Won't collide with the rate limiter as this last has the prefix "rate:"
 	ip := userip.Get(ctx, r)
 	attempts, err := s.rdb.Get(ctx, ip).Int64()

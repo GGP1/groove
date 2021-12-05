@@ -5,6 +5,7 @@ import (
 	"database/sql"
 
 	"github.com/GGP1/groove/internal/cache"
+	"github.com/GGP1/groove/internal/httperr"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/sqan"
@@ -114,7 +115,7 @@ func (s service) Get(ctx context.Context, eventID string) ([]Zone, error) {
 // Update sets new values for an event's zone.
 func (s service) Update(ctx context.Context, eventID, name string, zone UpdateZone) error {
 	if err := zone.Validate(); err != nil {
-		return err
+		return httperr.BadRequest(err.Error())
 	}
 
 	q := `UPDATE events_zones SET
