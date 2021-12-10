@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/GGP1/groove/internal/sanitize"
 	"github.com/GGP1/groove/internal/validate"
 	"github.com/GGP1/groove/model"
 
@@ -53,21 +52,7 @@ func IDAndNameFromCtx(ctx context.Context) (id, name string, err error) {
 	if err = validate.ULID(id); err != nil {
 		return "", "", err
 	}
-	name = sanitize.NameOrKey(ctxParams.ByName("name"))
-	return
-}
-
-// IDAndKeyFromCtx returns the id and key parameters from the endpoint's route.
-func IDAndKeyFromCtx(ctx context.Context) (id, key string, err error) {
-	ctxParams := httprouter.ParamsFromContext(ctx)
-	id = ctxParams.ByName("id")
-	if err = validate.ULID(id); err != nil {
-		return "", "", err
-	}
-	key = sanitize.NameOrKey(ctxParams.ByName("key"))
-	if err = validate.Key(key); err != nil {
-		return "", "", err
-	}
+	name = strings.ToLower(ctxParams.ByName("name"))
 	return
 }
 
@@ -140,12 +125,12 @@ func parseBool(value string) (bool, error) {
 }
 
 func parseFields(model model.Model, values url.Values) ([]string, error) {
-	fieldsStr := values.Get(model.URLQueryKey())
-	if fieldsStr == "" {
+	fieldsValue := values.Get(model.URLQueryKey())
+	if fieldsValue == "" {
 		return nil, nil
 	}
 
-	fields := strings.Split(fieldsStr, ",")
+	fields := strings.Split(fieldsValue, ",")
 	for i, field := range fields {
 		if field == "" {
 			return nil, errors.Errorf("invalid empty field at index [%d]", i)

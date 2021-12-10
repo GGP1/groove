@@ -123,10 +123,6 @@ func (s service) ContentMentions(ctx context.Context, session auth.Session, cont
 
 // CreateComments creates a comment inside a post.
 func (s service) CreateComment(ctx context.Context, session auth.Session, commentID string, comment CreateComment) error {
-	if err := comment.Validate(); err != nil {
-		return httperr.BadRequest(err.Error())
-	}
-
 	sqlTx := txgroup.SQLTx(ctx)
 	dcTx := txgroup.DgraphTx(ctx)
 
@@ -156,10 +152,6 @@ func (s service) CreateComment(ctx context.Context, session auth.Session, commen
 
 // CreatePost adds a post to the event.
 func (s service) CreatePost(ctx context.Context, session auth.Session, postID, eventID string, post CreatePost) error {
-	if err := post.Validate(); err != nil {
-		return httperr.BadRequest(err.Error())
-	}
-
 	sqlTx := txgroup.SQLTx(ctx)
 	dcTx := txgroup.DgraphTx(ctx)
 
@@ -388,10 +380,6 @@ func (s service) LikePost(ctx context.Context, postID, userID string) error {
 
 // UpdatePost updates an event's post.
 func (s service) UpdatePost(ctx context.Context, postID string, post UpdatePost) error {
-	if err := post.Validate(); err != nil {
-		return httperr.BadRequest(err.Error())
-	}
-
 	q := `UPDATE events_posts SET
 	content = COALESCE($3,content)
 	likes = likes + $4

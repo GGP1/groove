@@ -4,11 +4,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/response"
+	"github.com/GGP1/groove/internal/sanitize"
 	"github.com/GGP1/groove/internal/validate"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/auth"
@@ -136,6 +138,13 @@ func (h Handler) CreatePermission() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
+		sanitize.Strings(&permission.Name)
+		permission.Key = strings.ToLower(permission.Key)
+		if err := permission.Validate(); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
 		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
@@ -171,6 +180,12 @@ func (h Handler) CreateRole() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
+		role.Name = strings.ToLower(role.Name)
+		if err := role.Validate(); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
 		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
@@ -193,11 +208,13 @@ func (h Handler) DeletePermission() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, key, err := params.IDAndKeyFromCtx(ctx)
-		if err != nil {
+		ctxParams := httprouter.ParamsFromContext(ctx)
+		eventID := ctxParams.ByName("id")
+		if err := validate.ULID(eventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
+		key := strings.ToLower(ctxParams.ByName("key"))
 
 		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
@@ -341,11 +358,13 @@ func (h Handler) GetPermission() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, key, err := params.IDAndKeyFromCtx(ctx)
-		if err != nil {
+		ctxParams := httprouter.ParamsFromContext(ctx)
+		eventID := ctxParams.ByName("id")
+		if err := validate.ULID(eventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
+		key := strings.ToLower(ctxParams.ByName("key"))
 
 		permission, err := h.service.GetPermission(ctx, eventID, key)
 		if err != nil {
@@ -476,17 +495,22 @@ func (h Handler) SetRoles() http.HandlerFunc {
 			return
 		}
 
-		var role SetRole
-		if err := json.NewDecoder(r.Body).Decode(&role); err != nil {
+		var setRole SetRole
+		if err := json.NewDecoder(r.Body).Decode(&setRole); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 		defer r.Body.Close()
 
+		if err := setRole.Validate(); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
 		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
-		if err := h.service.SetRole(ctx, eventID, role); err != nil {
+		if err := h.service.SetRole(ctx, eventID, setRole); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -505,11 +529,13 @@ func (h Handler) UpdatePermission() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		eventID, key, err := params.IDAndKeyFromCtx(ctx)
-		if err != nil {
+		ctxParams := httprouter.ParamsFromContext(ctx)
+		eventID := ctxParams.ByName("id")
+		if err := validate.ULID(eventID); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
+		key := strings.ToLower(ctxParams.ByName("key"))
 
 		var permission UpdatePermission
 		if err := json.NewDecoder(r.Body).Decode(&permission); err != nil {
@@ -517,6 +543,11 @@ func (h Handler) UpdatePermission() http.HandlerFunc {
 			return
 		}
 		defer r.Body.Close()
+
+		if err := permission.Validate(); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
 
 		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
@@ -552,6 +583,11 @@ func (h Handler) UpdateRole() http.HandlerFunc {
 			return
 		}
 		defer r.Body.Close()
+
+		if err := role.Validate(); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
 
 		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()

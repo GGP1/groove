@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/GGP1/groove/internal/cache"
-	"github.com/GGP1/groove/internal/httperr"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/model"
@@ -39,15 +38,12 @@ func NewService(db *sql.DB, cache cache.Client) Service {
 
 // Create adds a product to the event.
 func (s service) Create(ctx context.Context, productID, eventID string, product Product) error {
-	if err := product.Validate(); err != nil {
-		return httperr.BadRequest(err.Error())
-	}
+	sqlTx := txgroup.SQLTx(ctx)
 
 	q := `INSERT INTO events_products 
 	(id, event_id, stock, brand, type, description, discount, taxes, subtotal, total) 
 	VALUES 
 	($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
-	sqlTx := txgroup.SQLTx(ctx)
 	_, err := sqlTx.ExecContext(ctx, q, productID, product.EventID, product.Stock,
 		product.Brand, product.Type, product.Description, product.Discount, product.Taxes,
 		product.Subtotal, product.Total)
@@ -87,9 +83,7 @@ func (s service) Get(ctx context.Context, eventID string, params params.Query) (
 
 // Update updates an event product.
 func (s service) Update(ctx context.Context, eventID, productID string, product UpdateProduct) error {
-	if err := product.Validate(); err != nil {
-		return httperr.BadRequest(err.Error())
-	}
+	sqlTx := txgroup.SQLTx(ctx)
 
 	q := `UPDATE events_products SET
 	brand = COALESCE($3,brand),
@@ -102,7 +96,6 @@ func (s service) Update(ctx context.Context, eventID, productID string, product 
 	total = COALESCE($10,total),
 	updated_at = $11
 	WHERE event_id=$1 AND id=$2`
-	sqlTx := txgroup.SQLTx(ctx)
 	_, err := sqlTx.ExecContext(ctx, q, eventID, productID, product.Brand, product.Type,
 		product.Description, product.Stock, product.Discount, product.Taxes, product.Subtotal,
 		product.Total, time.Now())

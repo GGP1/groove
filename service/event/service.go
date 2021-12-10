@@ -13,7 +13,6 @@ import (
 	"github.com/GGP1/groove/internal/httperr"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/roles"
-	"github.com/GGP1/groove/internal/sanitize"
 	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/auth"
@@ -116,11 +115,6 @@ func (s service) AvailableSlots(ctx context.Context, eventID string) (int64, err
 // Create creates a new event.
 func (s service) Create(ctx context.Context, eventID string, event CreateEvent) error {
 	s.metrics.incMethodCalls("Create")
-
-	if err := event.Validate(); err != nil {
-		return httperr.BadRequest(err.Error())
-	}
-	sanitize.Strings(&event.Name)
 
 	sqlTx, ctx := postgres.BeginTx(ctx, s.db)
 	defer sqlTx.Rollback()
@@ -323,10 +317,6 @@ func (s service) GetLikedBy(ctx context.Context, eventID string, params params.Q
 func (s service) GetRecommended(ctx context.Context, session auth.Session, userCoords Coordinates, params params.Query) ([]Event, error) {
 	s.metrics.incMethodCalls("GetRecommended")
 
-	if err := userCoords.Validate(); err != nil {
-		return nil, httperr.BadRequest(err.Error())
-	}
-
 	query := `query q($user_id: string) {
 		var(func: type("Event")) {
 			likes as count(liked_by)
@@ -354,12 +344,10 @@ func (s service) GetRecommended(ctx context.Context, session auth.Session, userC
 	eventIDs := mp["event_id"]
 	friendIDs := mp["user_id"]
 
-	// SELECT ... FROM events WHERE public=true AND end_date > now AND
-	// ((location condition) OR top liked events condition OR friends condition)
 	buf := bufferpool.Get()
 	buf.WriteString("SELECT ")
 	postgres.WriteFields(buf, model.Event, params.Fields)
-	buf.WriteString(" FROM events WHERE public=true AND end_date > $1 AND (((latitude BETWEEN $2 AND $3) AND (longitude BETWEEN $4 AND $5))")
+	buf.WriteString(" FROM events WHERE public=true AND ((latitude BETWEEN $1 AND $2) AND (longitude BETWEEN $3 AND $4)")
 	if len(eventIDs) > 0 {
 		buf.WriteString(" OR id IN ")
 		postgres.WriteIDs(buf, eventIDs)
@@ -381,7 +369,7 @@ func (s service) GetRecommended(ctx context.Context, session auth.Session, userC
 
 	// Maybe add the events liked by friends in the future
 	// TODO: consider using temporary tables instead of unions
-	rows, err := s.db.QueryContext(ctx, q, time.Now(), latMin, latMax, longMin, longMax)
+	rows, err := s.db.QueryContext(ctx, q, latMin, latMax, longMin, longMax)
 	if err != nil {
 		return nil, errors.Wrap(err, "querying recommended events")
 	}
@@ -548,10 +536,6 @@ func (s service) Search(ctx context.Context, query string, session auth.Session,
 func (s service) SearchByLocation(ctx context.Context, session auth.Session, location LocationSearch) ([]Event, error) {
 	s.metrics.incMethodCalls("SearchByLocation")
 
-	if err := location.Validate(); err != nil {
-		return nil, httperr.BadRequest(err.Error())
-	}
-
 	latMin := location.Latitude - location.LatitudeDelta
 	latMax := location.Latitude + location.LatitudeDelta
 	longMin := location.Longitude - location.LongitudeDelta
@@ -579,10 +563,6 @@ func (s service) SearchByLocation(ctx context.Context, session auth.Session, loc
 // Update updates an event.
 func (s service) Update(ctx context.Context, eventID string, event UpdateEvent) error {
 	s.metrics.incMethodCalls("Update")
-
-	if err := event.Validate(); err != nil {
-		return httperr.BadRequest(err.Error())
-	}
 
 	var endDate time.Time
 	if err := s.db.QueryRowContext(ctx, "SELECT end_date FROM events WHERE id=$1", eventID).Scan(&endDate); err != nil {

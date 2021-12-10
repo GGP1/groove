@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/GGP1/groove/internal/apikey"
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/response"
+	"github.com/GGP1/groove/internal/sanitize"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/internal/validate"
 	"github.com/GGP1/groove/model"
@@ -109,6 +111,13 @@ func (h Handler) Create() http.HandlerFunc {
 			return
 		}
 		defer r.Body.Close()
+
+		if err := user.Validate(); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		user.Username = strings.ToLower(user.Username)
+		sanitize.Strings(&user.Username, &user.Name)
 
 		userID := ulid.NewString()
 		if err := h.service.Create(ctx, userID, user); err != nil {
@@ -757,6 +766,11 @@ func (h Handler) InviteToEvent() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
+		if err := invite.Validate(); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
 		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
@@ -912,17 +926,22 @@ func (h Handler) Update() http.HandlerFunc {
 			return
 		}
 
-		var user UpdateUser
-		if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+		var uptUser UpdateUser
+		if err := json.NewDecoder(r.Body).Decode(&uptUser); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 		defer r.Body.Close()
 
+		if err := uptUser.Validate(); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
 		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
-		if err := h.service.Update(ctx, userID, user); err != nil {
+		if err := h.service.Update(ctx, userID, uptUser); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}

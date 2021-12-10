@@ -52,6 +52,11 @@ func (h Handler) CreateComment() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
+		if err := comment.Validate(); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
 		atom, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc)...)
 		defer atom.Rollback()
 
@@ -93,6 +98,11 @@ func (h Handler) CreatePost() http.HandlerFunc {
 			return
 		}
 		defer r.Body.Close()
+
+		if err := post.Validate(); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
 
 		txg, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc)...)
 		defer txg.Rollback()
@@ -487,6 +497,11 @@ func (h Handler) UpdatePost() http.HandlerFunc {
 			return
 		}
 		defer r.Body.Close()
+
+		if err := post.Validate(); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
 
 		if err := h.service.UpdatePost(ctx, postID, post); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
