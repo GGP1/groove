@@ -72,10 +72,10 @@ CREATE INDEX ON users USING GIN (search);
 
 CREATE OR REPLACE FUNCTION users_tsvector_trigger() RETURNS trigger AS $$
 BEGIN
-  new.search :=
-  setweight(to_tsvector('english', new.username), 'A')
-  || setweight(to_tsvector('english', new.name), 'B');
-  return new;
+	new.search :=
+	setweight(to_tsvector('english', new.username), 'A')
+	|| setweight(to_tsvector('english', new.name), 'B');
+	return new;
 END
 $$ LANGUAGE plpgsql;
 
@@ -143,9 +143,9 @@ CREATE INDEX ON events (longitude);
 
 CREATE OR REPLACE FUNCTION events_tsvector_trigger() RETURNS trigger AS $$
 BEGIN
-  new.search := setweight(to_tsvector('english', new.name), 'A')
-  || setweight(to_tsvector('english', new.address), 'B');
-  return new;
+	new.search := setweight(to_tsvector('english', new.name), 'A')
+	|| setweight(to_tsvector('english', new.address), 'B');
+	return new;
 END
 $$ LANGUAGE plpgsql;
 
