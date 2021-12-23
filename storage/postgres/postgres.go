@@ -47,6 +47,70 @@ func CreateTables(ctx context.Context, db *sql.DB) error {
 }
 
 const tables = `
+CREATE TABLE IF NOT EXISTS users
+(
+    id varchar(26),
+	name varchar(40) NOT NULL,
+    username varchar(24) NOT NULL UNIQUE,
+    email varchar(120) NOT NULL UNIQUE,
+    password bytea NOT NULL,
+	description varchar(200),
+	birth_date timestamp,
+	profile_image_url varchar(240),
+    is_admin boolean DEFAULT false,
+	private boolean DEFAULT false,
+	type smallint NOT NULL CHECK (type > 0 AND type < 3),
+	invitations smallint NOT NULL CHECK (invitations > 0 AND invitations < 3),
+    verified_email boolean DEFAULT false,
+	search tsvector,
+    created_at timestamp with time zone DEFAULT NOW(),
+    updated_at timestamp with time zone,
+    CONSTRAINT users_pkey PRIMARY KEY (id)
+);
+
+CREATE INDEX ON users USING GIN (search);
+
+CREATE OR REPLACE FUNCTION users_tsvector_trigger() RETURNS trigger AS $$
+BEGIN
+  new.search :=
+  setweight(to_tsvector('english', new.username), 'A')
+  || setweight(to_tsvector('english', new.name), 'B');
+  return new;
+END
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS users_tsvector_update ON users;
+
+CREATE TRIGGER users_tsvector_update BEFORE INSERT OR UPDATE
+    ON users FOR EACH ROW EXECUTE PROCEDURE users_tsvector_trigger();
+
+CREATE TABLE IF NOT EXISTS users_friends
+(
+	user_id varchar(26) NOT NULL,
+	friend_id varchar(26) NOT NULL,
+	FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+	FOREIGN KEY (friend_id) REFERENCES users (id) ON DELETE CASCADE,
+	UNIQUE(user_id, friend_id)
+);
+
+CREATE TABLE IF NOT EXISTS users_followers
+(
+	user_id varchar(26) NOT NULL,
+	follower_id varchar(26) NOT NULL,
+	FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+	FOREIGN KEY (follower_id) REFERENCES users (id) ON DELETE CASCADE,
+	UNIQUE(user_id, follower_id)
+);
+
+CREATE TABLE IF NOT EXISTS users_blocked
+(
+	user_id varchar(26) NOT NULL,
+	blocked_id varchar(26) NOT NULL,
+	FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+	FOREIGN KEY (blocked_id) REFERENCES users (id) ON DELETE CASCADE,
+	UNIQUE(user_id, blocked_id)
+);
+
 CREATE TABLE IF NOT EXISTS events
 (
 	id varchar(26),
@@ -62,7 +126,7 @@ CREATE TABLE IF NOT EXISTS events
 	latitude double precision,
 	longitude double precision,
 	public boolean NOT NULL,
-	slots integer NOT NULL CHECK (slots >= 0),
+	slots integer NOT NULL CHECK (slots >= -1),
 	cron varchar(40) NOT NULL,
 	start_date timestamp with time zone NOT NULL,
 	end_date timestamp with time zone NOT NULL,
@@ -90,42 +154,23 @@ DROP TRIGGER IF EXISTS events_tsvector_update ON events;
 CREATE TRIGGER events_tsvector_update BEFORE INSERT OR UPDATE
     ON events FOR EACH ROW EXECUTE PROCEDURE events_tsvector_trigger();
 
-CREATE TABLE IF NOT EXISTS users
+CREATE TABLE IF NOT EXISTS events_bans
 (
-    id varchar(26),
-	name varchar(40) NOT NULL,
-    username varchar(24) NOT NULL UNIQUE,
-    email varchar(120) NOT NULL UNIQUE,
-    password bytea NOT NULL,
-	description varchar(200),
-	birth_date timestamp,
-	profile_image_url varchar(240),
-    is_admin boolean DEFAULT false,
-	private boolean DEFAULT false,
-	type smallint NOT NULL CHECK (type > 0 AND type < 3),
-	invitations smallint NOT NULL CHECK (invitations > 0 AND type < 3),
-    verified_email boolean DEFAULT false,
-	search tsvector,
-    created_at timestamp with time zone DEFAULT NOW(),
-    updated_at timestamp with time zone,
-    CONSTRAINT users_pkey PRIMARY KEY (id)
+	event_id varchar(26) NOT NULL,
+	user_id varchar(26) NOT NULL,
+	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,
+	FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+	UNIQUE(event_id, user_id)
 );
 
-CREATE INDEX ON users USING GIN (search);
-
-CREATE OR REPLACE FUNCTION users_tsvector_trigger() RETURNS trigger AS $$
-BEGIN
-  new.search :=
-  setweight(to_tsvector('english', new.username), 'A')
-  || setweight(to_tsvector('english', new.name), 'B');
-  return new;
-END
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS users_tsvector_update ON users;
-
-CREATE TRIGGER users_tsvector_update BEFORE INSERT OR UPDATE
-    ON users FOR EACH ROW EXECUTE PROCEDURE users_tsvector_trigger();
+CREATE TABLE IF NOT EXISTS events_likes
+(
+	event_id varchar(26) NOT NULL,
+	user_id varchar(26) NOT NULL,
+	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,
+	FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+	UNIQUE(event_id, user_id)
+);
 
 CREATE TABLE IF NOT EXISTS events_permissions
 (
@@ -158,7 +203,8 @@ CREATE TABLE IF NOT EXISTS events_users_roles
 	user_id varchar(26) NOT NULL,
  	role_name varchar(40) NOT NULL,
 	FOREIGN KEY (event_id) REFERENCES events (id) ON UPDATE CASCADE ON DELETE CASCADE,
- 	FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+ 	FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+	UNIQUE(event_id, user_id, role_name)
 );
 
 CREATE INDEX ON events_users_roles (role_name);
@@ -181,12 +227,20 @@ CREATE TABLE IF NOT EXISTS events_posts
 	event_id varchar(26) NOT NULL,
 	media text[],
 	content varchar(1024),
-	likes_count integer DEFAULT 0,
 	comments_count integer DEFAULT 0,
 	created_at timestamp with time zone DEFAULT NOW(),
 	updated_at timestamp with time zone,
 	CONSTRAINT events_posts_pkey PRIMARY KEY (id),
 	FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS events_posts_likes
+(
+	post_id varchar(26) NOT NULL,
+	user_id varchar(26) NOT NULL,
+	FOREIGN KEY (post_id) REFERENCES events_posts (id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+	UNIQUE(post_id, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS events_posts_comments 
@@ -196,13 +250,21 @@ CREATE TABLE IF NOT EXISTS events_posts_comments
 	post_id varchar(26),
 	user_id varchar(26) NOT NULL,
 	content varchar(1024),
-	likes_count integer DEFAULT 0,
 	replies_count integer DEFAULT 0,
 	created_at timestamp with time zone DEFAULT NOW(),
 	CONSTRAINT events_posts_comments_pkey PRIMARY KEY (id),
 	FOREIGN KEY (parent_comment_id) REFERENCES events_posts_comments (id) ON DELETE CASCADE,
 	FOREIGN KEY (post_id) REFERENCES events_posts (id) ON DELETE CASCADE,
 	FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS events_posts_comments_likes
+(
+	comment_id varchar(26) NOT NULL,
+	user_id varchar(26) NOT NULL,
+	FOREIGN KEY (comment_id) REFERENCES events_posts_comments (id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+	UNIQUE(comment_id, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS events_products
