@@ -21,9 +21,11 @@ var (
 )
 
 const (
-	idLen     = ulid.EncodedSize // ULID string length
-	saltLen   = 16
-	separator = "/"
+	idLen        = ulid.EncodedSize // ULID string length
+	saltLen      = 16
+	separator    = '/'
+	separatorStr = string(separator)
+	minLength    = idLen + saltLen + len(separatorStr)*3 + 1 // 1 = username min length
 )
 
 // Session contains the information about the user session.
@@ -64,11 +66,11 @@ func GetSession(ctx context.Context, r *http.Request) (Session, error) {
 func parseSessionToken(id, username, deviceToken string, typ model.UserType) string {
 	buf := bufferpool.Get()
 	buf.WriteString(id)
-	buf.WriteString(separator)
+	buf.WriteRune(separator)
 	buf.WriteString(username)
-	buf.WriteString(separator)
+	buf.WriteRune(separator)
 	buf.WriteString(deviceToken)
-	buf.WriteString(separator)
+	buf.WriteRune(separator)
 	buf.WriteString(strconv.Itoa(int(typ)))
 	token := buf.String()
 	bufferpool.Put(buf)
@@ -77,7 +79,17 @@ func parseSessionToken(id, username, deviceToken string, typ model.UserType) str
 }
 
 func unparseSessionToken(token string) (Session, error) {
-	parts := strings.Split(token, separator)
+	// Unless FCM tokens grow a lot, the overall length shouldn't surpass 400 chars
+	// set to 500 to keep a decent margin just in case
+	if len(token) > 500 || len(token) < minLength {
+		return Session{}, errCorruptedSession
+	}
+
+	if token[idLen] != separator {
+		return Session{}, errCorruptedSession
+	}
+
+	parts := strings.SplitN(token, separatorStr, 4)
 	if len(parts) != 4 {
 		return Session{}, errCorruptedSession
 	}
