@@ -34,8 +34,10 @@ type Query struct {
 
 // IDFromCtx takes the id parameter from context and validates it.
 func IDFromCtx(ctx context.Context, tag ...string) (string, error) {
-	tagName := "id"
-	if len(tag) > 0 {
+	var tagName string
+	if len(tag) == 0 {
+		tagName = "id"
+	} else {
 		tagName = tag[0]
 	}
 	id := httprouter.ParamsFromContext(ctx).ByName(tagName)
@@ -53,6 +55,18 @@ func IDAndNameFromCtx(ctx context.Context) (id, name string, err error) {
 		return "", "", err
 	}
 	name = strings.ToLower(ctxParams.ByName("name"))
+	return
+}
+
+// IDAndKeyFromCtx returns the id and name parameters from the endpoint's route.
+func IDAndKeyFromCtx(ctx context.Context) (id, key string, err error) {
+	ctxParams := httprouter.ParamsFromContext(ctx)
+	id = ctxParams.ByName("id")
+	if err = validate.ULID(id); err != nil {
+		return "", "", err
+	}
+	key = strings.ToLower(ctxParams.ByName("key"))
+	err = validate.Key(key)
 	return
 }
 
