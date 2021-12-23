@@ -12,6 +12,7 @@ import (
 	"github.com/GGP1/groove/internal/cookie"
 	"github.com/GGP1/groove/internal/httperr"
 	"github.com/GGP1/groove/internal/userip"
+	"github.com/GGP1/groove/model"
 	"github.com/GGP1/sqan"
 
 	"github.com/go-redis/redis/v8"
@@ -24,7 +25,7 @@ var errAccessDenied = errors.New("Access denied")
 // Service provides auth operations.
 type Service interface {
 	AlreadyLoggedIn(ctx context.Context, r *http.Request) (Session, bool)
-	Login(ctx context.Context, w http.ResponseWriter, r *http.Request, login Login) (userSession, error)
+	Login(ctx context.Context, w http.ResponseWriter, r *http.Request, login model.Login) (model.UserSession, error)
 	Logout(ctx context.Context, w http.ResponseWriter, r *http.Request) error
 	TokensFromID(ctx context.Context, id string) []string
 }
@@ -45,7 +46,7 @@ func NewService(db *sql.DB, rdb *redis.Client, config config.Sessions) Service {
 }
 
 // AlreadyLoggedIn returns if the user is logged in or not.
-func (s service) AlreadyLoggedIn(ctx context.Context, r *http.Request) (Session, bool) {
+func (s *service) AlreadyLoggedIn(ctx context.Context, r *http.Request) (Session, bool) {
 	session, err := GetSession(ctx, r)
 	if err != nil {
 		return Session{}, false
@@ -61,16 +62,16 @@ func (s service) AlreadyLoggedIn(ctx context.Context, r *http.Request) (Session,
 }
 
 // Login attempts to log a user in.
-func (s service) Login(ctx context.Context, w http.ResponseWriter, r *http.Request, login Login) (userSession, error) {
+func (s *service) Login(ctx context.Context, w http.ResponseWriter, r *http.Request, login model.Login) (model.UserSession, error) {
 	// Won't collide with the rate limiter as this last has the prefix "rate:"
 	ip := userip.Get(ctx, r)
 	attempts, err := s.rdb.Get(ctx, ip).Int64()
 	if err != nil && err != redis.Nil {
-		return userSession{}, errors.Wrap(err, "retrieving client attempts")
+		return model.UserSession{}, errors.Wrap(err, "retrieving client attempts")
 	}
 
 	if attempts > 4 {
-		return userSession{}, httperr.Forbidden(fmt.Sprintf("please wait %v before trying again", delay(attempts)))
+		return model.UserSession{}, httperr.Forbidden(fmt.Sprintf("please wait %v before trying again", delay(attempts)))
 	}
 
 	// Using union instead of OR allows the engine to use indexes in both lookups, only one index is
@@ -82,46 +83,46 @@ func (s service) Login(ctx context.Context, w http.ResponseWriter, r *http.Reque
 	FROM users WHERE email=$1`
 	rows, err := s.db.QueryContext(ctx, query, login.Username)
 	if err != nil {
-		return userSession{}, errors.Wrap(err, "querying user credentials")
+		return model.UserSession{}, errors.Wrap(err, "querying user credentials")
 	}
 
-	var user userSession
+	var user model.UserSession
 	if err := sqan.Row(&user, rows); err != nil {
 		_ = s.addDelay(ctx, ip)
-		return userSession{}, httperr.Forbidden("invalid email or password")
+		return model.UserSession{}, httperr.Forbidden("invalid email or password")
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(login.Password)); err != nil {
 		_ = s.addDelay(ctx, ip)
-		return userSession{}, httperr.Forbidden("invalid email or password")
+		return model.UserSession{}, httperr.Forbidden("invalid email or password")
 	}
 
 	if s.config.VerifyEmails && !user.VerifiedEmail {
-		return userSession{}, httperr.Forbidden("please verify your email before logging in")
+		return model.UserSession{}, httperr.Forbidden("please verify your email before logging in")
 	}
 
 	if login.DeviceToken == "" {
 		salt := make([]byte, saltLen)
 		if _, err := rand.Read(salt); err != nil {
-			return userSession{}, errors.Wrap(err, "generating salt")
+			return model.UserSession{}, errors.Wrap(err, "generating salt")
 		}
 		login.DeviceToken = string(salt)
 	}
 
 	id := user.ID.String()
 	if err := s.rdb.SAdd(ctx, id, login.DeviceToken).Err(); err != nil {
-		return userSession{}, errors.Wrap(err, "storing session")
+		return model.UserSession{}, errors.Wrap(err, "storing session")
 	}
 	cookieValue := parseSessionToken(id, login.Username, login.DeviceToken, user.Type)
 	if err := cookie.Set(w, cookie.Session, cookieValue, "/"); err != nil {
-		return userSession{}, errors.Wrap(err, "setting cookie")
+		return model.UserSession{}, errors.Wrap(err, "setting cookie")
 	}
 
 	return user, nil
 }
 
 // Logout removes the user session and its cookies.
-func (s service) Logout(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+func (s *service) Logout(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
 	// Ignore error as the session is already loaded in context
 	session, _ := GetSession(ctx, r)
 	cookie.Delete(w, cookie.Session)
@@ -133,7 +134,7 @@ func (s service) Logout(ctx context.Context, w http.ResponseWriter, r *http.Requ
 }
 
 // TokensFromID returns a list of device tokens corresponding to the user with the id passed.
-func (s service) TokensFromID(ctx context.Context, id string) []string {
+func (s *service) TokensFromID(ctx context.Context, id string) []string {
 	// Here we return all the tokens, not only the one stored in the user session.
 	tokens := s.rdb.SMembers(ctx, id).Val()
 	// Remove salts

@@ -7,7 +7,6 @@ import (
 	"github.com/GGP1/groove/http/rest/router"
 	"github.com/GGP1/groove/internal/log"
 	"github.com/GGP1/groove/server"
-	"github.com/GGP1/groove/storage/dgraph"
 	"github.com/GGP1/groove/storage/memcached"
 	"github.com/GGP1/groove/storage/postgres"
 	"github.com/GGP1/groove/storage/redis"
@@ -37,12 +36,6 @@ func main() {
 	}
 	defer db.Close()
 
-	dc, closeConn, err := dgraph.Connect(ctx, cfg.Dgraph)
-	if err != nil {
-		log.Sugar().Fatalf("Failed connecting to Dgraph: %v", err)
-	}
-	defer closeConn()
-
 	cache, err := memcached.NewClient(cfg.Memcached)
 	if err != nil {
 		log.Sugar().Fatalf("Failed connecting to memcached: %v", err)
@@ -54,7 +47,7 @@ func main() {
 	}
 	defer rdb.Close()
 
-	router := router.New(cfg, db, dc, rdb, cache)
+	router := router.New(cfg, db, rdb, cache)
 	server := server.New(cfg.Server, router)
 
 	log.Sugar().Infof("Server started: version %q, branch %q, commit %q", version, branch, commit)

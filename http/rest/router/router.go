@@ -12,7 +12,6 @@ import (
 	"github.com/GGP1/groove/internal/log"
 	"github.com/GGP1/groove/internal/response"
 
-	"github.com/dgraph-io/dgo/v210"
 	"github.com/go-redis/redis/v8"
 	"github.com/julienschmidt/httprouter"
 	"go.uber.org/zap"
@@ -29,7 +28,7 @@ type Router struct {
 }
 
 // New returns a new router.
-func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, cache cache.Client) http.Handler {
+func New(config config.Config, db *sql.DB, rdb *redis.Client, cache cache.Client) http.Handler {
 	router := &Router{
 		Router: &httprouter.Router{
 			RedirectTrailingSlash:  true,
@@ -53,7 +52,7 @@ func New(config config.Config, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, ca
 		router.middlewares = append([]Middleware{rateLimiter.Limit}, router.middlewares...)
 	}
 
-	registerEndpoints(router, db, dc, rdb, cache, config)
+	registerEndpoints(router, db, rdb, cache, config)
 
 	return router
 }

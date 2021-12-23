@@ -7,12 +7,10 @@ import (
 
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/response"
-	"github.com/GGP1/groove/internal/txgroup"
-	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/internal/validate"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/auth"
-	"github.com/dgraph-io/dgo/v210"
+	"github.com/GGP1/groove/storage/postgres"
 
 	"github.com/julienschmidt/httprouter"
 )
@@ -20,22 +18,20 @@ import (
 // Handler handles ticket service endpoints.
 type Handler struct {
 	db *sql.DB
-	dc *dgo.Dgraph
 
 	service Service
 }
 
 // NewHandler returns a new ticket handler.
-func NewHandler(db *sql.DB, dc *dgo.Dgraph, service Service) Handler {
+func NewHandler(db *sql.DB, service Service) Handler {
 	return Handler{
 		db:      db,
-		dc:      dc,
 		service: service,
 	}
 }
 
 // CreateComment creates a new comment.
-func (h Handler) CreateComment() http.HandlerFunc {
+func (h *Handler) CreateComment() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -45,7 +41,7 @@ func (h Handler) CreateComment() http.HandlerFunc {
 			return
 		}
 
-		var comment CreateComment
+		var comment model.CreateComment
 		if err := json.NewDecoder(r.Body).Decode(&comment); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -57,16 +53,16 @@ func (h Handler) CreateComment() http.HandlerFunc {
 			return
 		}
 
-		atom, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc)...)
-		defer atom.Rollback()
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
 
-		commentID := ulid.NewString()
-		if err := h.service.CreateComment(ctx, session, commentID, comment); err != nil {
+		commentID, err := h.service.CreateComment(ctx, session, comment)
+		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		if err := atom.Commit(); err != nil {
+		if err := sqlTx.Commit(); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -76,7 +72,7 @@ func (h Handler) CreateComment() http.HandlerFunc {
 }
 
 // CreatePost creates a post in an event.
-func (h Handler) CreatePost() http.HandlerFunc {
+func (h *Handler) CreatePost() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -92,7 +88,7 @@ func (h Handler) CreatePost() http.HandlerFunc {
 			return
 		}
 
-		var post CreatePost
+		var post model.CreatePost
 		if err := json.NewDecoder(r.Body).Decode(&post); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -104,16 +100,16 @@ func (h Handler) CreatePost() http.HandlerFunc {
 			return
 		}
 
-		txg, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc)...)
-		defer txg.Rollback()
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
 
-		postID := ulid.NewString()
-		if err := h.service.CreatePost(ctx, session, postID, eventID, post); err != nil {
+		postID, err := h.service.CreatePost(ctx, session, eventID, post)
+		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		if err := txg.Commit(); err != nil {
+		if err := sqlTx.Commit(); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -123,7 +119,7 @@ func (h Handler) CreatePost() http.HandlerFunc {
 }
 
 // DeleteComment removes a comment from a conversation/post.
-func (h Handler) DeleteComment() http.HandlerFunc {
+func (h *Handler) DeleteComment() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -139,15 +135,15 @@ func (h Handler) DeleteComment() http.HandlerFunc {
 			return
 		}
 
-		txg, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc)...)
-		defer txg.Rollback()
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
 
 		if err := h.service.DeleteComment(ctx, commentID, session); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		if err := txg.Commit(); err != nil {
+		if err := sqlTx.Commit(); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -157,7 +153,7 @@ func (h Handler) DeleteComment() http.HandlerFunc {
 }
 
 // DeletePost removes a post from an event.
-func (h Handler) DeletePost() http.HandlerFunc {
+func (h *Handler) DeletePost() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -169,15 +165,15 @@ func (h Handler) DeletePost() http.HandlerFunc {
 			return
 		}
 
-		txg, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc)...)
-		defer txg.Rollback()
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
 
 		if err := h.service.DeletePost(ctx, eventID, postID); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		if err := txg.Commit(); err != nil {
+		if err := sqlTx.Commit(); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -187,9 +183,15 @@ func (h Handler) DeletePost() http.HandlerFunc {
 }
 
 // GetComment gets a comment.
-func (h Handler) GetComment() http.HandlerFunc {
+func (h *Handler) GetComment() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+
+		session, err := auth.GetSession(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
 
 		commentID, err := params.IDFromCtx(ctx, "comment_id")
 		if err != nil {
@@ -197,7 +199,7 @@ func (h Handler) GetComment() http.HandlerFunc {
 			return
 		}
 
-		comment, err := h.service.GetComment(ctx, commentID)
+		comment, err := h.service.GetComment(ctx, commentID, session.ID)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -208,7 +210,7 @@ func (h Handler) GetComment() http.HandlerFunc {
 }
 
 // GetCommentLikes gets the users liking a post.
-func (h Handler) GetCommentLikes() http.HandlerFunc {
+func (h *Handler) GetCommentLikes() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -218,7 +220,7 @@ func (h Handler) GetCommentLikes() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.Parse(r.URL.RawQuery, model.Comment)
+		params, err := params.Parse(r.URL.RawQuery, model.T.Comment)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -251,7 +253,7 @@ func (h Handler) GetCommentLikes() http.HandlerFunc {
 }
 
 // GetHomePosts returns a user's home posts.
-func (h Handler) GetHomePosts() http.HandlerFunc {
+func (h *Handler) GetHomePosts() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -261,7 +263,7 @@ func (h Handler) GetHomePosts() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.Parse(r.URL.RawQuery, model.Post)
+		params, err := params.Parse(r.URL.RawQuery, model.T.Post)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -283,9 +285,15 @@ func (h Handler) GetHomePosts() http.HandlerFunc {
 }
 
 // GetPost gets a post from an event.
-func (h Handler) GetPost() http.HandlerFunc {
+func (h *Handler) GetPost() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+
+		session, err := auth.GetSession(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
 
 		ctxParams := httprouter.ParamsFromContext(ctx)
 		eventID := ctxParams.ByName("id")
@@ -295,7 +303,7 @@ func (h Handler) GetPost() http.HandlerFunc {
 			return
 		}
 
-		post, err := h.service.GetPost(ctx, eventID, postID)
+		post, err := h.service.GetPost(ctx, eventID, postID, session.ID)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -306,9 +314,15 @@ func (h Handler) GetPost() http.HandlerFunc {
 }
 
 // GetPosts gets all the posts from an event.
-func (h Handler) GetPosts() http.HandlerFunc {
+func (h *Handler) GetPosts() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+
+		session, err := auth.GetSession(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
 
 		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
@@ -316,13 +330,13 @@ func (h Handler) GetPosts() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.Parse(r.URL.RawQuery, model.Post)
+		params, err := params.Parse(r.URL.RawQuery, model.T.Post)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		posts, err := h.service.GetPosts(ctx, eventID, params)
+		posts, err := h.service.GetPosts(ctx, eventID, session.ID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -337,40 +351,8 @@ func (h Handler) GetPosts() http.HandlerFunc {
 	}
 }
 
-// GetPostComments gets all the comments in a post.
-func (h Handler) GetPostComments() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-
-		postID, err := params.IDFromCtx(ctx, "post_id")
-		if err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		params, err := params.Parse(r.URL.RawQuery, model.Comment)
-		if err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		comments, err := h.service.GetPostComments(ctx, postID, params)
-		if err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-
-		var nextCursor string
-		if len(comments) > 0 {
-			nextCursor = comments[len(comments)-1].ID
-		}
-
-		response.JSONCursor(w, nextCursor, "comments", comments)
-	}
-}
-
 // GetPostLikes gets the users liking a post.
-func (h Handler) GetPostLikes() http.HandlerFunc {
+func (h *Handler) GetPostLikes() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -380,7 +362,7 @@ func (h Handler) GetPostLikes() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.Parse(r.URL.RawQuery, model.Post)
+		params, err := params.Parse(r.URL.RawQuery, model.T.Post)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -412,8 +394,46 @@ func (h Handler) GetPostLikes() http.HandlerFunc {
 	}
 }
 
+// GetReplies gets all the comments in a post.
+func (h *Handler) GetReplies() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		session, err := auth.GetSession(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		parentID, err := params.IDFromCtx(ctx, "parent_id")
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		params, err := params.Parse(r.URL.RawQuery, model.T.Comment)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		comments, err := h.service.GetReplies(ctx, parentID, session.ID, params)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		var nextCursor string
+		if len(comments) > 0 {
+			nextCursor = comments[len(comments)-1].ID
+		}
+
+		response.JSONCursor(w, nextCursor, "comments", comments)
+	}
+}
+
 // LikeComment adds a like to a comment, if the like already exists, it removes it.
-func (h Handler) LikeComment() http.HandlerFunc {
+func (h *Handler) LikeComment() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -429,15 +449,15 @@ func (h Handler) LikeComment() http.HandlerFunc {
 			return
 		}
 
-		txg, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc)...)
-		defer txg.Rollback()
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
 
 		if err := h.service.LikeComment(ctx, commentID, session.ID); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		if err := txg.Commit(); err != nil {
+		if err := sqlTx.Commit(); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -447,7 +467,7 @@ func (h Handler) LikeComment() http.HandlerFunc {
 }
 
 // LikePost adds a like to a post, if the like already exists, it removes it.
-func (h Handler) LikePost() http.HandlerFunc {
+func (h *Handler) LikePost() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -463,15 +483,15 @@ func (h Handler) LikePost() http.HandlerFunc {
 			return
 		}
 
-		txg, ctx := txgroup.WithContext(ctx, txgroup.NewTxs(h.db, h.dc)...)
-		defer txg.Rollback()
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
 
 		if err := h.service.LikePost(ctx, postID, session.ID); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		if err := txg.Commit(); err != nil {
+		if err := sqlTx.Commit(); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -481,7 +501,7 @@ func (h Handler) LikePost() http.HandlerFunc {
 }
 
 // UpdatePost updates an event's post.
-func (h Handler) UpdatePost() http.HandlerFunc {
+func (h *Handler) UpdatePost() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -491,7 +511,7 @@ func (h Handler) UpdatePost() http.HandlerFunc {
 			return
 		}
 
-		var post UpdatePost
+		var post model.UpdatePost
 		if err := json.NewDecoder(r.Body).Decode(&post); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -513,7 +533,7 @@ func (h Handler) UpdatePost() http.HandlerFunc {
 }
 
 // UserLikedComment returns whether the user liked the comment or not.
-func (h Handler) UserLikedComment() http.HandlerFunc {
+func (h *Handler) UserLikedComment() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -540,7 +560,7 @@ func (h Handler) UserLikedComment() http.HandlerFunc {
 }
 
 // UserLikedPost returns whether the user liked the post or not.
-func (h Handler) UserLikedPost() http.HandlerFunc {
+func (h *Handler) UserLikedPost() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 

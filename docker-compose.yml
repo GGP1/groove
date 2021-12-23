@@ -16,23 +16,12 @@ services:
       - storage
       - metrics
     depends_on:
-      - dgraph
       - memcached
       - postgres
       - redis
-          
-  dgraph:
-    image: dgraph/standalone:v21.03.2
-    restart: on-failure:5
-    expose:
-      - 9080 # Dgraph Zero GRPC api
-    ports:
-      - 8080:8080 # Ratel UI
-    networks:
-      - storage
               
   memcached:
-    image: memcached:1.6.10-alpine
+    image: memcached:1.6.12-alpine
     restart: on-failure:5
     ports:
       - 11211:11211
@@ -40,7 +29,7 @@ services:
       - storage
 
   postgres:
-    image: postgres:14.0-alpine
+    image: postgres:14.1-alpine
     command: -c 'config_file=/etc/postgresql/postgresql.conf'
     restart: on-failure:5
     environment:
@@ -55,7 +44,7 @@ services:
       - storage
 
   redis:
-    image: redis:6.2.5-alpine
+    image: redis:6.2.6-alpine
     restart: on-failure:5
     ports:
       - 6379:6379
@@ -67,7 +56,7 @@ services:
       # - redis
 
   prometheus:
-    image: prom/prometheus:v2.30.1
+    image: prom/prometheus:v2.31.1
     restart: on-failure:5
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -93,6 +82,7 @@ services:
   #      - 9121:9121
   #   networks:
   #     - metrics
+  #     - redis
 
   # node_exporter:
   #   image: quay.io/prometheus/node-exporter:latest
@@ -105,7 +95,7 @@ services:
   #     - metrics
 
   # grafana:
-  #   image: grafana/grafana:8.1.5
+  #   image: grafana/grafana:8.2.6
   #   restart: on-failure:5
   #   ports:
   #     - 3000:3000

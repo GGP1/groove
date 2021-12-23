@@ -12,27 +12,22 @@ import (
 	"github.com/GGP1/groove/internal/roles"
 	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/internal/ulid"
+	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/event/role"
 	"github.com/GGP1/groove/test"
 
-	"github.com/dgraph-io/dgo/v210"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 )
 
 var (
 	roleSv      role.Service
-	dc          *dgo.Dgraph
 	ctx         context.Context
 	cacheClient cache.Client
 )
 
 func TestMain(m *testing.M) {
 	pgContainer, postgres, err := test.RunPostgres()
-	if err != nil {
-		log.Fatal(err)
-	}
-	dcContainer, dgraph, conn, err := test.RunDgraph()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -48,7 +43,7 @@ func TestMain(m *testing.M) {
 	_, ctx = txgroup.WithContext(ctx, txgroup.NewSQLTx(sqlTx))
 	cacheClient = memcached
 
-	roleSv = role.NewService(postgres, dgraph, cacheClient)
+	roleSv = role.NewService(postgres, cacheClient)
 
 	code := m.Run()
 
@@ -56,12 +51,6 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 	if err := pgContainer.Close(); err != nil {
-		log.Fatal(err)
-	}
-	if err := conn.Close(); err != nil {
-		log.Fatal(err)
-	}
-	if err := dcContainer.Close(); err != nil {
 		log.Fatal(err)
 	}
 	if err := mcContainer.Close(); err != nil {
@@ -77,7 +66,7 @@ func TestCreatePermission(t *testing.T) {
 	err := createEvent(eventID, "create_permission")
 	assert.NoError(t, err)
 
-	permission := role.Permission{
+	permission := model.Permission{
 		Name:        "create_permission",
 		Key:         "create_permission",
 		Description: "TestCreatePermission",
@@ -94,7 +83,7 @@ func TestGetPermissions(t *testing.T) {
 
 	expectedKey := "create_permission"
 	t.Run("CreatePermission", func(t *testing.T) {
-		permission := role.Permission{
+		permission := model.Permission{
 			Name:        "create_permission",
 			Key:         expectedKey,
 			Description: "TestCreatePermission",
@@ -112,7 +101,7 @@ func TestGetPermissions(t *testing.T) {
 
 	t.Run("UpdatePermission", func(t *testing.T) {
 		name := "update_permission"
-		uptPermission := role.UpdatePermission{
+		uptPermission := model.UpdatePermission{
 			Name: &name,
 		}
 		err := roleSv.UpdatePermission(ctx, eventID, expectedKey, uptPermission)
@@ -146,7 +135,7 @@ func TestRoles(t *testing.T) {
 	err = createEvent(eventID, "roles")
 	assert.NoError(t, err)
 
-	expectedRole := role.Role{
+	expectedRole := model.Role{
 		Name:           string(roles.Attendant),
 		PermissionKeys: pq.StringArray{permissions.InviteUsers},
 	}
@@ -158,7 +147,7 @@ func TestRoles(t *testing.T) {
 
 	t.Run("DeleteRole", func(t *testing.T) {
 		name := "delete"
-		err := roleSv.CreateRole(ctx, eventID, role.Role{Name: name, PermissionKeys: pq.StringArray{"abc"}})
+		err := roleSv.CreateRole(ctx, eventID, model.Role{Name: name, PermissionKeys: pq.StringArray{"abc"}})
 		assert.NoError(t, err)
 
 		err = roleSv.DeleteRole(ctx, eventID, name)
@@ -169,7 +158,7 @@ func TestRoles(t *testing.T) {
 	})
 
 	t.Run("SetRoles", func(t *testing.T) {
-		sr := role.SetRole{
+		sr := model.SetRole{
 			UserIDs:  []string{userID},
 			RoleName: expectedRole.Name,
 		}

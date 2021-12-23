@@ -11,12 +11,10 @@ import (
 	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/internal/roles"
 	"github.com/GGP1/groove/internal/sanitize"
-	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/internal/validate"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/auth"
 	"github.com/GGP1/groove/service/event/role"
-	"github.com/GGP1/groove/storage/dgraph"
 	"github.com/GGP1/groove/storage/postgres"
 
 	"github.com/julienschmidt/httprouter"
@@ -24,6 +22,11 @@ import (
 )
 
 var errAccessDenied = errors.New("Access denied")
+
+// UserID is commonly used to receive a user id in a body request.
+type userIDBody struct {
+	UserID string `json:"user_id,omitempty"`
+}
 
 // Handler handles events endpoints.
 type Handler struct {
@@ -44,40 +47,8 @@ func NewHandler(db *sql.DB, cache cache.Client, service Service, roleService rol
 	}
 }
 
-// AddBanned bans a user in an event.
-func (h Handler) AddBanned() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-
-		eventID, err := params.IDFromCtx(ctx)
-		if err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		var reqBody model.UserID
-		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-		defer r.Body.Close()
-
-		if err := validate.ULID(reqBody.UserID); err != nil {
-			response.Error(w, http.StatusBadRequest, err)
-			return
-		}
-
-		if err := h.service.AddEdge(ctx, eventID, dgraph.Banned, reqBody.UserID); err != nil {
-			response.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-
-		response.NoContent(w)
-	}
-}
-
 // AddInvited invites a user to an event.
-func (h Handler) AddInvited() http.HandlerFunc {
+func (h *Handler) AddInvited() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -87,7 +58,7 @@ func (h Handler) AddInvited() http.HandlerFunc {
 			return
 		}
 
-		var reqBody model.UserID
+		var reqBody userIDBody
 		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -116,8 +87,8 @@ func (h Handler) AddInvited() http.HandlerFunc {
 	}
 }
 
-// AddLike adds the like of a user to an event.
-func (h Handler) AddLike() http.HandlerFunc {
+// Ban bans a user in an event.
+func (h *Handler) Ban() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -127,23 +98,27 @@ func (h Handler) AddLike() http.HandlerFunc {
 			return
 		}
 
-		session, err := auth.GetSession(ctx, r)
-		if err != nil {
-			response.Error(w, http.StatusForbidden, err)
+		var reqBody userIDBody
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		defer r.Body.Close()
+
+		if err := validate.ULID(reqBody.UserID); err != nil {
+			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		hasRole, err := h.roleService.HasRole(ctx, eventID, session.ID)
-		if err != nil {
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
+
+		if err := h.service.Ban(ctx, eventID, reqBody.UserID); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
-		if !hasRole {
-			response.Error(w, http.StatusForbidden, errors.New("you must be a member of the event to like it"))
-			return
-		}
 
-		if err := h.service.AddEdge(ctx, eventID, dgraph.LikedBy, session.ID); err != nil {
+		if err := sqlTx.Commit(); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -153,11 +128,17 @@ func (h Handler) AddLike() http.HandlerFunc {
 }
 
 // Create creates an event.
-func (h Handler) Create() http.HandlerFunc {
+func (h *Handler) Create() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		var event CreateEvent
+		session, err := auth.GetSession(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		var event model.CreateEvent
 		if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -169,16 +150,10 @@ func (h Handler) Create() http.HandlerFunc {
 			return
 		}
 
-		session, err := auth.GetSession(ctx, r)
-		if err != nil {
-			response.Error(w, http.StatusForbidden, err)
-			return
-		}
-
 		sanitize.Strings(&event.Name)
-		eventID := ulid.NewString()
 		event.HostID = session.ID
-		if err := h.service.Create(ctx, eventID, event); err != nil {
+		eventID, err := h.service.Create(ctx, event)
+		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -188,7 +163,7 @@ func (h Handler) Create() http.HandlerFunc {
 }
 
 // Delete removes an event from the system.
-func (h Handler) Delete() http.HandlerFunc {
+func (h *Handler) Delete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -208,7 +183,7 @@ func (h Handler) Delete() http.HandlerFunc {
 }
 
 // GetBans gets an event's banned users.
-func (h Handler) GetBans() http.HandlerFunc {
+func (h *Handler) GetBans() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -218,7 +193,7 @@ func (h Handler) GetBans() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.Parse(r.URL.RawQuery, model.User)
+		params, err := params.Parse(r.URL.RawQuery, model.T.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -251,7 +226,7 @@ func (h Handler) GetBans() http.HandlerFunc {
 }
 
 // GetBannedFriends returns event banned users that are friends of the user passed.
-func (h Handler) GetBannedFriends() http.HandlerFunc {
+func (h *Handler) GetBannedFriends() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -267,7 +242,7 @@ func (h Handler) GetBannedFriends() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.Parse(r.URL.RawQuery, model.User)
+		params, err := params.Parse(r.URL.RawQuery, model.T.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -300,7 +275,7 @@ func (h Handler) GetBannedFriends() http.HandlerFunc {
 }
 
 // GetByID gets an event by its id.
-func (h Handler) GetByID() http.HandlerFunc {
+func (h *Handler) GetByID() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -310,7 +285,7 @@ func (h Handler) GetByID() http.HandlerFunc {
 			return
 		}
 
-		cacheKey := model.Event.CacheKey(eventID)
+		cacheKey := model.T.Event.CacheKey(eventID)
 		if v, err := h.cache.Get(cacheKey); err == nil {
 			response.EncodedJSON(w, v)
 			return
@@ -327,7 +302,7 @@ func (h Handler) GetByID() http.HandlerFunc {
 }
 
 // GetHosts gets an event's host users.
-func (h Handler) GetHosts() http.HandlerFunc {
+func (h *Handler) GetHosts() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -337,7 +312,7 @@ func (h Handler) GetHosts() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.Parse(r.URL.RawQuery, model.User)
+		params, err := params.Parse(r.URL.RawQuery, model.T.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -359,7 +334,7 @@ func (h Handler) GetHosts() http.HandlerFunc {
 }
 
 // GetInvited gets an event's invited users.
-func (h Handler) GetInvited() http.HandlerFunc {
+func (h *Handler) GetInvited() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -369,7 +344,7 @@ func (h Handler) GetInvited() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.Parse(r.URL.RawQuery, model.User)
+		params, err := params.Parse(r.URL.RawQuery, model.T.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -402,7 +377,7 @@ func (h Handler) GetInvited() http.HandlerFunc {
 }
 
 // GetInvitedFriends returns an event's invited users that are friends of the user passed.
-func (h Handler) GetInvitedFriends() http.HandlerFunc {
+func (h *Handler) GetInvitedFriends() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -418,7 +393,7 @@ func (h Handler) GetInvitedFriends() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.Parse(r.URL.RawQuery, model.User)
+		params, err := params.Parse(r.URL.RawQuery, model.T.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -451,7 +426,7 @@ func (h Handler) GetInvitedFriends() http.HandlerFunc {
 }
 
 // GetLikes gets the users liking an event.
-func (h Handler) GetLikes() http.HandlerFunc {
+func (h *Handler) GetLikes() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -461,14 +436,14 @@ func (h Handler) GetLikes() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.Parse(r.URL.RawQuery, model.User)
+		params, err := params.Parse(r.URL.RawQuery, model.T.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
 		if params.Count {
-			count, err := h.service.GetLikedByCount(ctx, eventID)
+			count, err := h.service.GetLikesCount(ctx, eventID)
 			if err != nil {
 				response.Error(w, http.StatusInternalServerError, err)
 				return
@@ -478,7 +453,7 @@ func (h Handler) GetLikes() http.HandlerFunc {
 			return
 		}
 
-		likes, err := h.service.GetLikedBy(ctx, eventID, params)
+		likes, err := h.service.GetLikes(ctx, eventID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -494,7 +469,7 @@ func (h Handler) GetLikes() http.HandlerFunc {
 }
 
 // GetLikedByFriends returns users liking the event that are friends of the user passed.
-func (h Handler) GetLikedByFriends() http.HandlerFunc {
+func (h *Handler) GetLikedByFriends() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -510,14 +485,14 @@ func (h Handler) GetLikedByFriends() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.Parse(r.URL.RawQuery, model.User)
+		params, err := params.Parse(r.URL.RawQuery, model.T.User)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
 		if params.Count {
-			count, err := h.service.GetLikedByFriendsCount(ctx, eventID, session.ID)
+			count, err := h.service.GetLikesByFriendsCount(ctx, eventID, session.ID)
 			if err != nil {
 				response.Error(w, http.StatusInternalServerError, err)
 				return
@@ -527,7 +502,7 @@ func (h Handler) GetLikedByFriends() http.HandlerFunc {
 			return
 		}
 
-		users, err := h.service.GetLikedByFriends(ctx, eventID, session.ID, params)
+		users, err := h.service.GetLikesByFriends(ctx, eventID, session.ID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -543,7 +518,7 @@ func (h Handler) GetLikedByFriends() http.HandlerFunc {
 }
 
 // GetRecommended returns a list of events that may be interesting for the user.
-func (h Handler) GetRecommended() http.HandlerFunc {
+func (h *Handler) GetRecommended() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -553,13 +528,13 @@ func (h Handler) GetRecommended() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.Parse(r.URL.RawQuery, model.Event)
+		params, err := params.Parse(r.URL.RawQuery, model.T.Event)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		var userCoords Coordinates
+		var userCoords model.Coordinates
 		if err := json.NewDecoder(r.Body).Decode(&userCoords); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -571,7 +546,7 @@ func (h Handler) GetRecommended() http.HandlerFunc {
 			return
 		}
 
-		events, err := h.service.GetRecommended(ctx, session, userCoords, params)
+		events, err := h.service.GetRecommended(ctx, session.ID, userCoords, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -587,7 +562,7 @@ func (h Handler) GetRecommended() http.HandlerFunc {
 }
 
 // GetStatistics returns an event's predicates statistics.
-func (h Handler) GetStatistics() http.HandlerFunc {
+func (h *Handler) GetStatistics() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -608,7 +583,7 @@ func (h Handler) GetStatistics() http.HandlerFunc {
 }
 
 // Join handles the auth user entrance to a free event, paid events are entered by buying a ticket.
-func (h Handler) Join() http.HandlerFunc {
+func (h *Handler) Join() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -631,7 +606,7 @@ func (h Handler) Join() http.HandlerFunc {
 		}
 
 		// The EventPrivacyFilter middleware already checks if the user can view a private event
-		if event.TicketType == Paid {
+		if event.TicketType == model.Paid {
 			response.Error(w, http.StatusBadRequest, errors.New("event is paid, buy a ticket to join"))
 			return
 		}
@@ -641,7 +616,7 @@ func (h Handler) Join() http.HandlerFunc {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
-		if availableSlots < 1 {
+		if availableSlots == 0 {
 			response.Error(w, http.StatusForbidden, errors.New("there are no slots available"))
 			return
 		}
@@ -663,8 +638,8 @@ func (h Handler) Join() http.HandlerFunc {
 	}
 }
 
-// RemoveBanned removes the ban on a user.
-func (h Handler) RemoveBanned() http.HandlerFunc {
+// Like adds the like of a user to an event.
+func (h *Handler) Like() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -674,7 +649,51 @@ func (h Handler) RemoveBanned() http.HandlerFunc {
 			return
 		}
 
-		var reqBody model.UserID
+		session, err := auth.GetSession(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		hasRole, err := h.roleService.HasRole(ctx, eventID, session.ID)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+		if !hasRole {
+			response.Error(w, http.StatusForbidden, errors.New("you must be a member of the event to like it"))
+			return
+		}
+
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
+
+		if err := h.service.Like(ctx, eventID, session.ID); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		if err := sqlTx.Commit(); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		response.NoContent(w)
+	}
+}
+
+// RemoveBan removes the ban on a user.
+func (h *Handler) RemoveBan() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		eventID, err := params.IDFromCtx(ctx)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		var reqBody userIDBody
 		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -686,7 +705,15 @@ func (h Handler) RemoveBanned() http.HandlerFunc {
 			return
 		}
 
-		if err := h.service.RemoveEdge(ctx, eventID, dgraph.Banned, reqBody.UserID); err != nil {
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
+
+		if err := h.service.RemoveBan(ctx, eventID, reqBody.UserID); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		if err := sqlTx.Commit(); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -696,11 +723,11 @@ func (h Handler) RemoveBanned() http.HandlerFunc {
 }
 
 // RemoveLike removes a like from a user.
-func (h Handler) RemoveLike() http.HandlerFunc {
+func (h *Handler) RemoveLike() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		var reqBody model.UserID
+		var reqBody userIDBody
 		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -713,7 +740,15 @@ func (h Handler) RemoveLike() http.HandlerFunc {
 			return
 		}
 
-		if err := h.service.RemoveEdge(ctx, eventID, dgraph.LikedBy, reqBody.UserID); err != nil {
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
+
+		if err := h.service.RemoveLike(ctx, eventID, reqBody.UserID); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		if err := sqlTx.Commit(); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -723,7 +758,7 @@ func (h Handler) RemoveLike() http.HandlerFunc {
 }
 
 // Search performs an event search.
-func (h Handler) Search() http.HandlerFunc {
+func (h *Handler) Search() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -745,13 +780,13 @@ func (h Handler) Search() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.ParseQuery(values, model.Event)
+		params, err := params.ParseQuery(values, model.T.Event)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		events, err := h.service.Search(ctx, query, session, params)
+		events, err := h.service.Search(ctx, query, session.ID, params)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -767,7 +802,7 @@ func (h Handler) Search() http.HandlerFunc {
 }
 
 // SearchByLocation looks for events given their location.
-func (h Handler) SearchByLocation() http.HandlerFunc {
+func (h *Handler) SearchByLocation() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -777,7 +812,7 @@ func (h Handler) SearchByLocation() http.HandlerFunc {
 			return
 		}
 
-		var location LocationSearch
+		var location model.LocationSearch
 		if err := json.NewDecoder(r.Body).Decode(&location); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -789,7 +824,7 @@ func (h Handler) SearchByLocation() http.HandlerFunc {
 			return
 		}
 
-		events, err := h.service.SearchByLocation(ctx, session, location)
+		events, err := h.service.SearchByLocation(ctx, session.ID, location)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
@@ -800,7 +835,7 @@ func (h Handler) SearchByLocation() http.HandlerFunc {
 }
 
 // Update updates an event.
-func (h Handler) Update() http.HandlerFunc {
+func (h *Handler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -810,7 +845,7 @@ func (h Handler) Update() http.HandlerFunc {
 			return
 		}
 
-		var uptEvent UpdateEvent
+		var uptEvent model.UpdateEvent
 		if err := json.NewDecoder(r.Body).Decode(&uptEvent); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return

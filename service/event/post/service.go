@@ -11,58 +11,55 @@ import (
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/roles"
 	"github.com/GGP1/groove/internal/txgroup"
+	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/auth"
 	"github.com/GGP1/groove/service/notification"
-	"github.com/GGP1/groove/storage/dgraph"
 	"github.com/GGP1/groove/storage/postgres"
 	"github.com/GGP1/sqan"
 
-	"github.com/dgraph-io/dgo/v210"
 	"github.com/pkg/errors"
 )
 
 // Service interface for the post service.
 type Service interface {
-	CreateComment(ctx context.Context, session auth.Session, commentID string, comment CreateComment) error
-	CreatePost(ctx context.Context, session auth.Session, postID, eventID string, post CreatePost) error
+	CreateComment(ctx context.Context, session auth.Session, comment model.CreateComment) (string, error)
+	CreatePost(ctx context.Context, session auth.Session, eventID string, post model.CreatePost) (string, error)
 	DeleteComment(ctx context.Context, commentID string, session auth.Session) error
 	DeletePost(ctx context.Context, eventID, postID string) error
-	GetComment(ctx context.Context, commentID string) (Comment, error)
-	GetCommentLikes(ctx context.Context, commentID string, params params.Query) ([]model.ListUser, error)
-	GetCommentLikesCount(ctx context.Context, commentID string) (*uint64, error)
-	GetHomePosts(ctx context.Context, session auth.Session, params params.Query) ([]Post, error)
-	GetPost(ctx context.Context, eventID, postID string) (Post, error)
-	GetPostComments(ctx context.Context, parentID string, params params.Query) ([]Comment, error)
-	GetPostLikes(ctx context.Context, postID string, params params.Query) ([]model.ListUser, error)
-	GetPostLikesCount(ctx context.Context, postID string) (*uint64, error)
-	GetPosts(ctx context.Context, eventID string, params params.Query) ([]Post, error)
+	GetComment(ctx context.Context, commentID, userID string) (model.Comment, error)
+	GetCommentLikes(ctx context.Context, commentID string, params params.Query) ([]model.User, error)
+	GetCommentLikesCount(ctx context.Context, commentID string) (int64, error)
+	GetHomePosts(ctx context.Context, session auth.Session, params params.Query) ([]model.Post, error)
+	GetPost(ctx context.Context, eventID, postID, userID string) (model.Post, error)
+	GetPostLikes(ctx context.Context, postID string, params params.Query) ([]model.User, error)
+	GetPostLikesCount(ctx context.Context, postID string) (int64, error)
+	GetPosts(ctx context.Context, eventID, userID string, params params.Query) ([]model.Post, error)
+	GetReplies(ctx context.Context, parentID, userID string, params params.Query) ([]model.Comment, error)
 	LikeComment(ctx context.Context, commentID, userID string) error
 	LikePost(ctx context.Context, postID, userID string) error
-	UpdatePost(ctx context.Context, postID string, post UpdatePost) error
+	UpdatePost(ctx context.Context, postID string, post model.UpdatePost) error
 	UserLikedComment(ctx context.Context, commentID, userID string) (bool, error)
 	UserLikedPost(ctx context.Context, postID, userID string) (bool, error)
 }
 
 type service struct {
 	db                  *sql.DB
-	dc                  *dgo.Dgraph
 	cache               cache.Client
 	notificationService notification.Service
 }
 
 // NewService returns a new post service.
-func NewService(db *sql.DB, dc *dgo.Dgraph, cache cache.Client, notificationService notification.Service) Service {
-	return service{
+func NewService(db *sql.DB, cache cache.Client, notificationService notification.Service) Service {
+	return &service{
 		db:                  db,
-		dc:                  dc,
 		cache:               cache,
 		notificationService: notificationService,
 	}
 }
 
 // ContentMentions handles post and comments mentions by scraping their content.
-func (s service) ContentMentions(ctx context.Context, session auth.Session, content string) error {
+func (s *service) ContentMentions(ctx context.Context, session auth.Session, content string) error {
 	if len(content) < 2 {
 		return nil
 	}
@@ -73,7 +70,7 @@ func (s service) ContentMentions(ctx context.Context, session auth.Session, cont
 	var (
 		stmt *sql.Stmt
 		err  error
-		ntn  notification.CreateNotification
+		ntn  model.CreateNotification
 	)
 	for i, c := range content {
 		if c == '@' {
@@ -83,10 +80,10 @@ func (s service) ContentMentions(ctx context.Context, session auth.Session, cont
 					return errors.Wrap(err, "preparing statement")
 				}
 				defer stmt.Close()
-				ntn = notification.CreateNotification{
+				ntn = model.CreateNotification{
 					SenderID: session.ID,
 					Content:  notification.MentionContent(session),
-					Type:     notification.Mention,
+					Type:     model.Mention,
 				}
 			}
 
@@ -102,12 +99,8 @@ func (s service) ContentMentions(ctx context.Context, session auth.Session, cont
 			username := content[i+1 : end]
 			i = end
 
-			// TODO: save mention dgraph edge between users?
-			// What happens when two users already have mentioned each other, the query is discarted?
-			// Resources are wasted?
-			row := stmt.QueryRowContext(ctx, username)
 			var userID string
-			if err := row.Scan(&userID); err != nil {
+			if err := stmt.QueryRowContext(ctx, username).Scan(&userID); err != nil {
 				continue // user does not exist, skip
 			}
 
@@ -122,60 +115,59 @@ func (s service) ContentMentions(ctx context.Context, session auth.Session, cont
 }
 
 // CreateComments creates a comment inside a post.
-func (s service) CreateComment(ctx context.Context, session auth.Session, commentID string, comment CreateComment) error {
+func (s *service) CreateComment(ctx context.Context, session auth.Session, comment model.CreateComment) (string, error) {
 	sqlTx := txgroup.SQLTx(ctx)
-	dcTx := txgroup.DgraphTx(ctx)
 
+	id := ulid.NewString()
 	q := "INSERT INTO events_posts_comments (id, parent_comment_id, post_id, user_id, content) VALUES ($1, $2, $3, $4, $5)"
-	_, err := sqlTx.ExecContext(ctx, q, commentID,
+	_, err := sqlTx.ExecContext(ctx, q, id,
 		comment.ParentCommentID, comment.PostID, session.ID, comment.Content)
 	if err != nil {
-		return errors.Wrap(err, "creating comment")
+		return "", errors.Wrap(err, "creating comment")
 	}
 
 	if comment.PostID != nil {
 		if _, err := sqlTx.ExecContext(ctx, "UPDATE events_posts SET comments_count = comments_count + 1"); err != nil {
-			return errors.Wrap(err, "updating post comments count")
+			return "", errors.Wrap(err, "updating post comments count")
 		}
 	} else if comment.ParentCommentID != nil {
 		if _, err := sqlTx.ExecContext(ctx, "UPDATE events_posts_comments SET replies_count = replies_count + 1"); err != nil {
-			return errors.Wrap(err, "updating comment replies count")
+			return "", errors.Wrap(err, "updating comment replies count")
 		}
 	}
 
 	if err := s.ContentMentions(ctx, session, comment.Content); err != nil {
-		return err
+		return "", err
 	}
 
-	return dgraph.CreateNode(ctx, dcTx, model.Comment, commentID)
+	return id, nil
 }
 
 // CreatePost adds a post to the event.
-func (s service) CreatePost(ctx context.Context, session auth.Session, postID, eventID string, post CreatePost) error {
+func (s *service) CreatePost(ctx context.Context, session auth.Session, eventID string, post model.CreatePost) (string, error) {
 	sqlTx := txgroup.SQLTx(ctx)
-	dcTx := txgroup.DgraphTx(ctx)
 
+	id := ulid.NewString()
 	q := "INSERT INTO events_posts (id, event_id, content, media) VALUES ($1, $2, $3, $4)"
-	if _, err := sqlTx.ExecContext(ctx, q, postID, eventID, post.Content, post.Media); err != nil {
-		return errors.Wrap(err, "creating post")
+	if _, err := sqlTx.ExecContext(ctx, q, id, eventID, post.Content, post.Media); err != nil {
+		return "", errors.Wrap(err, "creating post")
 	}
 
 	if err := s.ContentMentions(ctx, session, post.Content); err != nil {
-		return err
+		return "", err
 	}
 
-	return dgraph.CreateNode(ctx, dcTx, model.Post, postID)
+	return id, nil
 }
 
 // DeleteComment removes a comment from a post.
-func (s service) DeleteComment(ctx context.Context, commentID string, session auth.Session) error {
+func (s *service) DeleteComment(ctx context.Context, commentID string, session auth.Session) error {
 	sqlTx := txgroup.SQLTx(ctx)
-	dcTx := txgroup.DgraphTx(ctx)
 
 	var userID string
 	q1 := "SELECT user_id FROM events_posts_comments WHERE id=$1"
 	if err := sqlTx.QueryRowContext(ctx, q1, commentID).Scan(&userID); err != nil {
-		return errors.Wrap(err, "fetching comment owner")
+		return errors.Wrap(err, "querying comment owner")
 	}
 
 	if userID != session.ID {
@@ -186,73 +178,73 @@ func (s service) DeleteComment(ctx context.Context, commentID string, session au
 	if _, err := sqlTx.ExecContext(ctx, q2, commentID); err != nil {
 		return errors.Wrap(err, "deleting comment")
 	}
-	return dgraph.DeleteNode(ctx, dcTx, model.Comment, commentID)
+	return nil
 }
 
 // DeletePost removes a post from an event.
-func (s service) DeletePost(ctx context.Context, eventID, postID string) error {
+func (s *service) DeletePost(ctx context.Context, eventID, postID string) error {
 	sqlTx := txgroup.SQLTx(ctx)
-	dcTx := txgroup.DgraphTx(ctx)
 
 	q := "DELETE FROM events_posts WHERE event_id=$1 AND id=$2"
 	if _, err := sqlTx.ExecContext(ctx, q, eventID, postID); err != nil {
 		return errors.Wrap(err, "deleting post")
 	}
-	return dgraph.DeleteNode(ctx, dcTx, model.Post, postID)
+	return nil
 }
 
 // GetComment returns a comment.
-func (s service) GetComment(ctx context.Context, commentID string) (Comment, error) {
+func (s *service) GetComment(ctx context.Context, commentID, userID string) (model.Comment, error) {
 	q := `SELECT 
-	id, parent_comment_id, post_id, user_id, content, 
-	likes_count, replies_count, created_at 
-	FROM events_posts_comments WHERE id=$1`
-	rows, err := s.db.QueryContext(ctx, q, commentID)
+	c.id, c.parent_comment_id, c.post_id, c.user_id, c.content, c.replies_count, c.created_at,
+	(SELECT COUNT(*) FROM events_posts_comments_likes WHERE comment_id = c.id) as likes_count,
+	(SELECT EXISTS(SELECT 1 FROM events_posts_comments_likes WHERE comment_id = c.id AND user_id=$2)) as auth_user_liked
+	FROM events_posts_comments AS c WHERE id=$1`
+	rows, err := s.db.QueryContext(ctx, q, commentID, userID)
 	if err != nil {
-		return Comment{}, errors.Wrap(err, "querying comment")
+		return model.Comment{}, errors.Wrap(err, "querying comment")
 	}
 
-	var comment Comment
+	var comment model.Comment
 	if err := sqan.Row(&comment, rows); err != nil {
-		return Comment{}, errors.Wrap(err, "scanning comment")
-	}
-
-	q2 := postgres.SelectWhere(model.Comment, "parent_comment_id=$1", "id", params.Query{})
-	rows2, err := s.db.QueryContext(ctx, q2, commentID)
-	if err != nil {
-		return Comment{}, errors.Wrap(err, "fetching comment replies")
-	}
-
-	if err := sqan.Rows(&comment.Replies, rows2); err != nil {
-		return Comment{}, err
+		return model.Comment{}, errors.Wrap(err, "scanning comment")
 	}
 
 	return comment, nil
 }
 
 // GetCommentLikes returns a comment's likes.
-func (s service) GetCommentLikes(ctx context.Context, commentID string, params params.Query) ([]model.ListUser, error) {
-	query := commentLikes
-	if params.LookupID != "" {
-		query = commentLikesLookup
+func (s *service) GetCommentLikes(ctx context.Context, commentID string, params params.Query) ([]model.User, error) {
+	q := "SELECT {fields} FROM {table} WHERE id IN (SELECT user_id FROM events_posts_comments_likes WHERE comment_id=$1) {pag}"
+	query := postgres.Select(model.T.User, q, params)
+	rows, err := s.db.QueryContext(ctx, query, commentID)
+	if err != nil {
+		return nil, err
 	}
-	return s.getLikes(ctx, query, commentID, params)
+
+	var users []model.User
+	if err := sqan.Rows(&users, rows); err != nil {
+		return nil, err
+	}
+
+	return users, nil
 }
 
-func (s service) GetCommentLikesCount(ctx context.Context, commentID string) (*uint64, error) {
-	return dgraph.GetCount(ctx, s.dc, queries[commentLikesCount], commentID)
+func (s *service) GetCommentLikesCount(ctx context.Context, commentID string) (int64, error) {
+	q := "SELECT COUNT(*) FROM events_posts_comments_likes WHERE comment_id=$1"
+	return postgres.QueryInt(ctx, s.db, q, commentID)
 }
 
 // GetHomePosts returns a user's home posts.
-func (s service) GetHomePosts(ctx context.Context, session auth.Session, params params.Query) ([]Post, error) {
-	whereCond := "event_id IN (SELECT event_id FROM events_users_roles WHERE user_id=$1 AND role_name != $2)"
-	q := postgres.SelectWhere(model.Post, whereCond, "id", params)
-	rows, err := s.db.QueryContext(ctx, q, session.ID, roles.Viewer)
+func (s *service) GetHomePosts(ctx context.Context, session auth.Session, params params.Query) ([]model.Post, error) {
+	q := `SELECT {fields} FROM {table} WHERE 
+	event_id IN (SELECT event_id FROM events_users_roles WHERE user_id=$1 AND role_name != $2) {pag}`
+	query := postgres.Select(model.T.Post, q, params)
+	rows, err := s.db.QueryContext(ctx, query, session.ID, roles.Viewer)
 	if err != nil {
-		return nil, errors.Wrap(err, "fetching posts")
+		return nil, errors.Wrap(err, "querying posts")
 	}
 
-	var posts []Post
+	var posts []model.Post
 	if err := sqan.Rows(&posts, rows); err != nil {
 		return nil, errors.Wrap(err, "scanning posts")
 	}
@@ -261,165 +253,36 @@ func (s service) GetHomePosts(ctx context.Context, session auth.Session, params 
 }
 
 // GetPost returns a post from an event.
-func (s service) GetPost(ctx context.Context, eventID, postID string) (Post, error) {
+func (s *service) GetPost(ctx context.Context, eventID, postID, userID string) (model.Post, error) {
 	q := `SELECT 
-	id, event_id, content, media, likes_count, comments_count, created_at, updated_at
-	FROM events_posts WHERE event_id=$1 AND id=$2`
-	row := s.db.QueryRowContext(ctx, q, eventID, postID)
+	p.id, p.event_id, p.content, p.media, p.comments_count, p.created_at, p.updated_at,
+	(SELECT COUNT(*) FROM events_posts_likes WHERE post_id = p.id) as likes_count,
+	(SELECT EXISTS(SELECT 1 FROM events_posts_likes WHERE post_id = p.id AND user_id=$3)) as auth_user_liked
+	FROM events_posts AS p WHERE event_id=$1 AND id=$2`
+	row := s.db.QueryRowContext(ctx, q, eventID, postID, userID)
 
-	var post Post
+	var post model.Post
 	err := row.Scan(&post.ID, &post.EventID, &post.Content,
-		&post.Media, &post.LikesCount, &post.CommentsCount,
-		&post.CreatedAt, &post.UpdatedAt)
+		&post.Media, &post.CommentsCount,
+		&post.CreatedAt, &post.UpdatedAt, &post.LikesCount,
+		&post.AuthUserLiked)
 	if err != nil {
-		return Post{}, errors.Wrap(err, "fetching post")
+		return model.Post{}, errors.Wrap(err, "querying post")
 	}
 
 	return post, nil
 }
 
-// GetPostComments returns the first level of comments in a post.
-func (s service) GetPostComments(ctx context.Context, postID string, params params.Query) ([]Comment, error) {
-	q := postgres.SelectWhere(model.Comment, "post_id=$1", "id", params)
-	rows, err := s.db.QueryContext(ctx, q, postID)
-	if err != nil {
-		return nil, errors.Wrap(err, "fetching comments")
-	}
-
-	var comments []Comment
-	if err := sqan.Rows(&comments, rows); err != nil {
-		return nil, errors.Wrap(err, "scanning comments")
-	}
-
-	return comments, nil
-}
-
 // GetPostLikes returns a post's likes.
-func (s service) GetPostLikes(ctx context.Context, postID string, params params.Query) ([]model.ListUser, error) {
-	query := postLikes
-	if params.LookupID != "" {
-		query = postLikesLookup
-	}
-	return s.getLikes(ctx, query, postID, params)
-}
-
-// GetPostLikesCount returns the number of likes in a comment.
-func (s service) GetPostLikesCount(ctx context.Context, postID string) (*uint64, error) {
-	return dgraph.GetCount(ctx, s.dc, queries[postLikesCount], postID)
-}
-
-// GetPosts returns all the posts corresponding to an event.
-func (s service) GetPosts(ctx context.Context, eventID string, params params.Query) ([]Post, error) {
-	q := postgres.SelectWhere(model.Post, "event_id=$1", "id", params)
-	rows, err := s.db.QueryContext(ctx, q, eventID)
+func (s *service) GetPostLikes(ctx context.Context, postID string, params params.Query) ([]model.User, error) {
+	q := "SELECT {fields} FROM {table} WHERE id IN (SELECT user_id FROM events_posts_likes WHERE post_id=$1) {pag}"
+	query := postgres.Select(model.T.User, q, params)
+	rows, err := s.db.QueryContext(ctx, query, postID)
 	if err != nil {
 		return nil, err
 	}
 
-	var posts []Post
-	if err := sqan.Rows(&posts, rows); err != nil {
-		return nil, err
-	}
-
-	return posts, nil
-}
-
-// LikeComment adds a like to a comment, if the like already exists, it removes it.
-func (s service) LikeComment(ctx context.Context, commentID, userID string) error {
-	sqlTx := txgroup.SQLTx(ctx)
-	dcTx := txgroup.DgraphTx(ctx)
-
-	set := true
-	q := "UPDATE events_posts_comments SET likes_count = likes_count+1 WHERE id=$1"
-
-	exists, err := s.likeExists(ctx, commentLikesLookup, commentID, userID)
-	if err != nil {
-		return err
-	}
-	if exists {
-		set = false
-		q = "UPDATE events_posts_comments SET likes_count = likes_count-1 WHERE id=$1"
-	}
-
-	if _, err = sqlTx.ExecContext(ctx, q, commentID); err != nil {
-		return errors.Wrap(err, "updating comment likes count")
-	}
-
-	if _, err := dcTx.Do(ctx, commentMutationReq(commentID, userID, set)); err != nil {
-		return err
-	}
-	return nil
-}
-
-// LikePost adds a like to a post, if the like already exists, it removes it.
-func (s service) LikePost(ctx context.Context, postID, userID string) error {
-	sqlTx := txgroup.SQLTx(ctx)
-	dcTx := txgroup.DgraphTx(ctx)
-
-	set := true
-	q := "UPDATE events_posts SET likes_count = likes_count+1 WHERE id=$1"
-
-	exists, err := s.likeExists(ctx, postLikesLookup, postID, userID)
-	if err != nil {
-		return err
-	}
-	if exists {
-		set = false
-		q = "UPDATE events_posts SET likes_count = likes_count-1 WHERE id=$1"
-	}
-
-	if _, err = sqlTx.ExecContext(ctx, q, postID); err != nil {
-		return errors.Wrap(err, "updating post likes count")
-	}
-
-	if _, err := dcTx.Do(ctx, postMutationReq(postID, userID, set)); err != nil {
-		return err
-	}
-	return nil
-}
-
-// UpdatePost updates an event's post.
-func (s service) UpdatePost(ctx context.Context, postID string, post UpdatePost) error {
-	q := `UPDATE events_posts SET
-	content = COALESCE($3,content)
-	likes = likes + $4
-	WHERE id=$2`
-	if _, err := s.db.ExecContext(ctx, q, postID); err != nil {
-		return errors.Wrap(err, "updating post")
-	}
-	return nil
-}
-
-// UserLikedComment returns whether the user liked the comment or not.
-func (s service) UserLikedComment(ctx context.Context, commentID, userID string) (bool, error) {
-	return s.likeExists(ctx, commentLikesLookup, commentID, userID)
-}
-
-// UserLikedPost returns whether the user liked the post or not.
-func (s service) UserLikedPost(ctx context.Context, postID, userID string) (bool, error) {
-	return s.likeExists(ctx, postLikesLookup, postID, userID)
-}
-
-// getLikes is a helper for retrieving posts and comments likes.
-func (s service) getLikes(ctx context.Context, query query, id string, params params.Query) ([]model.ListUser, error) {
-	vars := dgraph.QueryVars(id, params)
-	res, err := s.dc.NewReadOnlyTxn().QueryRDFWithVars(ctx, queries[query], vars)
-	if err != nil {
-		return nil, errors.Wrap(err, "dgraph: fetching users ids")
-	}
-
-	usersIDs := dgraph.ParseRDFULIDs(res.Rdf)
-	if len(usersIDs) == 0 {
-		return nil, nil
-	}
-
-	q := postgres.SelectInID(model.User, params.Fields, usersIDs)
-	rows, err := s.db.QueryContext(ctx, q)
-	if err != nil {
-		return nil, errors.Wrap(err, "postgres: fetching users")
-	}
-
-	var users []model.ListUser
+	var users []model.User
 	if err := sqan.Rows(&users, rows); err != nil {
 		return nil, err
 	}
@@ -427,13 +290,118 @@ func (s service) getLikes(ctx context.Context, query query, id string, params pa
 	return users, nil
 }
 
-func (s service) likeExists(ctx context.Context, query query, id, userID string) (bool, error) {
-	vars := dgraph.QueryVars(id, params.Query{LookupID: userID})
-	res, err := s.dc.NewReadOnlyTxn().QueryRDFWithVars(ctx, queries[query], vars)
+// GetPostLikesCount returns the number of likes in a comment.
+func (s *service) GetPostLikesCount(ctx context.Context, postID string) (int64, error) {
+	q := "SELECT COUNT(*) FROM events_posts_likes WHERE post_id=$1"
+	return postgres.QueryInt(ctx, s.db, q, postID)
+}
+
+// GetPosts returns all the posts corresponding to an event.
+func (s *service) GetPosts(ctx context.Context, eventID, userID string, params params.Query) ([]model.Post, error) {
+	q := `SELECT 
+	{fields},
+	(SELECT COUNT(*) FROM events_posts_likes WHERE post_id = p.id) as likes_count,
+	(SELECT EXISTS(SELECT 1 FROM events_posts_likes WHERE post_id = p.id AND user_id=$2)) as auth_user_liked
+	FROM {table}
+	WHERE event_id=$1 {pag}`
+	query := postgres.Select(model.T.Post, q, params)
+	rows, err := s.db.QueryContext(ctx, query, eventID, userID)
 	if err != nil {
-		return false, errors.Wrap(err, "dgraph: fetching users ids")
+		return nil, err
 	}
 
-	usersIDs := dgraph.ParseRDFULIDs(res.Rdf)
-	return len(usersIDs) == 1, nil
+	var posts []model.Post
+	if err := sqan.Rows(&posts, rows); err != nil {
+		return nil, err
+	}
+
+	return posts, nil
+}
+
+// GetReplies returns a comment's replies.
+func (s *service) GetReplies(ctx context.Context, parentID, userID string, params params.Query) ([]model.Comment, error) {
+	// TODO: benchmark OR vs UNION
+	q := `SELECT 
+	{fields},
+	(SELECT COUNT(*) FROM events_posts_comments_likes WHERE comment_id = c.id) as likes_count,
+	(SELECT EXISTS(SELECT 1 FROM events_posts_comments_likes WHERE comment_id = c.id AND user_id=$2)) as auth_user_liked
+	FROM {table} WHERE parent_comment_id=$1 OR post_id=$1 {pag}`
+	query := postgres.Select(model.T.Comment, q, params)
+	rows, err := s.db.QueryContext(ctx, query, parentID, userID)
+	if err != nil {
+		return nil, errors.Wrap(err, "querying replies")
+	}
+
+	var comments []model.Comment
+	if err := sqan.Rows(&comments, rows); err != nil {
+		return nil, errors.Wrap(err, "scanning replies")
+	}
+
+	return comments, nil
+}
+
+// LikeComment adds a like to a comment, if the like already exists, it removes it.
+func (s *service) LikeComment(ctx context.Context, commentID, userID string) error {
+	liked, err := s.UserLikedComment(ctx, commentID, userID)
+	if err != nil {
+		return err
+	}
+
+	var q string
+	if liked {
+		q = "DELETE FROM events_posts_comments_likes WHERE comment_id=$1 AND user_id=$2"
+	} else {
+		q = "INSERT INTO events_posts_comments_likes (comment_id, user_id) VALUES ($1, $2)"
+	}
+
+	sqlTx := txgroup.SQLTx(ctx)
+	if _, err = sqlTx.ExecContext(ctx, q, commentID); err != nil {
+		return errors.Wrap(err, "comment like")
+	}
+
+	return nil
+}
+
+// LikePost adds a like to a post, if the like already exists, it removes it.
+func (s *service) LikePost(ctx context.Context, postID, userID string) error {
+	liked, err := s.UserLikedPost(ctx, postID, userID)
+	if err != nil {
+		return err
+	}
+
+	var q string
+	if liked {
+		q = "DELETE FROM events_posts_comments_likes WHERE post_id=$1 AND user_id=$2"
+	} else {
+		q = "INSERT INTO events_posts_likes (post_id, user_id) VALUES ($1, $2)"
+	}
+
+	sqlTx := txgroup.SQLTx(ctx)
+	if _, err = sqlTx.ExecContext(ctx, q, postID); err != nil {
+		return errors.Wrap(err, "post like")
+	}
+	return nil
+}
+
+// UpdatePost updates an event's post.
+func (s service) UpdatePost(ctx context.Context, postID string, post model.UpdatePost) error {
+	q := `UPDATE events_posts SET
+	content = COALESCE($2,content)
+	WHERE id=$1`
+	if _, err := s.db.ExecContext(ctx, q, postID, post.Content); err != nil {
+		return errors.Wrap(err, "updating post")
+	}
+	return nil
+}
+
+// UserLikedComment returns whether the user liked the comment or not.
+func (s *service) UserLikedComment(ctx context.Context, commentID, userID string) (bool, error) {
+	q := "SELECT EXISTS (SELECT 1 FROM comments_likes WHERE comment_id=$1 AND user_id=$2)"
+	return postgres.QueryBool(ctx, s.db, q, commentID, userID)
+}
+
+// UserLikedPost returns whether the user liked the post or not.
+func (s *service) UserLikedPost(ctx context.Context, postID, userID string) (bool, error) {
+	q := "SELECT EXISTS (SELECT 1 FROM posts_likes WHERE comment_id=$1 AND user_id=$2)"
+	return postgres.QueryBool(ctx, s.db, q, postID, userID)
 }

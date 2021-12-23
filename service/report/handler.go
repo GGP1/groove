@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/internal/validate"
 
@@ -33,12 +34,13 @@ func (h *Handler) Create() http.HandlerFunc {
 			return
 		}
 
-		if err := h.service.Create(ctx, report); err != nil {
+		reportID, err := h.service.Create(ctx, report)
+		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		response.JSON(w, http.StatusOK, report)
+		response.JSON(w, http.StatusOK, response.ID{ID: reportID})
 	}
 }
 
@@ -60,5 +62,26 @@ func (h *Handler) Get() http.HandlerFunc {
 		}
 
 		response.JSON(w, http.StatusOK, reports)
+	}
+}
+
+// GetByID looks for a report by its id and returns it.
+func (h *Handler) GetByID() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		id, err := params.IDFromCtx(ctx)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		report, err := h.service.GetByID(ctx, id)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		response.JSON(w, http.StatusOK, report)
 	}
 }

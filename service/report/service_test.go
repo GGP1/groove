@@ -57,7 +57,7 @@ func TestReports(t *testing.T) {
 			Type:       expectedType,
 			Details:    "-",
 		}
-		err = reportSv.Create(ctx, report)
+		_, err = reportSv.Create(ctx, report)
 		assert.NoError(t, err)
 	})
 

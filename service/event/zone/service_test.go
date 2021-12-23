@@ -8,11 +8,10 @@ import (
 	"testing"
 
 	"github.com/GGP1/groove/internal/cache"
-	"github.com/GGP1/groove/internal/ulid"
+	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/event/zone"
 	"github.com/GGP1/groove/test"
 
-	"github.com/dgraph-io/dgo/v210"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 )
@@ -20,16 +19,11 @@ import (
 var (
 	zoneSv      zone.Service
 	db          *sql.DB
-	dc          *dgo.Dgraph
 	cacheClient cache.Client
 )
 
 func TestMain(m *testing.M) {
 	pgContainer, postgres, err := test.RunPostgres()
-	if err != nil {
-		log.Fatal(err)
-	}
-	dcContainer, dgraph, conn, err := test.RunDgraph()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -39,19 +33,12 @@ func TestMain(m *testing.M) {
 	}
 
 	db = postgres
-	dc = dgraph
 	cacheClient = memcached
 	zoneSv = zone.NewService(db, cacheClient)
 
 	code := m.Run()
 
 	if err := pgContainer.Close(); err != nil {
-		log.Fatal(err)
-	}
-	if err := conn.Close(); err != nil {
-		log.Fatal(err)
-	}
-	if err := dcContainer.Close(); err != nil {
 		log.Fatal(err)
 	}
 	if err := mcContainer.Close(); err != nil {
@@ -63,15 +50,13 @@ func TestMain(m *testing.M) {
 
 func TestZone(t *testing.T) {
 	ctx := context.Background()
-	eventID := ulid.NewString()
-	err := test.CreateEvent(ctx, db, dc, eventID, "name")
-	assert.NoError(t, err)
+	eventID := test.CreateEvent(t, db, "name")
 
-	createZone := zone.Zone{
+	createZone := model.Zone{
 		Name:                   "zone",
 		RequiredPermissionKeys: pq.StringArray{"access_zones", "edit_zones", "invite_users"},
 	}
-	err = zoneSv.Create(ctx, eventID, createZone)
+	err := zoneSv.Create(ctx, eventID, createZone)
 	assert.NoError(t, err)
 
 	zones, err := zoneSv.Get(ctx, eventID)
@@ -79,7 +64,7 @@ func TestZone(t *testing.T) {
 	assert.Equal(t, 1, len(zones))
 	assert.Equal(t, createZone, zones[0])
 
-	updateZone := zone.UpdateZone{
+	updateZone := model.UpdateZone{
 		RequiredPermissionKeys: &pq.StringArray{"access_zones"},
 	}
 	err = zoneSv.Update(ctx, eventID, createZone.Name, updateZone)

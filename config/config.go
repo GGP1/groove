@@ -19,7 +19,6 @@ type Config struct {
 	TLS           TLS
 	Logger        Logger
 	Notifications Notifications
-	Dgraph        Dgraph
 	Memcached     Memcached
 	Postgres      Postgres
 	Redis         Redis
@@ -27,13 +26,6 @@ type Config struct {
 	Sessions      Sessions
 	RateLimiter   RateLimiter
 	Development   bool
-}
-
-// Dgraph configuration.
-type Dgraph struct {
-	Host            string
-	TLSCertificates []tls.Certificate
-	Port            int
 }
 
 // Logger contains Zap's configurations.
@@ -168,7 +160,6 @@ func New() (Config, error) {
 		certificates = []tls.Certificate{cert}
 	}
 
-	config.Dgraph.TLSCertificates = certificates
 	config.Redis.TLSCertificates = certificates
 	config.Server.TLSCertificates = certificates
 
@@ -225,10 +216,6 @@ var (
 	defaults = map[string]interface{}{
 		"admins":      map[string]interface{}{},
 		"development": true,
-		"dgraph": map[string]interface{}{
-			"host": "localhost",
-			"port": 9080,
-		},
 		"logger": map[string]interface{}{
 			"outFiles": []string{},
 		},
@@ -301,9 +288,6 @@ var (
 		"admins": "ADMINS",
 		// Development
 		"development": "DEVELOPMENT",
-		// Dgraph
-		"dgraph.host": "DGRAPH_HOST",
-		"dgraph.port": "DGRAPH_PORT",
 		// Logger
 		"logger.outFiles": "LOGGER_OUT_FILES",
 		// Memcached

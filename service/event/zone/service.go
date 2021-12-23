@@ -7,6 +7,7 @@ import (
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/txgroup"
+	"github.com/GGP1/groove/model"
 	"github.com/GGP1/sqan"
 
 	"github.com/pkg/errors"
@@ -14,11 +15,11 @@ import (
 
 // Service is the interface containing all the method for event zones.
 type Service interface {
-	Create(ctx context.Context, eventID string, zone Zone) error
+	Create(ctx context.Context, eventID string, zone model.Zone) error
 	Delete(ctx context.Context, eventID, name string) error
-	GetByName(ctx context.Context, eventID, name string) (Zone, error)
-	Get(ctx context.Context, eventID string) ([]Zone, error)
-	Update(ctx context.Context, eventID, name string, updateZone UpdateZone) error
+	GetByName(ctx context.Context, eventID, name string) (model.Zone, error)
+	Get(ctx context.Context, eventID string) ([]model.Zone, error)
+	Update(ctx context.Context, eventID, name string, updateZone model.UpdateZone) error
 }
 
 type service struct {
@@ -28,14 +29,14 @@ type service struct {
 
 // NewService returns a new zones service.
 func NewService(db *sql.DB, cache cache.Client) Service {
-	return service{
+	return &service{
 		db:    db,
 		cache: cache,
 	}
 }
 
 // Create creates a zone inside an event.
-func (s service) Create(ctx context.Context, eventID string, zone Zone) error {
+func (s *service) Create(ctx context.Context, eventID string, zone model.Zone) error {
 	sqlTx := txgroup.SQLTx(ctx)
 
 	q1 := "SELECT EXISTS(SELECT 1 FROM events_permissions WHERE event_id=$1 AND key=$2)"
@@ -69,7 +70,7 @@ func (s service) Create(ctx context.Context, eventID string, zone Zone) error {
 }
 
 // Delete removes a zone from the event.
-func (s service) Delete(ctx context.Context, eventID, name string) error {
+func (s *service) Delete(ctx context.Context, eventID, name string) error {
 	q := "DELETE FROM events_zones WHERE event_id=$1 AND name=$2"
 	if _, err := s.db.ExecContext(ctx, q, eventID, name); err != nil {
 		return errors.Wrap(err, "deleting zone")
@@ -83,27 +84,27 @@ func (s service) Delete(ctx context.Context, eventID, name string) error {
 }
 
 // GetByName returns the permission keys required to enter a zone.
-func (s service) GetByName(ctx context.Context, eventID, name string) (Zone, error) {
+func (s *service) GetByName(ctx context.Context, eventID, name string) (model.Zone, error) {
 	q := "SELECT name, required_permission_keys FROM events_zones WHERE event_id=$1 AND name=$2"
 	row := s.db.QueryRowContext(ctx, q, eventID, name)
 
-	var zone Zone
+	var zone model.Zone
 	if err := row.Scan(&zone.Name, &zone.RequiredPermissionKeys); err != nil {
-		return Zone{}, errors.Wrap(err, "scanning zone required permission keys")
+		return model.Zone{}, errors.Wrap(err, "scanning zone required permission keys")
 	}
 
 	return zone, nil
 }
 
 // Get gets an event's zones.
-func (s service) Get(ctx context.Context, eventID string) ([]Zone, error) {
+func (s *service) Get(ctx context.Context, eventID string) ([]model.Zone, error) {
 	q := "SELECT name, required_permission_keys FROM events_zones WHERE event_id=$1"
 	rows, err := s.db.QueryContext(ctx, q, eventID)
 	if err != nil {
-		return nil, errors.Wrap(err, "fetching event zones")
+		return nil, errors.Wrap(err, "querying event zones")
 	}
 
-	var zones []Zone
+	var zones []model.Zone
 	if err := sqan.Rows(&zones, rows); err != nil {
 		return nil, errors.Wrap(err, "scanning zones")
 	}
@@ -112,15 +113,13 @@ func (s service) Get(ctx context.Context, eventID string) ([]Zone, error) {
 }
 
 // Update sets new values for an event's zone.
-func (s service) Update(ctx context.Context, eventID, name string, zone UpdateZone) error {
-	if err := zone.Validate(); err != nil {
-		return err
-	}
+func (s *service) Update(ctx context.Context, eventID, name string, zone model.UpdateZone) error {
+	sqlTx := txgroup.SQLTx(ctx)
 
 	q := `UPDATE events_zones SET
 	required_permission_keys = COALESCE($3, required_permission_keys)
 	WHERE event_id=$1 AND name=$2`
-	if _, err := s.db.ExecContext(ctx, q, eventID, name, zone.RequiredPermissionKeys); err != nil {
+	if _, err := sqlTx.ExecContext(ctx, q, eventID, name, zone.RequiredPermissionKeys); err != nil {
 		return errors.Wrap(err, "updating role")
 	}
 

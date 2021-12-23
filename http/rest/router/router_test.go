@@ -22,11 +22,10 @@ func TestNew(t *testing.T) {
 	assert.NoError(t, err)
 
 	db := test.StartPostgres(t)
-	dc := test.StartDgraph(t)
 	mc := test.StartMemcached(t)
 	rdb := test.StartRedis(t)
 
-	srv := httptest.NewServer(router.New(cfg, db, dc, rdb, mc))
+	srv := httptest.NewServer(router.New(cfg, db, rdb, mc))
 	defer srv.Close()
 
 	res, err := srv.Client().Get(srv.URL)

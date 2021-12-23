@@ -8,6 +8,7 @@ import (
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/internal/validate"
+	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/auth"
 	"github.com/GGP1/groove/storage/postgres"
 )
@@ -28,7 +29,7 @@ func NewHandler(db *sql.DB, service Service) Handler {
 }
 
 // Available returns the number of available tickets.
-func (h Handler) Available() http.HandlerFunc {
+func (h *Handler) Available() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -49,7 +50,7 @@ func (h Handler) Available() http.HandlerFunc {
 }
 
 // Buy performs the operations necessary when a ticket is bought.
-func (h Handler) Buy() http.HandlerFunc {
+func (h *Handler) Buy() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -98,7 +99,7 @@ func (h Handler) Buy() http.HandlerFunc {
 }
 
 // Create adds n tickets to the event.
-func (h Handler) Create() http.HandlerFunc {
+func (h *Handler) Create() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -108,7 +109,7 @@ func (h Handler) Create() http.HandlerFunc {
 			return
 		}
 
-		var ticket Ticket
+		var ticket model.Ticket
 		if err := json.NewDecoder(r.Body).Decode(&ticket); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -133,7 +134,7 @@ func (h Handler) Create() http.HandlerFunc {
 }
 
 // Delete removes a ticket from the event.
-func (h Handler) Delete() http.HandlerFunc {
+func (h *Handler) Delete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -161,7 +162,7 @@ func (h Handler) Delete() http.HandlerFunc {
 }
 
 // Get returns an event's tickets.
-func (h Handler) Get() http.HandlerFunc {
+func (h *Handler) Get() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -182,7 +183,7 @@ func (h Handler) Get() http.HandlerFunc {
 }
 
 // GetByName returns the ticket with the given name.
-func (h Handler) GetByName() http.HandlerFunc {
+func (h *Handler) GetByName() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -203,7 +204,7 @@ func (h Handler) GetByName() http.HandlerFunc {
 }
 
 // Refund performs the operations necessary when a ticket is refunded.
-func (h Handler) Refund() http.HandlerFunc {
+func (h *Handler) Refund() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -237,7 +238,7 @@ func (h Handler) Refund() http.HandlerFunc {
 }
 
 // Update updates a ticket from the event.
-func (h Handler) Update() http.HandlerFunc {
+func (h *Handler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -247,7 +248,7 @@ func (h Handler) Update() http.HandlerFunc {
 			return
 		}
 
-		var updateTicket UpdateTicket
+		var updateTicket model.UpdateTicket
 		if err := json.NewDecoder(r.Body).Decode(&updateTicket); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
