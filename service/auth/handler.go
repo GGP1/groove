@@ -6,6 +6,7 @@ import (
 
 	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/internal/sanitize"
+	"github.com/GGP1/groove/model"
 
 	"github.com/pkg/errors"
 )
@@ -39,7 +40,7 @@ func (h *Handler) BasicAuth() http.HandlerFunc {
 			return
 		}
 
-		login := Login{
+		login := model.Login{
 			Username: sanitize.Normalize(username),
 			Password: sanitize.Normalize(password),
 		}
@@ -63,7 +64,7 @@ func (h *Handler) Login() http.HandlerFunc {
 			return
 		}
 
-		var login Login
+		var login model.Login
 		if err := json.NewDecoder(r.Body).Decode(&login); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -74,7 +75,6 @@ func (h *Handler) Login() http.HandlerFunc {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
-
 		login.Username = sanitize.Normalize(login.Username)
 		login.Password = sanitize.Normalize(login.Password)
 

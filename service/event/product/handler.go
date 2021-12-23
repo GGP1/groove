@@ -7,7 +7,6 @@ import (
 
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/response"
-	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/internal/validate"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/storage/postgres"
@@ -31,7 +30,7 @@ func NewHandler(db *sql.DB, service Service) Handler {
 }
 
 // Create creates an image/video inside an event.
-func (h Handler) Create() http.HandlerFunc {
+func (h *Handler) Create() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -41,7 +40,7 @@ func (h Handler) Create() http.HandlerFunc {
 			return
 		}
 
-		var product Product
+		var product model.Product
 		if err := json.NewDecoder(r.Body).Decode(&product); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -56,8 +55,8 @@ func (h Handler) Create() http.HandlerFunc {
 		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
-		productID := ulid.NewString()
-		if err := h.service.Create(ctx, productID, eventID, product); err != nil {
+		productID, err := h.service.Create(ctx, eventID, product)
+		if err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -72,7 +71,7 @@ func (h Handler) Create() http.HandlerFunc {
 }
 
 // Delete removes a product from an event.
-func (h Handler) Delete() http.HandlerFunc {
+func (h *Handler) Delete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -102,7 +101,7 @@ func (h Handler) Delete() http.HandlerFunc {
 }
 
 // Get gets the products of an event.
-func (h Handler) Get() http.HandlerFunc {
+func (h *Handler) Get() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -112,7 +111,7 @@ func (h Handler) Get() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.Parse(r.URL.RawQuery, model.Product)
+		params, err := params.Parse(r.URL.RawQuery, model.T.Product)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -134,7 +133,7 @@ func (h Handler) Get() http.HandlerFunc {
 }
 
 // Update updates a product of an event.
-func (h Handler) Update() http.HandlerFunc {
+func (h *Handler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -146,7 +145,7 @@ func (h Handler) Update() http.HandlerFunc {
 			return
 		}
 
-		var product UpdateProduct
+		var product model.UpdateProduct
 		if err := json.NewDecoder(r.Body).Decode(&product); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return

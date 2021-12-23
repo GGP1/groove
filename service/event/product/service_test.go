@@ -9,6 +9,7 @@ import (
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/internal/ulid"
+	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/event/product"
 	"github.com/GGP1/groove/test"
 
@@ -61,7 +62,7 @@ func TestCreateProduct(t *testing.T) {
 	err := createEvent(eventID, "create_product")
 	assert.NoError(t, err)
 
-	product := product.Product{
+	product := model.Product{
 		EventID:     eventID,
 		Stock:       12,
 		Brand:       "brand",
@@ -72,8 +73,7 @@ func TestCreateProduct(t *testing.T) {
 		Total:       7,
 		Description: "TestCreatePermission",
 	}
-	id := ulid.NewString()
-	err = productSv.Create(ctx, id, eventID, product)
+	_, err = productSv.Create(ctx, eventID, product)
 	assert.NoError(t, err)
 }
 

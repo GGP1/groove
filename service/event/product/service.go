@@ -8,6 +8,7 @@ import (
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/txgroup"
+	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/storage/postgres"
 	"github.com/GGP1/sqan"
@@ -17,10 +18,10 @@ import (
 
 // Service interface for the products service.
 type Service interface {
-	Create(ctx context.Context, productID, eventID string, product Product) error
+	Create(ctx context.Context, eventID string, product model.Product) (string, error)
 	Delete(ctx context.Context, eventID, productID string) error
-	Get(ctx context.Context, eventID string, params params.Query) ([]Product, error)
-	Update(ctx context.Context, eventID, productID string, product UpdateProduct) error
+	Get(ctx context.Context, eventID string, params params.Query) ([]model.Product, error)
+	Update(ctx context.Context, eventID, productID string, product model.UpdateProduct) error
 }
 
 type service struct {
@@ -30,32 +31,33 @@ type service struct {
 
 // NewService returns a new products service.
 func NewService(db *sql.DB, cache cache.Client) Service {
-	return service{
+	return &service{
 		db:    db,
 		cache: cache,
 	}
 }
 
 // Create adds a product to the event.
-func (s service) Create(ctx context.Context, productID, eventID string, product Product) error {
+func (s service) Create(ctx context.Context, eventID string, product model.Product) (string, error) {
 	sqlTx := txgroup.SQLTx(ctx)
 
+	id := ulid.NewString()
 	q := `INSERT INTO events_products 
 	(id, event_id, stock, brand, type, description, discount, taxes, subtotal, total) 
 	VALUES 
 	($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
-	_, err := sqlTx.ExecContext(ctx, q, productID, product.EventID, product.Stock,
+	_, err := sqlTx.ExecContext(ctx, q, id, product.EventID, product.Stock,
 		product.Brand, product.Type, product.Description, product.Discount, product.Taxes,
 		product.Subtotal, product.Total)
 	if err != nil {
-		return errors.Wrap(err, "creating product")
+		return "", errors.Wrap(err, "creating product")
 	}
 
-	return nil
+	return id, nil
 }
 
 // Delete removes a product from an event.
-func (s service) Delete(ctx context.Context, eventID, productID string) error {
+func (s *service) Delete(ctx context.Context, eventID, productID string) error {
 	sqlTx := txgroup.SQLTx(ctx)
 
 	q := "DELETE FROM events_products WHERE event_id=$1 AND id=$2"
@@ -66,14 +68,15 @@ func (s service) Delete(ctx context.Context, eventID, productID string) error {
 }
 
 // Get returns the products from an event.
-func (s service) Get(ctx context.Context, eventID string, params params.Query) ([]Product, error) {
-	q := postgres.SelectWhere(model.Product, "event_id=$1", "id", params)
-	rows, err := s.db.QueryContext(ctx, q, eventID)
+func (s *service) Get(ctx context.Context, eventID string, params params.Query) ([]model.Product, error) {
+	q := "SELECT {fields} FROM {table} WHERE event_id=$1 {pag}"
+	query := postgres.Select(model.T.Product, q, params)
+	rows, err := s.db.QueryContext(ctx, query, eventID)
 	if err != nil {
 		return nil, err
 	}
 
-	var products []Product
+	var products []model.Product
 	if err := sqan.Rows(&products, rows); err != nil {
 		return nil, err
 	}
@@ -82,7 +85,7 @@ func (s service) Get(ctx context.Context, eventID string, params params.Query) (
 }
 
 // Update updates an event product.
-func (s service) Update(ctx context.Context, eventID, productID string, product UpdateProduct) error {
+func (s service) Update(ctx context.Context, eventID, productID string, product model.UpdateProduct) error {
 	sqlTx := txgroup.SQLTx(ctx)
 
 	q := `UPDATE events_products SET

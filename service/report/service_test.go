@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/GGP1/groove/internal/ulid"
+	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/report"
 	"github.com/GGP1/groove/test"
 
@@ -51,7 +52,7 @@ func TestReports(t *testing.T) {
 
 	expectedType := "report"
 	t.Run("CreateReport", func(t *testing.T) {
-		report := report.CreateReport{
+		report := model.CreateReport{
 			ReportedID: eventID,
 			ReporterID: userID,
 			Type:       expectedType,

@@ -1,22 +1,19 @@
-package auth
+package model
 
 import (
-	"errors"
-
-	"github.com/GGP1/groove/model"
-
 	"github.com/oklog/ulid/v2"
+	"github.com/pkg/errors"
 )
 
-// userSession is used when logging a user in.
-type userSession struct {
-	ProfileImageURL string         `json:"profile_image_url,omitempty" db:"profile_image_url"`
-	Email           string         `json:"email"`
-	Username        string         `json:"username"`
-	Password        string         `json:"-"`
-	ID              ulid.ULID      `json:"id"`
-	VerifiedEmail   bool           `json:"verified_email" db:"verified_email"`
-	Type            model.UserType `json:"type"`
+// UserSession is used when logging a user in.
+type UserSession struct {
+	ProfileImageURL string    `json:"profile_image_url,omitempty" db:"profile_image_url"`
+	Email           string    `json:"email"`
+	Username        string    `json:"username"`
+	Password        string    `json:"-"`
+	ID              ulid.ULID `json:"id"`
+	VerifiedEmail   bool      `json:"verified_email" db:"verified_email"`
+	Type            UserType  `json:"type"`
 }
 
 // Login is used to decode the input received on a Login attempt.

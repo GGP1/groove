@@ -1,9 +1,8 @@
-package zone
+package model
 
 import (
-	"errors"
-
 	"github.com/lib/pq"
+	"github.com/pkg/errors"
 )
 
 // Zone represents a zone inside an event.

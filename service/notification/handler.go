@@ -25,7 +25,7 @@ func NewHandler(db *sql.DB, service Service) Handler {
 }
 
 // Answer handles the accept or decline of a notification.
-func (h Handler) Answer() http.HandlerFunc {
+func (h *Handler) Answer() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -66,7 +66,7 @@ func (h Handler) Answer() http.HandlerFunc {
 }
 
 // GetFromUser returns a user's notifications.
-func (h Handler) GetFromUser() http.HandlerFunc {
+func (h *Handler) GetFromUser() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -87,7 +87,7 @@ func (h Handler) GetFromUser() http.HandlerFunc {
 			return
 		}
 
-		params, err := params.Parse(r.URL.RawQuery, model.Notification)
+		params, err := params.Parse(r.URL.RawQuery, model.T.Notification)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return

@@ -4,6 +4,7 @@ import (
 	"text/template"
 
 	"github.com/GGP1/groove/internal/bufferpool"
+	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/auth"
 
 	"firebase.google.com/go/v4/messaging"
@@ -34,7 +35,7 @@ func NewMessage(receiverToken, title, body, imageURL string) *messaging.Message 
 }
 
 // NewTopicMessage is like NewMessage but for a certain topic.
-func NewTopicMessage(receiverToken, title, body string, topic topic) *messaging.Message {
+func NewTopicMessage(receiverToken, title, body string, topic model.Topic) *messaging.Message {
 	return &messaging.Message{
 		Token: receiverToken,
 		Notification: &messaging.Notification{

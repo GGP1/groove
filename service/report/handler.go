@@ -7,6 +7,7 @@ import (
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/internal/validate"
+	"github.com/GGP1/groove/model"
 
 	"github.com/julienschmidt/httprouter"
 )
@@ -28,7 +29,7 @@ func (h *Handler) Create() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		var report CreateReport
+		var report model.CreateReport
 		if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return

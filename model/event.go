@@ -1,9 +1,10 @@
-package event
+package model
 
 import (
 	"time"
 
 	"github.com/GGP1/groove/internal/validate"
+
 	"github.com/pkg/errors"
 )
 
@@ -13,7 +14,7 @@ import (
 type Event struct {
 	HeaderURL   *string    `json:"header_url,omitempty" db:"header_url"`
 	CreatedAt   *time.Time `json:"created_at,omitempty" db:"created_at"`
-	Slots       *uint64    `json:"slots,omitempty"`
+	Slots       *int64     `json:"slots,omitempty"`
 	Public      *bool      `json:"public,omitempty"`
 	Virtual     *bool      `json:"virtual,omitempty"`
 	Location    *Location  `json:"location,omitempty"`
@@ -31,12 +32,12 @@ type Event struct {
 	Type        eventType  `json:"type,omitempty"`
 }
 
-// Statistics contains statistics from an event.
-type Statistics struct {
-	Banned  *uint64 `json:"banned_count,omitempty"`
-	Invited *uint64 `json:"invited_count,omitempty"`
-	Likes   *uint64 `json:"likes_count,omitempty"`
-	Members int64   `json:"members_count,omitempty"`
+// EventStatistics contains statistics from an event.
+type EventStatistics struct {
+	Banned  int64 `json:"banned_count,omitempty"`
+	Invited int64 `json:"invited_count,omitempty"`
+	Likes   int64 `json:"likes_count,omitempty"`
+	Members int64 `json:"members_count,omitempty"`
 }
 
 // CreateEvent is the structure used to create an event.
@@ -53,7 +54,7 @@ type CreateEvent struct {
 	Cron        string     `json:"cron,omitempty"`
 	Description string     `json:"description,omitempty"`
 	Name        string     `json:"name,omitempty"`
-	Slots       uint64     `json:"slots,omitempty"`
+	Slots       int64      `json:"slots,omitempty"`
 	MinAge      uint16     `json:"min_age,omitempty" db:"min_age"`
 	TicketType  ticketType `json:"ticket_type,omitempty" db:"ticket_type"`
 	Type        eventType  `json:"type,omitempty"`
@@ -83,6 +84,9 @@ func (c CreateEvent) Validate() error {
 	}
 	if c.Type < Meeting && c.Type > Campsite {
 		return errors.New("invalid type")
+	}
+	if c.Slots < -1 {
+		return errors.New("slots must be equal to or higher than -1")
 	}
 	if c.Location != nil {
 		if len(c.Location.Address) > 120 {
@@ -148,7 +152,7 @@ type UpdateEvent struct {
 	StartDate   *time.Time `json:"start_date,omitempty" db:"start_date"`
 	EndDate     *time.Time `json:"end_date,omitempty" db:"end_date"`
 	MinAge      *uint16    `json:"min_age,omitempty" db:"min_age"`
-	Slots       *uint64    `json:"slots,omitempty"`
+	Slots       *int64     `json:"slots,omitempty"`
 }
 
 // Validate verifies the values inside the struct are valid.
@@ -202,8 +206,8 @@ func (u UpdateEvent) Validate() error {
 		}
 	}
 	if u.Slots != nil {
-		if *u.Slots == 0 {
-			return errors.New("slots must be higher than zero")
+		if *u.Slots < -1 {
+			return errors.New("slots must be equal to or higher than -1")
 		}
 	}
 	return nil

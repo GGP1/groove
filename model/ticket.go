@@ -1,9 +1,8 @@
-package ticket
+package model
 
 import (
-	"errors"
-
 	"github.com/GGP1/groove/internal/validate"
+	"github.com/pkg/errors"
 )
 
 // Use sockets to update the availability of the tickets in real time to the users

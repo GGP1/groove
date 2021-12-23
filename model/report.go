@@ -1,4 +1,4 @@
-package report
+package model
 
 import (
 	"errors"

@@ -9,6 +9,8 @@ import (
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/response"
+	"github.com/GGP1/groove/model"
+	"github.com/GGP1/groove/service/auth"
 	"github.com/GGP1/groove/service/event/role"
 	"github.com/GGP1/groove/storage/postgres"
 )
@@ -33,9 +35,15 @@ func NewHandler(db *sql.DB, cache cache.Client, service Service, roleService rol
 }
 
 // Access checks if the authenticated user is allowed to enter the zone or not.
-func (h Handler) Access() http.HandlerFunc {
+func (h *Handler) Access() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+
+		session, err := auth.GetSession(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
 
 		eventID, zoneName, err := params.IDAndNameFromCtx(ctx)
 		if err != nil {
@@ -49,7 +57,7 @@ func (h Handler) Access() http.HandlerFunc {
 			return
 		}
 
-		if err := h.roleService.RequirePermissions(ctx, r, eventID, zone.RequiredPermissionKeys...); err != nil {
+		if err := h.roleService.RequirePermissions(ctx, session, eventID, zone.RequiredPermissionKeys...); err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
 		}
@@ -59,7 +67,7 @@ func (h Handler) Access() http.HandlerFunc {
 }
 
 // Create creates a new zone inside an event.
-func (h Handler) Create() http.HandlerFunc {
+func (h *Handler) Create() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -69,7 +77,7 @@ func (h Handler) Create() http.HandlerFunc {
 			return
 		}
 
-		var zone Zone
+		var zone model.Zone
 		if err := json.NewDecoder(r.Body).Decode(&zone); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -95,7 +103,7 @@ func (h Handler) Create() http.HandlerFunc {
 }
 
 // Delete removes a zone from an event.
-func (h Handler) Delete() http.HandlerFunc {
+func (h *Handler) Delete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -115,7 +123,7 @@ func (h Handler) Delete() http.HandlerFunc {
 }
 
 // Get fetches all the zones from an event.
-func (h Handler) Get() http.HandlerFunc {
+func (h *Handler) Get() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -142,7 +150,7 @@ func (h Handler) Get() http.HandlerFunc {
 }
 
 // GetByName retrieves a zone in an event with the given name.
-func (h Handler) GetByName() http.HandlerFunc {
+func (h *Handler) GetByName() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -163,7 +171,7 @@ func (h Handler) GetByName() http.HandlerFunc {
 }
 
 // Update updates an event's zone.
-func (h Handler) Update() http.HandlerFunc {
+func (h *Handler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -173,7 +181,7 @@ func (h Handler) Update() http.HandlerFunc {
 			return
 		}
 
-		var zone UpdateZone
+		var zone model.UpdateZone
 		if err := json.NewDecoder(r.Body).Decode(&zone); err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
@@ -185,7 +193,15 @@ func (h Handler) Update() http.HandlerFunc {
 			return
 		}
 
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
+
 		if err := h.service.Update(ctx, eventID, zoneName, zone); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		if err := sqlTx.Commit(); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
