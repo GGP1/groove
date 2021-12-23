@@ -20,7 +20,6 @@ import (
 	"github.com/GGP1/groove/service/report"
 	"github.com/GGP1/groove/service/user"
 
-	"github.com/dgraph-io/dgo/v210"
 	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -43,18 +42,18 @@ type register struct {
 	config       config.Config
 }
 
-func registerEndpoints(router *Router, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Client, cache cache.Client, config config.Config) {
+func registerEndpoints(router *Router, db *sql.DB, rdb *redis.Client, cache cache.Client, config config.Config) {
 	authService := auth.NewService(db, rdb, config.Sessions)
-	roleService := role.NewService(db, dc, cache)
-	notificationService := notification.NewService(db, dc, config.Notifications, authService, roleService)
-	eventService := event.NewService(db, dc, cache, notificationService, roleService)
-	postService := post.NewService(db, dc, cache, notificationService)
+	roleService := role.NewService(db, cache)
+	notificationService := notification.NewService(db, config.Notifications, authService, roleService)
+	eventService := event.NewService(db, cache, notificationService, roleService)
+	postService := post.NewService(db, cache, notificationService)
 	productService := product.NewService(db, cache)
-	userService := user.NewService(db, dc, cache, config.Admins, notificationService, roleService)
+	userService := user.NewService(db, cache, config.Admins, notificationService)
 	ticketService := ticket.NewService(db, cache, roleService)
 	zoneService := zone.NewService(db, cache)
 
-	register := &register{
+	register := register{
 		config: config,
 		router: router,
 		authMw: middleware.NewAuth(db, authService, eventService, userService, roleService),
@@ -68,7 +67,7 @@ func registerEndpoints(router *Router, db *sql.DB, dc *dgo.Dgraph, rdb *redis.Cl
 		role:         role.NewHandler(db, cache, roleService),
 		notification: notification.NewHandler(db, notificationService),
 		event:        event.NewHandler(db, cache, eventService, roleService),
-		post:         post.NewHandler(db, dc, postService),
+		post:         post.NewHandler(db, postService),
 		product:      product.NewHandler(db, productService),
 		report:       report.NewHandler(report.NewService(db)),
 		user:         user.NewHandler(db, cache, userService),
@@ -133,9 +132,9 @@ func (r register) Events() {
 	{
 		bans.use(r.authMw.NotBanned)
 		bans.get("/", r.event.GetBans(), r.authMw.EventPrivacyFilter)
-		bans.post("/add", r.event.AddBanned(), r.authMw.RequirePermissions(permissions.BanUsers))
+		bans.post("/ban", r.event.Ban(), r.authMw.RequirePermissions(permissions.BanUsers))
 		bans.get("/friends", r.event.GetBannedFriends(), r.authMw.EventPrivacyFilter)
-		bans.post("/remove", r.event.RemoveBanned(), r.authMw.RequirePermissions(permissions.BanUsers))
+		bans.post("/remove", r.event.RemoveBan(), r.authMw.RequirePermissions(permissions.BanUsers))
 	}
 
 	// /events/:id/invited
@@ -154,8 +153,8 @@ func (r register) Events() {
 	{
 		likes.use(r.authMw.NotBanned, r.authMw.EventPrivacyFilter)
 		likes.get("/", r.event.GetLikes())
-		likes.post("/add", r.event.AddLike())
 		likes.get("/friends", r.event.GetLikedByFriends())
+		likes.post("/like", r.event.Like())
 		likes.post("/remove", r.event.RemoveLike())
 	}
 }
@@ -167,8 +166,8 @@ func (r register) Posts() {
 	posts.use(r.authMw.NotBanned)
 
 	posts.get("/", r.post.GetPosts(), r.authMw.EventPrivacyFilter)
+	posts.get("/:parent_id/replies", r.post.GetReplies(), r.authMw.EventPrivacyFilter)
 	posts.get("/:post_id", r.post.GetPost(), r.authMw.EventPrivacyFilter)
-	posts.get("/:post_id/comments", r.post.GetPostComments(), r.authMw.EventPrivacyFilter)
 	posts.get("/:post_id/like", r.post.LikePost(), r.authMw.EventPrivacyFilter)
 	posts.get("/:post_id/likes", r.post.GetPostLikes(), r.authMw.EventPrivacyFilter)
 	posts.get("/:post_id/liked", r.post.UserLikedPost(), r.authMw.EventPrivacyFilter)
@@ -263,6 +262,7 @@ func (r register) Reports() {
 	reports := r.router.group("/reports")
 
 	reports.get("/", r.report.Get(), r.authMw.AdminsOnly)
+	reports.get("/:id", r.report.GetByID(), r.authMw.AdminsOnly)
 	reports.post("/create", r.report.Create(), r.authMw.RequireLogin)
 }
 

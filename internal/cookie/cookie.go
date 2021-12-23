@@ -13,7 +13,7 @@ import (
 const (
 	// Session is the name of the cookie used to store session information.
 	Session = "SID"
-	maxAge  = 86400 * 15
+	maxAge  = 0x13C680
 )
 
 // Considerations before choosing between standard (Set) and secure (SetSecure) cookies.

@@ -34,7 +34,8 @@ func Get(ctx context.Context, r *http.Request) string {
 
 	ip := fromRequest(r)
 	// Add ip to the request context
-	*r = *r.WithContext(context.WithValue(ctx, userIPKey, ip))
+	// Currently userip is called once only so it's not worth to store it
+	// *r = *r.WithContext(context.WithValue(ctx, userIPKey, ip))
 
 	return ip
 }

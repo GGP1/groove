@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/GGP1/groove/internal/apikey"
 	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/internal/userip"
+	"github.com/GGP1/groove/service/auth"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/go-redis/redis_rate/v9"
@@ -43,21 +45,15 @@ func (rl RateLimiter) Limit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		rl.limit.Period = time.Minute
-		key, err := apikey.FromRequest(r)
+		key, err := getKey(ctx, r)
 		if err != nil {
-			if errors.Is(err, apikey.ErrInvalidAPIKey) {
-				response.Error(w, http.StatusBadRequest, err)
-				return
-			}
-			// If the user is not using an API token, use ip as key and decrease rate limit
-			key = userip.Get(ctx, r)
-			if key == "" {
-				// Try to avoid this at all cost or an attacker able to hide ips will be able to perform DDOS.
-				next.ServeHTTP(w, r)
-				return
-			}
-			rl.limit.Period *= 15
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		if key == "" {
+			// Try to avoid this at all cost or an attacker able to hide ips will be able to perform DDOS.
+			next.ServeHTTP(w, r)
+			return
 		}
 
 		res, err := rl.limiter.Allow(ctx, key, rl.limit)
@@ -79,4 +75,22 @@ func (rl RateLimiter) Limit(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func getKey(ctx context.Context, r *http.Request) (string, error) {
+	session, err := auth.GetSession(ctx, r)
+	if err == nil {
+		return session.ID, nil
+	}
+
+	key, err := apikey.FromRequest(r)
+	if err != nil {
+		if errors.Is(err, apikey.ErrInvalidAPIKey) {
+			return "", err
+		}
+		// If the user is not using an API token, use ip as key and decrease rate limit
+		key = userip.Get(ctx, r)
+	}
+
+	return key, nil
 }

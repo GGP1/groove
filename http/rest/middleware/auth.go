@@ -47,6 +47,7 @@ func NewAuth(db *sql.DB, authSv auth.Service, eventSv event.Service, userSv user
 func (a Auth) AdminsOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+
 		session, ok := a.authService.AlreadyLoggedIn(ctx, r)
 		if !ok {
 			http.NotFound(w, r)
@@ -131,13 +132,19 @@ func (a *Auth) EventPrivacyFilter(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
+		session, ok := a.authService.AlreadyLoggedIn(ctx, r)
+		if !ok {
+			response.Error(w, http.StatusUnauthorized, errLoginToAccess)
+			return
+		}
+
 		eventID, err := params.IDFromCtx(ctx)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err)
 			return
 		}
 
-		if err := a.roleService.PrivacyFilter(ctx, r, eventID); err != nil {
+		if err := a.eventService.PrivacyFilter(ctx, eventID, session.ID); err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
 		}
@@ -175,9 +182,15 @@ func (a *Auth) RequireLogin(next http.Handler) http.Handler {
 func (a *Auth) RequirePermissions(permKeys ...string) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if len(permKeys) == 0 {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			ctx := r.Context()
 
-			if _, ok := a.authService.AlreadyLoggedIn(ctx, r); !ok {
+			session, ok := a.authService.AlreadyLoggedIn(ctx, r)
+			if !ok {
 				response.Error(w, http.StatusUnauthorized, errLoginToAccess)
 				return
 			}
@@ -188,7 +201,7 @@ func (a *Auth) RequirePermissions(permKeys ...string) func(next http.Handler) ht
 				return
 			}
 
-			if err := a.roleService.RequirePermissions(ctx, r, eventID, permKeys...); err != nil {
+			if err := a.roleService.RequirePermissions(ctx, session, eventID, permKeys...); err != nil {
 				response.Error(w, http.StatusForbidden, err)
 				return
 			}
@@ -221,13 +234,13 @@ func (a *Auth) UserPrivacyFilter(next http.Handler) http.Handler {
 			return
 		}
 
-		private, err := a.userService.PrivateProfile(ctx, userID)
+		isPrivate, err := a.userService.ProfileIsPrivate(ctx, userID)
 		if err != nil {
 			response.Error(w, http.StatusForbidden, err)
 			return
 		}
 
-		if private {
+		if isPrivate {
 			areFriends, err := a.userService.AreFriends(ctx, session.ID, userID)
 			if err != nil {
 				response.Error(w, http.StatusForbidden, err)
