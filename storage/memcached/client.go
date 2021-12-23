@@ -22,9 +22,13 @@ func NewClient(config config.Memcached) (cache.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	if err := mc.Ping(); err != nil {
+		return nil, err
+	}
+
 	mc.MaxIdleConns = config.MaxIdleConns
 	mc.Timeout = config.Timeout * time.Millisecond
-
 	client := client{
 		mc:              mc,
 		itemsExpiration: config.ItemsExpiration,
