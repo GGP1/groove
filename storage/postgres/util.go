@@ -14,37 +14,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-// AddPagination takes a query and adds pagination/lookup conditions to it.
-func AddPagination(query, paginationField string, params params.Query) string {
-	buf := bufferpool.Get()
-	buf.WriteString(query)
-	addPagination(buf, paginationField, params)
-	q := buf.String()
-	bufferpool.Put(buf)
-
-	return q
-}
-
-// AppendInIDs appends an "IN (ids...)" string to the query.
-func AppendInIDs(query string, ids []string) string {
-	buf := bufferpool.Get()
-	buf.WriteString(query)
-	buf.WriteString(" IN (")
-	for i, id := range ids {
-		if i != 0 {
-			buf.WriteByte(',')
-		}
-		buf.WriteByte('\'')
-		buf.WriteString(id)
-		buf.WriteByte('\'')
-	}
-	buf.WriteByte(')')
-	q := buf.String()
-	bufferpool.Put(buf)
-
-	return q
-}
-
 // BeginTx returns a new sql transaction and a context with it stored.
 func BeginTx(ctx context.Context, db *sql.DB) (*sql.Tx, context.Context) {
 	tx, err := db.BeginTx(ctx, nil)
@@ -140,142 +109,122 @@ func QueryString(ctx context.Context, db *sql.DB, query string, args ...interfac
 	return str, nil
 }
 
-// FullTextSearch returns an SQL query implementing FTS.
-//
-//	SELECT [fields] FROM [table] WHERE search @@ to_tsquery($1) [pagination].
-func FullTextSearch(m model.Model, params params.Query) string {
-	buf := bufferpool.Get()
-
-	buf.WriteString("SELECT ")
-	WriteFields(buf, m, params.Fields)
-	buf.WriteString(" FROM ")
-	buf.WriteString(m.Tablename())
-	buf.WriteString(" WHERE search @@ to_tsquery($1)")
-	if m == model.Event {
-		buf.WriteString(" AND (public=true OR id IN (SELECT event_id FROM events_users_roles WHERE user_id=$2))")
-	} else if m == model.User {
-		buf.WriteString(" AND private=false")
-	}
-	addPagination(buf, "id", params)
-
-	q := buf.String()
-	bufferpool.Put(buf)
-
-	return q
-}
-
 // ToTSQuery formats a string to a tsquery-like syntax.
-func ToTSQuery(s string) string {
+func ToTSQuery(query string) string {
 	// FTS operators: "&" (AND), "<->" (FOLLOWED BY)
 	// See https://www.postgresql.org/docs/13/textsearch-controls.html
 	// ":*" is used to match prefixes as well
-	return strings.ReplaceAll(strings.TrimSpace(s), " ", "&") + ":*"
+	return strings.ReplaceAll(strings.TrimSpace(query), " ", "&") + ":*"
 }
 
-// SelectInID builds a postgres select from in statement.
-// [ids] mustn't be a user input.
-//
-// 	SELECT fields FROM table WHERE id IN ('id1','id2',...) ORDER BY id DESC
-func SelectInID(model model.Model, fields, ids []string) string {
-	buf := bufferpool.Get()
+type selector struct {
+	model    model.Model
+	buf      *bytes.Buffer
+	pagField string
+	params   params.Query
+	useAlias bool
+}
 
-	buf.WriteString("SELECT ")
-	WriteFields(buf, model, fields)
-	buf.WriteString(" FROM ")
-	buf.WriteString(model.Tablename())
-	buf.WriteString(" WHERE id IN (")
-	for i, id := range ids {
-		if i != 0 {
-			buf.WriteByte(',')
-		}
-		buf.WriteByte('\'')
-		buf.WriteString(id)
-		buf.WriteByte('\'')
+// Select builds a query dinamically, depending on the parameters provided.
+//
+// It accepts three tokens enclosed by curly braces ("fields", "table" and "pag"),
+// those are replaced with the model interface methods.
+func Select(m model.Model, query string, params params.Query) string {
+	s := &selector{
+		buf:      bufferpool.Get(),
+		model:    m,
+		useAlias: strings.IndexByte(query, '.') != -1,
+		pagField: "id",
+		params:   params,
 	}
-	// Order like pagination does just in case it was used in a query prior to this one, so the client
-	// receives the results in the order expected
-	buf.WriteString(") ORDER BY id DESC")
 
-	query := buf.String()
-	bufferpool.Put(buf)
+	var lastWriteIdx int
+	for i, c := range query {
+		if c != '{' {
+			continue
+		}
 
-	return query
-}
+		s.buf.WriteString(query[lastWriteIdx:i])
+		// We wrote until the opening curly brace, now discard it
+		i++
 
-// SelectWhere builds a select statement while receiving parameterized arguments.
-//
-// 	Format: "SELECT [fields] FROM [table] WHERE [whereCond] [pagination]"
-//
-// Pagination:
-//	Standard: "ORDER BY paginationField DESC LIMIT params.Limit"
-//	LookupID: "AND paginationField='params.LookupID'"
-//	Cursor: "AND paginationField < 'params.Cursor' ORDER BY paginationField DESC LIMIT params.Limit"
-func SelectWhere(model model.Model, whereCond, paginationField string, params params.Query) string {
-	buf := bufferpool.Get()
+		closure := strings.IndexByte(query[i:], '}')
+		if closure == -1 {
+			// Avoid panic
+			continue
+		}
+		switch query[i : i+closure] {
+		case "fields":
+			s.writeFields()
+		case "table":
+			s.buf.WriteString(m.Tablename())
+			if s.useAlias {
+				s.buf.WriteString(" AS ")
+				s.buf.WriteString(m.Alias())
+			}
+		case "pag":
+			// TODO: pagination is always at the end so it would be better
+			// to look for it the other way around. A decision is needed on
+			// whether the query can contain only unique tokens or repetitive ones.
+			s.addPagination()
+		}
 
-	buf.WriteString("SELECT ")
-	WriteFields(buf, model, params.Fields)
-	buf.WriteString(" FROM ")
-	buf.WriteString(model.Tablename())
-	buf.WriteString(" WHERE ")
-	buf.WriteString(whereCond)
-	addPagination(buf, paginationField, params)
+		i += closure
+		lastWriteIdx = i + 1
+	}
 
-	q := buf.String()
-	bufferpool.Put(buf)
+	remaining := query[lastWriteIdx:]
+	if len(remaining) > 0 {
+		s.buf.WriteString(remaining)
+	}
+
+	q := s.buf.String()
+	bufferpool.Put(s.buf)
 	return q
 }
 
-// WriteFields writes the fields passed to the query.
-func WriteFields(buf *bytes.Buffer, model model.Model, fields []string) {
-	if fields == nil {
-		// Write default fields
-		buf.WriteString(model.DefaultFields())
-	} else {
-		for i, f := range fields {
-			if i != 0 {
-				buf.WriteByte(',')
-			}
-			buf.WriteString(f)
-		}
-	}
-}
-
-// WriteIDs takes a buffer and writes the ids passed along with two braces enclosing them.
-func WriteIDs(buf *bytes.Buffer, ids []string) {
-	buf.WriteRune('(')
-	for i, id := range ids {
-		if i != 0 {
-			buf.WriteByte(',')
-		}
-		buf.WriteByte('\'')
-		buf.WriteString(id)
-		buf.WriteByte('\'')
-	}
-	buf.WriteByte(')')
-}
-
-func addPagination(buf *bytes.Buffer, paginationField string, p params.Query) {
-	if p.LookupID != "" {
-		buf.WriteString(" AND ")
-		buf.WriteString(paginationField)
-		buf.WriteString("='")
-		buf.WriteString(p.LookupID)
-		buf.WriteByte('\'')
+func (s *selector) writeFields() {
+	if len(s.params.Fields) == 0 {
+		s.buf.WriteString(s.model.DefaultFields(s.useAlias))
 		return
 	}
-	if p.Cursor != params.DefaultCursor && p.Cursor != "" {
-		buf.WriteString(" AND ")
-		buf.WriteString(paginationField)
-		buf.WriteString(" < '")
-		buf.WriteString(p.Cursor)
-		buf.WriteByte('\'')
+	for i, f := range s.params.Fields {
+		if i != 0 {
+			s.buf.WriteByte(',')
+		}
+		s.writeField(f)
 	}
-	buf.WriteString(" ORDER BY ")
-	buf.WriteString(paginationField)
-	if p.Limit == "" {
-		p.Limit = params.DefaultLimit
+}
+
+func (s *selector) addPagination() {
+	if s.params.LookupID != "" {
+		s.buf.WriteString("AND ")
+		s.writeField(s.pagField)
+		s.buf.WriteString("='")
+		s.buf.WriteString(s.params.LookupID)
+		s.buf.WriteRune('\'')
+		return
 	}
-	buf.WriteString(" DESC LIMIT ")
-	buf.WriteString(p.Limit)
+	if s.params.Cursor != params.DefaultCursor && s.params.Cursor != "" {
+		s.buf.WriteString("AND ")
+		s.writeField(s.pagField)
+		s.buf.WriteString(" < '")
+		s.buf.WriteString(s.params.Cursor)
+		s.buf.WriteString("' ")
+	}
+	s.buf.WriteString("ORDER BY ")
+	s.writeField(s.pagField)
+	s.buf.WriteString(" DESC LIMIT ")
+	if s.params.Limit == "" {
+		s.params.Limit = params.DefaultLimit
+	}
+	s.buf.WriteString(s.params.Limit)
+}
+
+func (s *selector) writeField(field string) {
+	if s.useAlias {
+		s.buf.WriteString(s.model.Alias())
+		s.buf.WriteRune('.')
+	}
+	s.buf.WriteString(field)
 }

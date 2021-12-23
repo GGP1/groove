@@ -1,15 +1,12 @@
 package postgres_test
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"fmt"
 	"testing"
 
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/txgroup"
-	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/storage/postgres"
 	"github.com/GGP1/groove/test"
@@ -17,64 +14,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestAddPagination(t *testing.T) {
-	q := "SELECT * FROM users WHERE id='123456'"
-	t.Run("Limit", func(t *testing.T) {
-		expected := "SELECT * FROM users WHERE id='123456' ORDER BY name DESC LIMIT 6"
-		params := params.Query{
-			Cursor: params.DefaultCursor,
-			Limit:  "6",
-		}
-
-		got := postgres.AddPagination(q, "name", params)
-		assert.Equal(t, expected, got)
-	})
-
-	t.Run("Lookup ID", func(t *testing.T) {
-		expected := "SELECT * FROM users WHERE id='123456' AND name='banana'"
-		params := params.Query{LookupID: "banana"}
-
-		got := postgres.AddPagination(q, "name", params)
-		assert.Equal(t, expected, got)
-	})
-
-	t.Run("Cursor", func(t *testing.T) {
-		expected := "SELECT * FROM users WHERE id='123456' AND name > 'banana' ORDER BY name DESC LIMIT 14"
-		params := params.Query{
-			Cursor: "banana",
-			Limit:  "14",
-		}
-
-		got := postgres.AddPagination(q, "name", params)
-		assert.Equal(t, expected, got)
-	})
-}
-
-func TestAppendInIDs(t *testing.T) {
-	ids := []string{"1", "2", "3"}
-
-	t.Run("IN", func(t *testing.T) {
-		q := "SELECT * FROM users WHERE event_id='abc' AND id"
-		expected := "SELECT * FROM users WHERE event_id='abc' AND id IN ('1','2','3')"
-		got := postgres.AppendInIDs(q, ids)
-
-		assert.Equal(t, expected, got)
-	})
-
-	t.Run("NOT IN", func(t *testing.T) {
-		q := "SELECT * FROM events WHERE id='abc' AND user_id NOT"
-		expected := "SELECT * FROM events WHERE id='abc' AND user_id NOT IN ('1','2','3')"
-		got := postgres.AppendInIDs(q, ids)
-
-		assert.Equal(t, expected, got)
-	})
-}
-
 func TestBeginTx(t *testing.T) {
-	container, db, err := test.RunPostgres()
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := test.StartPostgres(t)
 
 	t.Run("BeginTx", func(t *testing.T) {
 		tx, ctx := postgres.BeginTx(context.Background(), db)
@@ -93,31 +34,6 @@ func TestBeginTx(t *testing.T) {
 
 		assert.NoError(t, tx.Rollback())
 	})
-
-	assert.NoError(t, container.Close())
-}
-
-func TestFullTextSearch(t *testing.T) {
-	t.Run("Event", func(t *testing.T) {
-		expected := "SELECT testing,full,text,search FROM events WHERE search @@ to_tsquery($1) AND public=true ORDER BY id DESC LIMIT 7"
-		got := postgres.FullTextSearch(model.Event, params.Query{
-			Cursor: params.DefaultCursor,
-			Fields: []string{"testing", "full", "text", "search"},
-			Limit:  "7",
-		})
-
-		assert.Equal(t, expected, got)
-	})
-	t.Run("User", func(t *testing.T) {
-		expected := "SELECT testing,full,text,search FROM users WHERE search @@ to_tsquery($1) AND private=false ORDER BY id DESC LIMIT 7"
-		got := postgres.FullTextSearch(model.User, params.Query{
-			Cursor: params.DefaultCursor,
-			Fields: []string{"testing", "full", "text", "search"},
-			Limit:  "7",
-		})
-
-		assert.Equal(t, expected, got)
-	})
 }
 
 func TestToTSQuery(t *testing.T) {
@@ -126,129 +42,115 @@ func TestToTSQuery(t *testing.T) {
 	assert.Equal(t, expected, got)
 }
 
-func TestSelectInID(t *testing.T) {
-	t.Run("Users", func(t *testing.T) {
-		t.Run("Standard", func(t *testing.T) {
-			id1 := ulid.NewString()
-			id2 := ulid.NewString()
-			q := "SELECT id,name,username,email FROM users WHERE id IN ('%s','%s') ORDER BY id DESC"
-			expected := fmt.Sprintf(q, id1, id2)
-			got := postgres.SelectInID(model.User, []string{"id", "name", "username", "email"}, []string{id1, id2})
-			assert.Equal(t, expected, got)
+func TestSelect(t *testing.T) {
+	cases := []struct {
+		desc     string
+		model    model.Model
+		query    string
+		expected string
+		params   params.Query
+	}{
+		{
+			desc:  "Alias",
+			model: model.T.Event,
+			query: "SELECT {fields} FROM {table} WHERE e.id=$1 {pag}",
+			params: params.Query{
+				Fields: []string{"id", "name", "slots", "cron"},
+			},
+			expected: "SELECT e.id,e.name,e.slots,e.cron FROM events AS e WHERE e.id=$1 ORDER BY e.id DESC LIMIT 20",
+		},
+		{
+			desc:     "Default fields",
+			model:    model.T.Comment,
+			query:    "SELECT {fields} FROM {table} WHERE id=$1 {pag}",
+			params:   params.Query{},
+			expected: "SELECT " + model.T.Comment.DefaultFields(false) + " FROM events_posts_comments WHERE id=$1 ORDER BY id DESC LIMIT 20",
+		},
+		{
+			desc:  "Alias complex",
+			model: model.T.Comment,
+			query: `SELECT
+			{fields},
+			(SELECT COUNT(*) FROM events_posts_comments_likes WHERE comment_id = c.id) as likes_count,
+			(SELECT EXISTS(SELECT 1 FROM events_posts_comments_likes WHERE comment_id = c.id AND user_id=$2)) as auth_user_liked
+			FROM {table} WHERE post_id=$1 {pag}`,
+			params: params.Query{
+				Fields: []string{"id", "content"},
+			},
+			expected: `SELECT
+			c.id,c.content,
+			(SELECT COUNT(*) FROM events_posts_comments_likes WHERE comment_id = c.id) as likes_count,
+			(SELECT EXISTS(SELECT 1 FROM events_posts_comments_likes WHERE comment_id = c.id AND user_id=$2)) as auth_user_liked
+			FROM events_posts_comments AS c WHERE post_id=$1 ORDER BY c.id DESC LIMIT 20`,
+		},
+		{
+			desc:  "No alias",
+			model: model.T.User,
+			query: "SELECT {fields} FROM {table} WHERE id=$1 {pag}",
+			params: params.Query{
+				Fields: []string{"id", "name"},
+			},
+			expected: "SELECT id,name FROM users WHERE id=$1 ORDER BY id DESC LIMIT 20",
+		},
+		{
+			desc:  "Limit",
+			model: model.T.Event,
+			query: "SELECT {fields} FROM {table} WHERE search @@ to_tsquery($1) ORDER BY id DESC LIMIT 7",
+			params: params.Query{
+				Cursor: params.DefaultCursor,
+				Fields: []string{"testing", "full", "text", "search"},
+				Limit:  "7",
+			},
+			expected: "SELECT testing,full,text,search FROM events WHERE search @@ to_tsquery($1) ORDER BY id DESC LIMIT 7",
+		},
+		{
+			desc:  "Cursor",
+			model: model.T.Notification,
+			query: "SELECT {fields} FROM {table} WHERE receiver_id=$1 {pag}",
+			params: params.Query{
+				Cursor: "as2d1as2",
+				Fields: []string{"id"},
+			},
+			expected: "SELECT id FROM notifications WHERE receiver_id=$1 AND id < 'as2d1as2' ORDER BY id DESC LIMIT 20",
+		},
+		{
+			desc:  "Lookup ID",
+			model: model.T.Product,
+			query: "SELECT {fields} FROM {table} WHERE event_id=$1 {pag}",
+			params: params.Query{
+				LookupID: "as2d1as2",
+				Fields:   []string{"id"},
+			},
+			expected: "SELECT id FROM events_products WHERE event_id=$1 AND id='as2d1as2'",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := postgres.Select(tc.model, tc.query, tc.params)
+			assert.Equal(t, tc.expected, got)
 		})
-
-		t.Run("Default fields", func(t *testing.T) {
-			id1 := ulid.NewString()
-			id2 := ulid.NewString()
-			q := "SELECT %s FROM users WHERE id IN ('%s','%s') ORDER BY id DESC"
-			expected := fmt.Sprintf(q, model.User.DefaultFields(), id1, id2)
-			got := postgres.SelectInID(model.User, nil, []string{id1, id2})
-			assert.Equal(t, expected, got)
-		})
-	})
-
-	t.Run("Events", func(t *testing.T) {
-		t.Run("Standard", func(t *testing.T) {
-			id1 := ulid.NewString()
-			id2 := ulid.NewString()
-			q := "SELECT id,name,type,public,cron FROM events WHERE id IN ('%s','%s') ORDER BY id DESC"
-			expected := fmt.Sprintf(q, id1, id2)
-			got := postgres.SelectInID(model.Event, []string{"id", "name", "type", "public", "cron"}, []string{id1, id2})
-			assert.Equal(t, expected, got)
-		})
-
-		t.Run("Default fields", func(t *testing.T) {
-			id1 := ulid.NewString()
-			id2 := ulid.NewString()
-			q := "SELECT %s FROM events WHERE id IN ('%s','%s') ORDER BY id DESC"
-			expected := fmt.Sprintf(q, model.Event.DefaultFields(), id1, id2)
-			got := postgres.SelectInID(model.Event, nil, []string{id1, id2})
-			assert.Equal(t, expected, got)
-		})
-	})
-}
-
-func TestSelectWhere(t *testing.T) {
-	t.Run("Standard", func(t *testing.T) {
-		expected := "SELECT id,name FROM events WHERE event_id=$1 ORDER BY id DESC LIMIT 20"
-
-		params := params.Query{
-			Fields: []string{"id", "name"},
-			Cursor: params.DefaultCursor,
-			Limit:  "20",
-		}
-
-		got := postgres.SelectWhere(model.Event, "event_id=$1", "id", params)
-		assert.Equal(t, expected, got)
-	})
-	t.Run("Lookup ID", func(t *testing.T) {
-		id := ulid.NewString()
-		expected := "SELECT email,username,birth_date FROM users WHERE user_id=$1 AND id='" + id + "'"
-		params := params.Query{
-			Fields:   []string{"email", "username", "birth_date"},
-			LookupID: id,
-			Limit:    "20",
-		}
-
-		got := postgres.SelectWhere(model.User, "user_id=$1", "id", params)
-		assert.Equal(t, expected, got)
-	})
-
-	t.Run("Cursor", func(t *testing.T) {
-		cursor := ulid.NewString()
-		expected := "SELECT id,url FROM events_media WHERE event_id=$1 AND id < '" + cursor + "' ORDER BY id DESC LIMIT 5"
-		params := params.Query{
-			Fields: []string{"id", "url"},
-			Cursor: cursor,
-			Limit:  "5",
-		}
-
-		got := postgres.SelectWhere(model.Post, "event_id=$1", "id", params)
-		assert.Equal(t, expected, got)
-	})
-}
-
-func TestWriteFields(t *testing.T) {
-	fields := []string{"id", "cron", "virtual"}
-	expected := "SELECT id,cron,virtual FROM events"
-
-	buf := bytes.NewBufferString("SELECT ")
-	postgres.WriteFields(buf, model.Event, fields)
-	buf.WriteString(" FROM events")
-
-	assert.Equal(t, expected, buf.String())
-}
-
-func TestWriteIDs(t *testing.T) {
-	ids := []string{ulid.NewString(), ulid.NewString(), ulid.NewString()}
-	expected := fmt.Sprintf("SELECT * FROM users WHERE id IN ('%s','%s','%s')", ids[0], ids[1], ids[2])
-
-	buf := bytes.NewBufferString("SELECT * FROM users WHERE id IN ")
-	postgres.WriteIDs(buf, ids)
-
-	assert.Equal(t, expected, buf.String())
-}
-
-func BenchmarkSelectInID(b *testing.B) {
-	ids := []string{ulid.NewString(), ulid.NewString(), ulid.NewString()}
-	fields := []string{"id", "name", "type", "public", "created_at", "slots"}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		postgres.SelectInID(model.User, ids, fields)
 	}
 }
 
-func BenchmarkSelectWhere(b *testing.B) {
+func BenchmarkSelect(b *testing.B) {
 	params := params.Query{
-		LookupID: ulid.NewString(),
-		Fields:   []string{"id", "name", "type", "public", "created_at", "slots"},
+		Fields: []string{"id", "name", "type", "public", "created_at", "slots"},
 	}
-	whereCond := "event_id=$1"
-	paginationField := "id"
+	query := "SELECT {fields} FROM {table} WHERE event_id=$1 AND slots IN (100, 250, 1000) {pag}"
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		postgres.SelectWhere(model.Event, whereCond, paginationField, params)
+		postgres.Select(model.T.Event, query, params)
+	}
+}
+
+func BenchmarkSelectDefault(b *testing.B) {
+	params := params.Query{}
+	query := "SELECT {fields} FROM {table} WHERE event_id=$1 AND slots IN (100, 250, 1000) {pag}"
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		postgres.Select(model.T.Event, query, params)
 	}
 }
