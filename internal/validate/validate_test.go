@@ -116,8 +116,12 @@ func TestKey(t *testing.T) {
 		assert.NoError(t, Key("valid_key"))
 	})
 
-	t.Run("Invalid", func(t *testing.T) {
-		assert.Error(t, Key("key_too_long_to_be_valid"))
+	t.Run("Too loong", func(t *testing.T) {
+		assert.Error(t, Key("jetliner_earldom_uranium_token_caudal"))
+	})
+
+	t.Run("Invalid characters", func(t *testing.T) {
+		assert.Error(t, Key("invalid-key"))
 	})
 }
 
@@ -142,19 +146,11 @@ func TestPassword(t *testing.T) {
 
 func TestRoleName(t *testing.T) {
 	t.Run("Valid", func(t *testing.T) {
-		err := RoleName("chef")
-		assert.NoError(t, err)
+		assert.NoError(t, RoleName("chef"))
 	})
 
 	t.Run("Invalid", func(t *testing.T) {
-		roleNames := []string{"n'tall&why", "invalid-name"}
-
-		for i, roleName := range roleNames {
-			t.Run(strconv.Itoa(i), func(t *testing.T) {
-				err := RoleName(roleName)
-				assert.Error(t, err)
-			})
-		}
+		assert.Error(t, RoleName("alveoli_simile_stargaze_atelier_gaseous_poesy"))
 	})
 }
 
@@ -215,7 +211,7 @@ func TestULIDs(t *testing.T) {
 
 func TestURL(t *testing.T) {
 	t.Run("Valid", func(t *testing.T) {
-		url := ""
+		url := "https://groove.com"
 		err := URL(url)
 		assert.NoError(t, err)
 	})
