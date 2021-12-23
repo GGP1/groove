@@ -35,14 +35,14 @@ type Reply struct {
 	AuthUserLiked   bool      `json:"auth_user_liked,omitempty" db:"auth_user_liked"`
 }
 
-// CreateComment ..
+// CreateComment holds the values needed for the creation of a comment.
 type CreateComment struct {
 	ParentCommentID *string `json:"parent_comment_id,omitempty" db:"parent_comment_id"`
 	PostID          *string `json:"post_id,omitempty" db:"post_id"`
 	Content         string  `json:"content,omitempty"`
 }
 
-// Validate ..
+// Validate returns an error if the comment contains invalid information.
 func (cc CreateComment) Validate() error {
 	if cc.ParentCommentID == nil && cc.PostID == nil {
 		return errors.New("must reference a post or another comment")

@@ -12,7 +12,8 @@ type SQL struct {
 	tx *sql.Tx
 }
 
-// NewSQLTx ..
+// NewSQLTx returns a new SQL transaction wrapped by a structure
+// that satisfies the txgroup.Tx interface.
 func NewSQLTx(tx *sql.Tx) *SQL {
 	return &SQL{tx: tx}
 }
@@ -30,17 +31,17 @@ func SQLTx(ctx context.Context) *sql.Tx {
 	return sql.tx
 }
 
-// Key ..
+// Key returns the key used for storing SQL transactions in a context.
 func (s *SQL) Key() string {
 	return sqlKey
 }
 
-// Commit ..
+// Commit commits the transaction.
 func (s *SQL) Commit() error {
 	return s.tx.Commit()
 }
 
-// Rollback ..
+// Rollback discards the transaction.
 func (s *SQL) Rollback() error {
 	return s.tx.Rollback()
 }

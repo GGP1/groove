@@ -117,7 +117,7 @@ type UpdateUser struct {
 	Invitations     *Invitations `json:"invitations,omitempty"`
 }
 
-// Validate ..
+// Validate returns an error if the user contains invalid information.
 func (u UpdateUser) Validate() error {
 	if u == (UpdateUser{}) {
 		return errors.New("no values provided")

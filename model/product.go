@@ -26,7 +26,7 @@ type Product struct {
 	Total       uint64     `json:"total,omitempty"`
 }
 
-// Validate ..
+// Validate returns an error if the product contains invalid information.
 func (p Product) Validate() error {
 	if err := validate.ULID(p.EventID); err != nil {
 		return errors.Wrap(err, "invalid event_id")
@@ -64,7 +64,7 @@ type UpdateProduct struct {
 	Total       *uint64 `json:"total,omitempty"`
 }
 
-// Validate ..
+// Validate returns an error if the product contains invalid information.
 func (p UpdateProduct) Validate() error {
 	if p.Discount != nil && *p.Discount < 0 {
 		return errors.New("invalid discount, minimum is 0")

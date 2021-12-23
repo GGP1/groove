@@ -8,7 +8,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Topic ..
+// Topic represents the topic of a notification.
 type Topic string
 
 // Notification represents a notification inside the application.
@@ -34,7 +34,7 @@ type CreateNotification struct {
 	Type       NotificationType `json:"type,omitempty"`
 }
 
-// Validate ..
+// Validate returns an error if the notification contains invalid information.
 func (cn CreateNotification) Validate() error {
 	if cn.SenderID == cn.ReceiverID {
 		return errors.New("cannot perform this action on your account")
@@ -70,5 +70,5 @@ const (
 	Mention
 )
 
-// NotificationType ..
+// NotificationType represents the type of a notification.
 type NotificationType uint8
