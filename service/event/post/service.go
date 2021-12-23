@@ -39,8 +39,6 @@ type Service interface {
 	LikeComment(ctx context.Context, commentID, userID string) error
 	LikePost(ctx context.Context, postID, userID string) error
 	UpdatePost(ctx context.Context, postID string, post model.UpdatePost) error
-	UserLikedComment(ctx context.Context, commentID, userID string) (bool, error)
-	UserLikedPost(ctx context.Context, postID, userID string) (bool, error)
 }
 
 type service struct {
@@ -342,20 +340,15 @@ func (s *service) GetReplies(ctx context.Context, parentID, userID string, param
 
 // LikeComment adds a like to a comment, if the like already exists, it removes it.
 func (s *service) LikeComment(ctx context.Context, commentID, userID string) error {
-	liked, err := s.UserLikedComment(ctx, commentID, userID)
-	if err != nil {
-		return err
-	}
-
-	var q string
-	if liked {
-		q = "DELETE FROM events_posts_comments_likes WHERE comment_id=$1 AND user_id=$2"
-	} else {
-		q = "INSERT INTO events_posts_comments_likes (comment_id, user_id) VALUES ($1, $2)"
-	}
-
+	q := `DO $$ BEGIN
+		IF EXISTS (SELECT 1 FROM events_posts_comments_likes WHERE comment_id=$1 AND user_id=$2) THEN
+			DELETE FROM events_posts_comments_likes WHERE comment_id=$1 AND user_id=$2;
+	   	ELSE
+		   INSERT INTO events_posts_comments_likes (comment_id, user_id) VALUES ($1, $2);
+	   	END IF;
+	END $$`
 	sqlTx := txgroup.SQLTx(ctx)
-	if _, err = sqlTx.ExecContext(ctx, q, commentID); err != nil {
+	if _, err := sqlTx.ExecContext(ctx, q, commentID, userID); err != nil {
 		return errors.Wrap(err, "comment like")
 	}
 
@@ -364,20 +357,15 @@ func (s *service) LikeComment(ctx context.Context, commentID, userID string) err
 
 // LikePost adds a like to a post, if the like already exists, it removes it.
 func (s *service) LikePost(ctx context.Context, postID, userID string) error {
-	liked, err := s.UserLikedPost(ctx, postID, userID)
-	if err != nil {
-		return err
-	}
-
-	var q string
-	if liked {
-		q = "DELETE FROM events_posts_comments_likes WHERE post_id=$1 AND user_id=$2"
-	} else {
-		q = "INSERT INTO events_posts_likes (post_id, user_id) VALUES ($1, $2)"
-	}
-
+	q := `DO $$ BEGIN
+		IF EXISTS (SELECT 1 FROM events_posts_likes WHERE post_id=$1 AND user_id=$2) THEN
+	   		DELETE FROM events_posts_likes WHERE post_id=$1 AND user_id=$2;
+	   	ELSE
+	   		INSERT INTO events_posts_likes (post_id, user_id) VALUES ($1, $2);
+	   	END IF;
+	END $$`
 	sqlTx := txgroup.SQLTx(ctx)
-	if _, err = sqlTx.ExecContext(ctx, q, postID); err != nil {
+	if _, err := sqlTx.ExecContext(ctx, q, postID, userID); err != nil {
 		return errors.Wrap(err, "post like")
 	}
 	return nil
@@ -392,16 +380,4 @@ func (s service) UpdatePost(ctx context.Context, postID string, post model.Updat
 		return errors.Wrap(err, "updating post")
 	}
 	return nil
-}
-
-// UserLikedComment returns whether the user liked the comment or not.
-func (s *service) UserLikedComment(ctx context.Context, commentID, userID string) (bool, error) {
-	q := "SELECT EXISTS (SELECT 1 FROM comments_likes WHERE comment_id=$1 AND user_id=$2)"
-	return postgres.QueryBool(ctx, s.db, q, commentID, userID)
-}
-
-// UserLikedPost returns whether the user liked the post or not.
-func (s *service) UserLikedPost(ctx context.Context, postID, userID string) (bool, error) {
-	q := "SELECT EXISTS (SELECT 1 FROM posts_likes WHERE comment_id=$1 AND user_id=$2)"
-	return postgres.QueryBool(ctx, s.db, q, postID, userID)
 }

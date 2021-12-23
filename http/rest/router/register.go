@@ -170,7 +170,6 @@ func (r register) Posts() {
 	posts.get("/:post_id", r.post.GetPost(), r.authMw.EventPrivacyFilter)
 	posts.get("/:post_id/like", r.post.LikePost(), r.authMw.EventPrivacyFilter)
 	posts.get("/:post_id/likes", r.post.GetPostLikes(), r.authMw.EventPrivacyFilter)
-	posts.get("/:post_id/liked", r.post.UserLikedPost(), r.authMw.EventPrivacyFilter)
 	posts.post("/create", r.post.CreatePost(), r.authMw.RequirePermissions(permissions.ModifyPosts))
 	posts.delete("/delete/:post_id", r.post.DeletePost(), r.authMw.RequirePermissions(permissions.ModifyPosts))
 	posts.put("/update/:post_id", r.post.UpdatePost(), r.authMw.RequirePermissions(permissions.ModifyPosts))
@@ -181,7 +180,6 @@ func (r register) Posts() {
 	comments.get("/:comment_id", r.post.GetComment())
 	comments.get("/:comment_id/like", r.post.LikeComment())
 	comments.get("/:comment_id/likes", r.post.GetCommentLikes())
-	comments.get("/:comment_id/liked", r.post.UserLikedComment())
 	comments.delete("/delete/:comment_id", r.post.DeleteComment())
 	comments.post("/create", r.post.CreateComment())
 }
