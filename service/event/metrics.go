@@ -6,19 +6,12 @@ import (
 )
 
 type metrics struct {
-	registeredEvents prometheus.Gauge
-	methodCalls      *prometheus.CounterVec
+	methodCalls *prometheus.CounterVec
 }
 
 func initMetrics() metrics {
 	const ns, sub = "groove", "event"
 	return metrics{
-		registeredEvents: promauto.NewGauge(prometheus.GaugeOpts{
-			Namespace: ns,
-			Subsystem: sub,
-			Name:      "registered_total",
-			Help:      "Total number of events registered",
-		}),
 		methodCalls: promauto.NewCounterVec(prometheus.CounterOpts{
 			Namespace: ns,
 			Subsystem: sub,
