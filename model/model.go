@@ -55,9 +55,9 @@ func (c comment) Alias() string {
 }
 func (c comment) DefaultFields(useAlias bool) string {
 	if useAlias {
-		return "c.id, c.user_id, c.content, c.replies_count, c.auth_user_liked, c.created_at"
+		return "c.id, c.user_id, c.content, c.replies_count, c.created_at"
 	}
-	return "id, user_id, content, replies_count, auth_user_liked, created_at"
+	return "id, user_id, content, replies_count, created_at"
 }
 func (c comment) URLQueryKey() string {
 	return "comment.fields"
@@ -138,9 +138,9 @@ func (p post) Alias() string {
 }
 func (p post) DefaultFields(useAlias bool) string {
 	if useAlias {
-		return "p.id, p.event_id, p.content, p.media, p.comments_count, p.auth_user_liked, p.created_at, p.updated_at"
+		return "p.id, p.event_id, p.content, p.media, p.comments_count, p.created_at, p.updated_at"
 	}
-	return "id, event_id, content, media, comments_count, auth_user_liked, created_at, updated_at"
+	return "id, event_id, content, media, comments_count, created_at, updated_at"
 }
 func (p post) URLQueryKey() string {
 	return "post.fields"
