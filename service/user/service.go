@@ -147,7 +147,6 @@ func (s *service) Block(ctx context.Context, userID, blockedID string) error {
 
 func (s *service) CanInvite(ctx context.Context, authUserID, invitedID string) (bool, error) {
 	s.metrics.incMethodCalls("CanInvite")
-	sqlTx := txgroup.SQLTx(ctx)
 
 	var (
 		blocked     bool
@@ -158,7 +157,7 @@ func (s *service) CanInvite(ctx context.Context, authUserID, invitedID string) (
 	FROM users u LEFT JOIN users_blocked ub 
 	ON u.id = ub.user_id 
 	WHERE u.id=$1`
-	if err := sqlTx.QueryRowContext(ctx, q, invitedID, authUserID).Scan(&invitations, &blocked); err != nil {
+	if err := s.db.QueryRowContext(ctx, q, invitedID, authUserID).Scan(&invitations, &blocked); err != nil {
 		return false, errors.Wrap(err, "querying invitations")
 	}
 	if invitations == model.Nobody || blocked {
@@ -230,8 +229,9 @@ func (s *service) Follow(ctx context.Context, userID, businessID string) error {
 		return httperr.Forbidden("only businesses can be followed")
 	}
 
-	q := "INSERT INTO users_followers (user_id, follower_id) VALUES ($1, $2)"
 	sqlTx := txgroup.SQLTx(ctx)
+
+	q := "INSERT INTO users_followers (user_id, follower_id) VALUES ($1, $2)"
 	if _, err := sqlTx.ExecContext(ctx, q, userID, businessID); err != nil {
 		return errors.Wrap(err, "following business")
 	}
@@ -570,6 +570,7 @@ func (s *service) GetStatistics(ctx context.Context, userID string) (model.UserS
 func (s *service) InviteToEvent(ctx context.Context, session auth.Session, invite model.Invite) error {
 	s.metrics.incMethodCalls("InviteToEvent")
 
+	// TODO: use a statement and try to use a single query (CanInvite isn't used elsewhere)
 	for _, userID := range invite.UserIDs {
 		canInvite, err := s.CanInvite(ctx, session.ID, userID)
 		if err != nil {

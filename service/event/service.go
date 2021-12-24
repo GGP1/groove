@@ -401,7 +401,6 @@ func (s *service) IsInvited(ctx context.Context, eventID, userID string) (bool, 
 // IsPublic returns if the event is public or not.
 func (s *service) IsPublic(ctx context.Context, eventID string) (bool, error) {
 	s.metrics.incMethodCalls("IsPublic")
-	sqlTx := txgroup.SQLTx(ctx)
 
 	cacheKey := cache.EventPrivacy(eventID)
 	if v, err := s.cache.Get(cacheKey); err == nil {
@@ -409,7 +408,7 @@ func (s *service) IsPublic(ctx context.Context, eventID string) (bool, error) {
 	}
 
 	var public bool
-	row := sqlTx.QueryRowContext(ctx, "SELECT public FROM events WHERE id=$1", eventID)
+	row := s.db.QueryRowContext(ctx, "SELECT public FROM events WHERE id=$1", eventID)
 	if err := row.Scan(&public); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, httperr.BadRequest(fmt.Sprintf("event with id %q does not exists", eventID))
