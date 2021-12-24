@@ -234,7 +234,10 @@ func (s *service) GetCommentLikesCount(ctx context.Context, commentID string) (i
 
 // GetHomePosts returns a user's home posts.
 func (s *service) GetHomePosts(ctx context.Context, session auth.Session, params params.Query) ([]model.Post, error) {
-	q := `SELECT {fields} FROM {table} WHERE 
+	q := `SELECT {fields},
+	(SELECT COUNT(*) FROM events_posts_likes WHERE post_id = p.id) as likes_count,
+	(SELECT EXISTS(SELECT 1 FROM events_posts_likes WHERE post_id = p.id AND user_id=$1)) as auth_user_liked
+	FROM {table} WHERE
 	event_id IN (SELECT event_id FROM events_users_roles WHERE user_id=$1 AND role_name != $2) {pag}`
 	query := postgres.Select(model.T.Post, q, params)
 	rows, err := s.db.QueryContext(ctx, query, session.ID, roles.Viewer)
