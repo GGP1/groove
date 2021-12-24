@@ -394,7 +394,7 @@ func (h *Handler) GetPostLikes() http.HandlerFunc {
 	}
 }
 
-// GetReplies gets all the comments in a post.
+// GetReplies gets all the comments in a post/comment.
 func (h *Handler) GetReplies() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()

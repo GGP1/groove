@@ -76,8 +76,7 @@ BEGIN
 	setweight(to_tsvector('english', new.username), 'A')
 	|| setweight(to_tsvector('english', new.name), 'B');
 	return new;
-END
-$$ LANGUAGE plpgsql;
+END $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS users_tsvector_update ON users;
 
@@ -146,8 +145,7 @@ BEGIN
 	new.search := setweight(to_tsvector('english', new.name), 'A')
 	|| setweight(to_tsvector('english', new.address), 'B');
 	return new;
-END
-$$ LANGUAGE plpgsql;
+END $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS events_tsvector_update ON events;
 

@@ -8,9 +8,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Topic represents the topic of a notification.
-type Topic string
-
 // Notification represents a notification inside the application.
 type Notification struct {
 	CreatedAt  time.Time        `json:"created_at,omitempty" db:"created_at"`
@@ -72,3 +69,13 @@ const (
 
 // NotificationType represents the type of a notification.
 type NotificationType uint8
+
+// Topic.
+const (
+	Ads        Topic = "ads"
+	Promotions Topic = "promotions"
+	Updates    Topic = "updates"
+)
+
+// Topic represents the topic of a notification.
+type Topic string

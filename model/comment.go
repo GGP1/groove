@@ -23,18 +23,6 @@ type Comment struct {
 	AuthUserLiked   bool      `json:"auth_user_liked,omitempty" db:"auth_user_liked"`
 }
 
-// Reply is implemented to avoid sql.NullString as its fields are already known.
-type Reply struct {
-	CreatedAt       time.Time `json:"created_at,omitempty" db:"created_at"`
-	RepliesCount    *int      `json:"replies_count,omitempty" db:"replies_count"`
-	LikesCount      *int      `json:"likes_count,omitempty" db:"likes_count"`
-	UserID          string    `json:"user_id,omitempty" db:"user_id"`
-	Content         string    `json:"content,omitempty"`
-	ParentCommentID string    `json:"parent_comment_id,omitempty" db:"parent_comment_id"`
-	ID              string    `json:"id,omitempty"`
-	AuthUserLiked   bool      `json:"auth_user_liked,omitempty" db:"auth_user_liked"`
-}
-
 // CreateComment holds the values needed for the creation of a comment.
 type CreateComment struct {
 	ParentCommentID *string `json:"parent_comment_id,omitempty" db:"parent_comment_id"`

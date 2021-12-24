@@ -307,6 +307,9 @@ func (s *service) SendMulticast(ctx context.Context, notification *messaging.Mul
 
 // SendMany sends multiples notification messages.
 func (s *service) SendMany(ctx context.Context, messages []*messaging.Message) {
+	if len(messages) == 0 {
+		return
+	}
 	s.sendNotification(func() error {
 		if _, err := s.fcm.SendAll(context.Background(), messages); err != nil {
 			return errors.Wrap(err, "sending notification to all")
