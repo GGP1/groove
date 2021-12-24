@@ -34,10 +34,10 @@ type Event struct {
 
 // EventStatistics contains statistics from an event.
 type EventStatistics struct {
-	Banned  int64 `json:"banned_count,omitempty"`
-	Invited int64 `json:"invited_count,omitempty"`
-	Likes   int64 `json:"likes_count,omitempty"`
-	Members int64 `json:"members_count,omitempty"`
+	Banned  int64 `json:"banned_count,omitempty" db:"banned_count"`
+	Invited int64 `json:"invited_count,omitempty" db:"invited_count"`
+	Likes   int64 `json:"likes_count,omitempty" db:"likes_count"`
+	Members int64 `json:"members_count,omitempty" db:"members_count"`
 }
 
 // CreateEvent is the structure used to create an event.
