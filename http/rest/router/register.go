@@ -166,7 +166,6 @@ func (r register) Posts() {
 	posts.use(r.authMw.NotBanned)
 
 	posts.get("/", r.post.GetPosts(), r.authMw.EventPrivacyFilter)
-	posts.get("/:parent_id/replies", r.post.GetReplies(), r.authMw.EventPrivacyFilter)
 	posts.get("/:post_id", r.post.GetPost(), r.authMw.EventPrivacyFilter)
 	posts.get("/:post_id/like", r.post.LikePost(), r.authMw.EventPrivacyFilter)
 	posts.get("/:post_id/likes", r.post.GetPostLikes(), r.authMw.EventPrivacyFilter)
@@ -182,6 +181,8 @@ func (r register) Posts() {
 	comments.get("/:comment_id/likes", r.post.GetCommentLikes())
 	comments.delete("/delete/:comment_id", r.post.DeleteComment())
 	comments.post("/create", r.post.CreateComment())
+
+	r.router.get("/events/:id/replies/:parent_id", r.post.GetReplies(), r.authMw.EventPrivacyFilter)
 }
 
 func (r register) Products() {
