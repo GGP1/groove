@@ -83,10 +83,10 @@ func (e event) Alias() string {
 func (e event) DefaultFields(useAlias bool) string {
 	if useAlias {
 		return `e.id, e.name, e.description, e.virtual, e.type, e.ticket_type, e.public, e.address, e.latitude,
-		e.longitude, e.cron, e.start_date, e.end_date, e.min_age, e.slots, e.created_at, e.updated_at`
+		e.longitude, e.cron, e.start_date, e.end_date, e.min_age, e.slots, e.created_at`
 	}
 	return `id, name, description, virtual, type, ticket_type, public, address, latitude,
-	longitude, cron, start_date, end_date, min_age, slots, created_at, updated_at`
+	longitude, cron, start_date, end_date, min_age, slots, created_at`
 }
 func (e event) URLQueryKey() string {
 	return "event.fields"
@@ -192,9 +192,9 @@ func (u user) Alias() string {
 }
 func (u user) DefaultFields(useAlias bool) string {
 	if useAlias {
-		return "u.id, u.name, u.username, u.email, u.private, u.type, u.invitations, u.created_at, u.updated_at"
+		return "u.id, u.name, u.username, u.email, u.profile_image_url, u.private, u.type, u.invitations"
 	}
-	return "id, name, username, email, private, type, invitations, created_at, updated_at"
+	return "id, name, username, email, profile_image_url, private, type, invitations"
 }
 func (u user) URLQueryKey() string {
 	return "user.fields"

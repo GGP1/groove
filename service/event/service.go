@@ -364,8 +364,7 @@ func (s *service) GetStatistics(ctx context.Context, eventID string) (model.Even
 	(SELECT COUNT(*) FROM events_bans WHERE event_id=$1) AS banned_count,
 	(SELECT COUNT(*) FROM events_users_roles WHERE event_id=$1 AND role_name NOT IN ($2, $3)) AS members_count,
 	(SELECT COUNT(*) FROM events_users_roles WHERE event_id=$1 AND role_name=$3) AS invited_count,
-	(SELECT COUNT(*) FROM events_likes WHERE event_id=$1) AS liked_events_count`
-
+	(SELECT COUNT(*) FROM events_likes WHERE event_id=$1) AS likes_count`
 	rows, err := s.db.QueryContext(ctx, q, eventID, roles.Host, roles.Viewer)
 	if err != nil {
 		return model.EventStatistics{}, err
