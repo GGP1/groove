@@ -8,7 +8,6 @@ import (
 
 	"github.com/GGP1/groove/config"
 	"github.com/GGP1/groove/http/rest/router"
-	"github.com/GGP1/groove/test"
 
 	"github.com/stretchr/testify/assert"
 
@@ -21,11 +20,7 @@ func TestNew(t *testing.T) {
 	cfg, err := config.New()
 	assert.NoError(t, err)
 
-	db := test.StartPostgres(t)
-	mc := test.StartMemcached(t)
-	rdb := test.StartRedis(t)
-
-	srv := httptest.NewServer(router.New(cfg, db, rdb, mc))
+	srv := httptest.NewServer(router.New(cfg, nil, nil, nil))
 	defer srv.Close()
 
 	res, err := srv.Client().Get(srv.URL)

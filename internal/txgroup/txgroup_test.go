@@ -39,6 +39,15 @@ func TestTxFromContextNotFound(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestUniqueKey(t *testing.T) {
+	ctx := context.Background()
+	tx := &mockTx{}
+
+	_, ctx = txgroup.WithContext(ctx, tx)
+	got := ctx.Value(tx.Key())
+	assert.Nil(t, got)
+}
+
 func TestAddTx(t *testing.T) {
 	txg, ctx := txgroup.WithContext(context.Background())
 
