@@ -31,6 +31,9 @@ func Connect(ctx context.Context, c config.Postgres) (*sql.DB, error) {
 	if err := CreateTables(ctx, db); err != nil {
 		return nil, err
 	}
+	if err := CreateFunctions(ctx, db); err != nil {
+		return nil, err
+	}
 
 	runMetrics(db, c)
 
@@ -43,6 +46,35 @@ func CreateTables(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, tables); err != nil {
 		return errors.Wrap(err, "creating tables")
 	}
+	return nil
+}
+
+// CreateFunctions creates the pre-defined postgres functions used by the services.
+func CreateFunctions(ctx context.Context, db *sql.DB) error {
+	likePost := `CREATE OR REPLACE FUNCTION likePost(postID text, userID text) RETURNS void AS $$
+	BEGIN
+		IF EXISTS (SELECT 1 FROM events_posts_likes WHERE post_id=postID AND user_id=userID) THEN
+	   		DELETE FROM events_posts_likes WHERE post_id=postID AND user_id=userID;
+	   	ELSE
+	   		INSERT INTO events_posts_likes (post_id, user_id) VALUES (postID, userID);
+	   	END IF;
+	END $$ LANGUAGE plpgsql`
+	if _, err := db.ExecContext(ctx, likePost); err != nil {
+		return errors.Wrap(err, "creating likePost function")
+	}
+
+	likeComment := `CREATE OR REPLACE FUNCTION likeComment(commentID text, userID text) RETURNS void AS $$ 
+	BEGIN
+		IF EXISTS (SELECT 1 FROM events_posts_comments_likes WHERE comment_id=commentID AND user_id=userID) THEN
+			DELETE FROM events_posts_comments_likes WHERE comment_id=commentID AND user_id=userID;
+	   	ELSE
+	   		INSERT INTO events_posts_comments_likes (comment_id, user_id) VALUES (commentID, userID);
+	   	END IF;
+	END $$ LANGUAGE plpgsql`
+	if _, err := db.ExecContext(ctx, likeComment); err != nil {
+		return errors.Wrap(err, "creating likeComment function")
+	}
+
 	return nil
 }
 

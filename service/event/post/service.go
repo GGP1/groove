@@ -343,15 +343,8 @@ func (s *service) GetReplies(ctx context.Context, parentID, userID string, param
 
 // LikeComment adds a like to a comment, if the like already exists, it removes it.
 func (s *service) LikeComment(ctx context.Context, commentID, userID string) error {
-	q := `DO $$ BEGIN
-		IF EXISTS (SELECT 1 FROM events_posts_comments_likes WHERE comment_id=$1 AND user_id=$2) THEN
-			DELETE FROM events_posts_comments_likes WHERE comment_id=$1 AND user_id=$2;
-	   	ELSE
-		   INSERT INTO events_posts_comments_likes (comment_id, user_id) VALUES ($1, $2);
-	   	END IF;
-	END $$`
 	sqlTx := txgroup.SQLTx(ctx)
-	if _, err := sqlTx.ExecContext(ctx, q, commentID, userID); err != nil {
+	if _, err := sqlTx.ExecContext(ctx, "SELECT likeComment($1, $2)", commentID, userID); err != nil {
 		return errors.Wrap(err, "comment like")
 	}
 
@@ -360,15 +353,8 @@ func (s *service) LikeComment(ctx context.Context, commentID, userID string) err
 
 // LikePost adds a like to a post, if the like already exists, it removes it.
 func (s *service) LikePost(ctx context.Context, postID, userID string) error {
-	q := `DO $$ BEGIN
-		IF EXISTS (SELECT 1 FROM events_posts_likes WHERE post_id=$1 AND user_id=$2) THEN
-	   		DELETE FROM events_posts_likes WHERE post_id=$1 AND user_id=$2;
-	   	ELSE
-	   		INSERT INTO events_posts_likes (post_id, user_id) VALUES ($1, $2);
-	   	END IF;
-	END $$`
 	sqlTx := txgroup.SQLTx(ctx)
-	if _, err := sqlTx.ExecContext(ctx, q, postID, userID); err != nil {
+	if _, err := sqlTx.ExecContext(ctx, "SELECT likePost($1, $2)", postID, userID); err != nil {
 		return errors.Wrap(err, "post like")
 	}
 	return nil

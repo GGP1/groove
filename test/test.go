@@ -202,6 +202,9 @@ func RunPostgres() (*dockertest.Resource, *sql.DB, error) {
 	if err := postgres.CreateTables(context.Background(), db); err != nil {
 		return nil, nil, err
 	}
+	if err := postgres.CreateFunctions(context.Background(), db); err != nil {
+		return nil, nil, err
+	}
 
 	return container, db, nil
 }
