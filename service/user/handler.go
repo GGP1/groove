@@ -956,6 +956,40 @@ func (h *Handler) Unblock() http.HandlerFunc {
 	}
 }
 
+// Unfollow unfollows a business.
+func (h *Handler) Unfollow() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		businessID, err := params.IDFromCtx(ctx, "business_id")
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		session, err := auth.GetSession(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
+
+		if err := h.service.Unfollow(ctx, session.ID, businessID); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		if err := sqlTx.Commit(); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		response.NoContent(w)
+	}
+}
+
 // Update updates a user.
 func (h *Handler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

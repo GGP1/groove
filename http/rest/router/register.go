@@ -277,7 +277,9 @@ func (r register) Users() {
 	users.get("/followers", r.user.GetFollowers(), r.authMw.UserPrivacyFilter)
 	users.get("/following", r.user.GetFollowing(), r.authMw.UserPrivacyFilter)
 	users.delete("/delete", r.user.Delete(), r.authMw.OwnUserOnly)
+	users.post("/follow/:business_id", r.user.Follow(), r.authMw.UserPrivacyFilter)
 	users.post("/unblock", r.user.Unblock(), r.authMw.OwnUserOnly)
+	users.post("/unfollow/:business_id", r.user.Unfollow(), r.authMw.UserPrivacyFilter)
 	users.put("/update", r.user.Update(), r.authMw.OwnUserOnly)
 	// Would be better to have this inside the event handler but the dependecies match with the user service
 	users.post("/invite", r.user.InviteToEvent(), r.authMw.RequirePermissions(permissions.InviteUsers))

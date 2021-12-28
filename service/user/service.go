@@ -69,6 +69,7 @@ type Service interface {
 	SendFriendRequest(ctx context.Context, session auth.Session, friendID string) error
 	Type(ctx context.Context, userID string) (model.UserType, error)
 	Unblock(ctx context.Context, userID, blockedID string) error
+	Unfollow(ctx context.Context, userID, businessID string) error
 	Update(ctx context.Context, userID string, user model.UpdateUser) error
 }
 
@@ -217,7 +218,7 @@ func (s *service) Delete(ctx context.Context, userID string) error {
 	return s.cache.Delete(model.T.User.CacheKey(userID))
 }
 
-// Follow follows an business.
+// Follow follows a business.
 func (s *service) Follow(ctx context.Context, userID, businessID string) error {
 	s.metrics.incMethodCalls("Follow")
 
@@ -709,6 +710,28 @@ func (s *service) Unblock(ctx context.Context, userID string, blockedID string) 
 	q := "DELETE FROM users_blocked WHERE user_id=$1 AND blocked_id=$2"
 	if _, err := sqlTx.ExecContext(ctx, q, userID, blockedID); err != nil {
 		return errors.Wrap(err, "removing block")
+	}
+
+	return nil
+}
+
+// Unfollow unfollows a business.
+func (s *service) Unfollow(ctx context.Context, userID, businessID string) error {
+	s.metrics.incMethodCalls("Unfollow")
+
+	typ, err := s.Type(ctx, businessID)
+	if err != nil {
+		return err
+	}
+	if typ != model.Business {
+		return httperr.Forbidden("only businesses can be followed")
+	}
+
+	sqlTx := txgroup.SQLTx(ctx)
+
+	q := "DELETE FROM users_followers WHERE user_id=$1 AND follower_id=$2"
+	if _, err := sqlTx.ExecContext(ctx, q, businessID, userID); err != nil {
+		return errors.Wrap(err, "unfollowing business")
 	}
 
 	return nil
