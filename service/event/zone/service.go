@@ -71,8 +71,10 @@ func (s *service) Create(ctx context.Context, eventID string, zone model.Zone) e
 
 // Delete removes a zone from the event.
 func (s *service) Delete(ctx context.Context, eventID, name string) error {
+	sqlTx := txgroup.SQLTx(ctx)
+
 	q := "DELETE FROM events_zones WHERE event_id=$1 AND name=$2"
-	if _, err := s.db.ExecContext(ctx, q, eventID, name); err != nil {
+	if _, err := sqlTx.ExecContext(ctx, q, eventID, name); err != nil {
 		return errors.Wrap(err, "deleting zone")
 	}
 

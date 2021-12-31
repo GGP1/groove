@@ -524,7 +524,7 @@ func (h *Handler) SetRoles() http.HandlerFunc {
 		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
-		if err := h.service.SetRole(ctx, eventID, setRole); err != nil {
+		if err := h.service.SetRole(ctx, eventID, setRole.RoleName, setRole.UserIDs...); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}

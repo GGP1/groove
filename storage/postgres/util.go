@@ -165,7 +165,7 @@ func Select(m model.Model, query string, params params.Query) string {
 		case "pag":
 			// TODO: pagination is always at the end so it would be better
 			// to look for it the other way around. A decision is needed on
-			// whether the query can contain only unique tokens or repetitive ones.
+			// whether the query can contain only unique tokens or many of the same kind.
 			s.addPagination()
 		}
 

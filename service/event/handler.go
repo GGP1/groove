@@ -73,7 +73,7 @@ func (h *Handler) AddInvited() http.HandlerFunc {
 		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
-		if err := h.roleService.SetReservedRole(ctx, eventID, reqBody.UserID, roles.Viewer); err != nil {
+		if err := h.roleService.SetRole(ctx, eventID, roles.Viewer, reqBody.UserID); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -150,10 +150,18 @@ func (h *Handler) Create() http.HandlerFunc {
 			return
 		}
 
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
+
 		sanitize.Strings(&event.Name)
 		event.HostID = session.ID
 		eventID, err := h.service.Create(ctx, event)
 		if err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		if err := sqlTx.Commit(); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -173,7 +181,15 @@ func (h *Handler) Delete() http.HandlerFunc {
 			return
 		}
 
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
+
 		if err := h.service.Delete(ctx, eventID); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		if err := sqlTx.Commit(); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -624,7 +640,7 @@ func (h *Handler) Join() http.HandlerFunc {
 		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
 		defer sqlTx.Rollback()
 
-		if err := h.roleService.SetReservedRole(ctx, eventID, session.ID, roles.Attendant); err != nil {
+		if err := h.roleService.SetRole(ctx, eventID, session.ID, roles.Attendant); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -857,7 +873,15 @@ func (h *Handler) Update() http.HandlerFunc {
 			return
 		}
 
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
+
 		if err := h.service.Update(ctx, eventID, uptEvent); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		if err := sqlTx.Commit(); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}

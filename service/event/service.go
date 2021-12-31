@@ -118,8 +118,7 @@ func (s *service) Ban(ctx context.Context, eventID, userID string) error {
 func (s *service) Create(ctx context.Context, event model.CreateEvent) (string, error) {
 	s.metrics.incMethodCalls("Create")
 
-	sqlTx, ctx := postgres.BeginTx(ctx, s.db)
-	defer sqlTx.Rollback()
+	sqlTx := txgroup.SQLTx(ctx)
 
 	id := ulid.NewString()
 	q1 := `INSERT INTO events 
@@ -135,11 +134,7 @@ func (s *service) Create(ctx context.Context, event model.CreateEvent) (string, 
 		return "", errors.Wrap(err, "creating event")
 	}
 
-	if err := s.roleService.SetReservedRole(ctx, id, event.HostID, roles.Host); err != nil {
-		return "", err
-	}
-
-	if err := sqlTx.Commit(); err != nil {
+	if err := s.roleService.SetRole(ctx, id, roles.Host, event.HostID); err != nil {
 		return "", err
 	}
 
@@ -150,15 +145,10 @@ func (s *service) Create(ctx context.Context, event model.CreateEvent) (string, 
 func (s *service) Delete(ctx context.Context, eventID string) error {
 	s.metrics.incMethodCalls("Delete")
 
-	sqlTx, _ := postgres.BeginTx(ctx, s.db)
-	defer sqlTx.Rollback()
+	sqlTx := txgroup.SQLTx(ctx)
 
 	if _, err := sqlTx.ExecContext(ctx, "DELETE FROM events WHERE id=$1", eventID); err != nil {
 		return errors.Wrap(err, "postgres: deleting event")
-	}
-
-	if err := sqlTx.Commit(); err != nil {
-		return err
 	}
 
 	if err := s.cache.Delete(model.T.Event.CacheKey(eventID)); err != nil {
@@ -539,6 +529,8 @@ func (s *service) SearchByLocation(ctx context.Context, userID string, location 
 func (s *service) Update(ctx context.Context, eventID string, event model.UpdateEvent) error {
 	s.metrics.incMethodCalls("Update")
 
+	sqlTx := txgroup.SQLTx(ctx)
+
 	var endDate time.Time
 	if err := s.db.QueryRowContext(ctx, "SELECT end_date FROM events WHERE id=$1", eventID).Scan(&endDate); err != nil {
 		return errors.Wrap(err, "scanning end_date")
@@ -575,7 +567,7 @@ func (s *service) Update(ctx context.Context, eventID string, event model.Update
 	slots = COALESCE($14,slots),
 	updated_at = $15
 	WHERE id = $1`
-	_, err := s.db.ExecContext(ctx, q, eventID, event.Name, event.Description, event.Type,
+	_, err := sqlTx.ExecContext(ctx, q, eventID, event.Name, event.Description, event.Type,
 		event.URL, event.LogoURL, event.HeaderURL, event.Location.Address,
 		event.Location.Coordinates.Latitude, event.Location.Coordinates.Longitude,
 		event.Cron, event.StartDate, event.EndDate, event.Slots, time.Now())

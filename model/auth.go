@@ -7,7 +7,7 @@ import (
 
 // UserSession is used when logging a user in.
 type UserSession struct {
-	ProfileImageURL string    `json:"profile_image_url,omitempty" db:"profile_image_url"`
+	ProfileImageURL *string   `json:"profile_image_url,omitempty" db:"profile_image_url"`
 	Email           string    `json:"email"`
 	Username        string    `json:"username"`
 	Password        string    `json:"-"`

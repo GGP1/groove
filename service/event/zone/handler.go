@@ -113,7 +113,15 @@ func (h *Handler) Delete() http.HandlerFunc {
 			return
 		}
 
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
+
 		if err := h.service.Delete(ctx, eventID, zoneName); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		if err := sqlTx.Commit(); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}

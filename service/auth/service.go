@@ -89,7 +89,7 @@ func (s *service) Login(ctx context.Context, w http.ResponseWriter, r *http.Requ
 	var user model.UserSession
 	if err := sqan.Row(&user, rows); err != nil {
 		_ = s.addDelay(ctx, ip)
-		return model.UserSession{}, httperr.Forbidden("invalid email or password")
+		return model.UserSession{}, err
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(login.Password)); err != nil {

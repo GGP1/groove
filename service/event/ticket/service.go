@@ -81,7 +81,7 @@ func (s *service) Buy(ctx context.Context, session auth.Session, eventID, ticket
 	}
 
 	// TODO: notify the users that are not the authenticated that they have been gifted a ticket to the event
-	return s.roleService.SetRole(ctx, eventID, model.SetRole{RoleName: linkedRole, UserIDs: userIDs})
+	return s.roleService.SetRole(ctx, eventID, linkedRole, userIDs...)
 }
 
 // Create adds a ticket to the event.
@@ -126,7 +126,7 @@ func (s *service) Delete(ctx context.Context, eventID, ticketName string) error 
 
 // GetByName returns the ticket with the given name.
 func (s *service) GetByName(ctx context.Context, eventID, ticketName string) (model.Ticket, error) {
-	q := "SELECT available_count, name, description, cost, linked_role FROM events_tickets WHERE event_id=$1"
+	q := "SELECT available_count, name, description, cost, linked_role FROM events_tickets WHERE event_id=$1 AND name=$2"
 	rows, err := s.db.QueryContext(ctx, q, eventID, ticketName)
 	if err != nil {
 		return model.Ticket{}, errors.Wrap(err, "scanning ticket")
@@ -180,7 +180,7 @@ func (s *service) Update(ctx context.Context, eventID, ticketName string, update
 	linked_role = COALESCE($6,linked_role) 
 	WHERE event_id=$1 AND name=$2
 	RETURNING (SELECT available_count FROM events_tickets WHERE event_id=$1 AND name=$2)`
-	row := sqlTx.QueryRowContext(ctx, q, q, eventID, ticketName, updateTicket.Description,
+	row := sqlTx.QueryRowContext(ctx, q, eventID, ticketName, updateTicket.Description,
 		updateTicket.AvailableCount, updateTicket.Cost, updateTicket.LinkedRole)
 
 	var oldAvailableCount int64
