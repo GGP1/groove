@@ -121,7 +121,7 @@ func (s *service) Answer(ctx context.Context, id, authUserID string, accepted bo
 
 	switch notification.Type {
 	case model.Invitation: // Add receiver as an attendant of the event
-		return s.roleService.SetReservedRole(ctx, *notification.EventID, notification.ReceiverID, roles.Attendant)
+		return s.roleService.SetRole(ctx, *notification.EventID, roles.Attendant, notification.ReceiverID)
 	case model.FriendRequest: // Create friendship
 		// Here the user service should be used but it's not possible due to
 		// the dependency cycle
@@ -155,7 +155,7 @@ func (s *service) Create(ctx context.Context, session auth.Session, notification
 	}
 
 	if notification.Type == model.Invitation {
-		err = s.roleService.SetReservedRole(ctx, *notification.EventID, notification.ReceiverID, roles.Viewer)
+		err = s.roleService.SetRole(ctx, *notification.EventID, roles.Viewer, notification.ReceiverID)
 		if err != nil {
 			return err
 		}
@@ -197,7 +197,7 @@ func (s *service) CreateMany(ctx context.Context, session auth.Session, notifica
 
 	if notification.Type == model.Invitation {
 		for _, receiverID := range notification.ReceiverIDs {
-			err := s.roleService.SetReservedRole(ctx, *notification.EventID, receiverID, roles.Viewer)
+			err := s.roleService.SetRole(ctx, *notification.EventID, roles.Viewer, receiverID)
 			if err != nil {
 				return err
 			}

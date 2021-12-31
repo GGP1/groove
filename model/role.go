@@ -12,19 +12,19 @@ import (
 // ReservedRoles is an slice with reserved roles and it should be kept in sync with the roles.Reserved map.
 var ReservedRoles = []Role{
 	{
-		Name:           string(roles.Host),
+		Name:           roles.Host,
 		PermissionKeys: []string{permissions.All},
 	},
 	{
-		Name:           string(roles.Attendant),
+		Name:           roles.Attendant,
 		PermissionKeys: []string{permissions.Access},
 	},
 	{
-		Name:           string(roles.Moderator),
+		Name:           roles.Moderator,
 		PermissionKeys: []string{permissions.Access, permissions.BanUsers},
 	},
 	{
-		Name:           string(roles.Viewer),
+		Name:           roles.Viewer,
 		PermissionKeys: []string{permissions.ViewEvent},
 	},
 }
