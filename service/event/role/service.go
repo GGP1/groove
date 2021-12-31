@@ -15,6 +15,7 @@ import (
 	"github.com/GGP1/groove/storage/postgres"
 	"github.com/GGP1/sqan"
 
+	"github.com/lib/pq"
 	"github.com/pkg/errors"
 )
 
@@ -47,8 +48,7 @@ type Service interface {
 	HasRole(ctx context.Context, eventID, userID string) (bool, error)
 	IsHost(ctx context.Context, userID string, eventIDs ...string) (bool, error)
 	RequirePermissions(ctx context.Context, session auth.Session, eventID string, permKeys ...string) error
-	SetRole(ctx context.Context, eventID string, setRole model.SetRole) error
-	SetReservedRole(ctx context.Context, eventID, userID string, roleName roles.Name) error
+	SetRole(ctx context.Context, eventID, roleName string, userIDs ...string) error
 	UnsetRole(ctx context.Context, eventID, userID string) error
 	UpdatePermission(ctx context.Context, eventID, key string, permission model.UpdatePermission) error
 	UpdateRole(ctx context.Context, eventID, name string, role model.UpdateRole) error
@@ -119,7 +119,7 @@ func (s *service) CloneRoles(ctx context.Context, exporterEventID, importerEvent
 }
 
 // CreatePermission creates a permission inside the event.
-func (s service) CreatePermission(ctx context.Context, eventID string, permission model.Permission) error {
+func (s *service) CreatePermission(ctx context.Context, eventID string, permission model.Permission) error {
 	sqlTx := txgroup.SQLTx(ctx)
 
 	q := "INSERT INTO events_permissions (event_id, key, name, description) VALUES ($1, $2, $3, $4)"
@@ -136,34 +136,15 @@ func (s service) CreatePermission(ctx context.Context, eventID string, permissio
 }
 
 // CreateRole creates a new role inside an event.
-func (s service) CreateRole(ctx context.Context, eventID string, role model.Role) error {
+func (s *service) CreateRole(ctx context.Context, eventID string, role model.Role) error {
 	sqlTx := txgroup.SQLTx(ctx)
 
-	q1 := "SELECT EXISTS(SELECT 1 FROM events_permissions WHERE event_id=$1 AND key=$2)"
-	exists := false
-
-	stmt, err := sqlTx.PrepareContext(ctx, q1)
-	if err != nil {
-		return errors.Wrap(err, "preparing statement")
-	}
-	defer stmt.Close()
-
-	// Check for the existence of the keys used for the role
-	for _, key := range role.PermissionKeys {
-		if permissions.Reserved.Exists(key) {
-			continue
-		}
-		row := stmt.QueryRowContext(ctx, eventID, key)
-		if err := row.Scan(&exists); err != nil {
-			return err
-		}
-		if !exists {
-			return errors.Errorf("permission with key %q does not exist", key)
-		}
+	if err := s.permissionKeysExist(ctx, eventID, role.PermissionKeys); err != nil {
+		return err
 	}
 
-	q2 := "INSERT INTO events_roles (event_id, name, permission_keys) VALUES ($1, $2, $3)"
-	if _, err := sqlTx.ExecContext(ctx, q2, eventID, role.Name, role.PermissionKeys); err != nil {
+	q := "INSERT INTO events_roles (event_id, name, permission_keys) VALUES ($1, $2, $3)"
+	if _, err := sqlTx.ExecContext(ctx, q, eventID, role.Name, role.PermissionKeys); err != nil {
 		return errors.Wrap(err, "creating role")
 	}
 
@@ -342,10 +323,6 @@ func (s *service) GetUserRole(ctx context.Context, eventID, userID string) (mode
 		return model.Role{}, errors.Errorf("user %q has no role in event %q", userID, eventID)
 	}
 
-	if keys, ok := roles.Reserved.GetStringSlice(roleName); ok {
-		return model.Role{Name: roleName, PermissionKeys: keys}, nil
-	}
-
 	role, err := s.GetRole(ctx, eventID, roleName)
 	if err != nil {
 		return model.Role{}, err
@@ -472,34 +449,47 @@ func (s *service) RequirePermissions(ctx context.Context, session auth.Session, 
 	return nil
 }
 
-// SetRole assigns a role to n users inside an event.
-func (s service) SetRole(ctx context.Context, eventID string, setRole model.SetRole) error {
+// SetRole assigns a role to n users inside an event. TODO: improve readability.
+func (s *service) SetRole(ctx context.Context, eventID, roleName string, userIDs ...string) error {
 	sqlTx := txgroup.SQLTx(ctx)
 
-	row := sqlTx.QueryRowContext(ctx, "SELECT public FROM events WHERE id=$1", eventID)
+	q := "SELECT EXISTS(SELECT 1 FROM users WHERE type=$1 AND id = ANY($2))"
+	row := sqlTx.QueryRowContext(ctx, q, model.Business, pq.Array(userIDs))
+	var exists bool
+	if err := row.Scan(&exists); err != nil {
+		return errors.Wrap(err, "scanning user types")
+	}
+	if exists {
+		return httperr.Forbidden("a bussiness can't take part in third party events")
+	}
 
+	row2 := sqlTx.QueryRowContext(ctx, "SELECT public FROM events WHERE id=$1", eventID)
 	var public bool
-	if err := row.Scan(&public); err != nil {
+	if err := row2.Scan(&public); err != nil {
 		return errors.Wrap(err, "scanning public")
 	}
 
 	if !public {
 		// In a private event, the users first need to have a role ("viewer" if they are invited).
-		q1 := "SELECT EXISTS(SELECT 1 FROM events_users_roles WHERE event_id=$1 AND user_id=$2)"
-		stmt1, err := sqlTx.PrepareContext(ctx, q1)
+		q := "SELECT EXISTS(SELECT 1 FROM events_users_roles WHERE event_id=$1 AND user_id=$2)"
+		stmt, err := sqlTx.PrepareContext(ctx, q)
 		if err != nil {
-			return errors.Wrap(err, "prepraring statement")
+			return errors.Wrap(err, "preparing role statement")
 		}
-		defer stmt1.Close()
+		defer stmt.Close()
 
 		var hasRole bool // Reuse
-		for _, userID := range setRole.UserIDs {
-			if err := stmt1.QueryRowContext(ctx, eventID, userID).Scan(&hasRole); err != nil {
+		for _, userID := range userIDs {
+			if err := stmt.QueryRowContext(ctx, eventID, userID).Scan(&hasRole); err != nil {
 				return err
 			}
 			if !hasRole {
 				return errors.Errorf("user %q is not part of the event %q", userID, eventID)
 			}
+		}
+
+		if err := stmt.Close(); err != nil {
+			return err
 		}
 	}
 
@@ -509,39 +499,15 @@ func (s service) SetRole(ctx context.Context, eventID string, setRole model.SetR
 	}
 	defer stmt2.Close()
 
-	for _, userID := range setRole.UserIDs {
-		if _, err := stmt2.ExecContext(ctx, eventID, userID, setRole.RoleName); err != nil {
-			return errors.Wrap(err, "setting roles")
+	for _, userID := range userIDs {
+		if _, err := stmt2.ExecContext(ctx, eventID, userID, roleName); err != nil {
+			return errors.Wrap(err, "setting role")
 		}
 	}
 
 	// Flush buffered data
 	if _, err := stmt2.ExecContext(ctx); err != nil {
 		return errors.Wrap(err, "flushing buffered data")
-	}
-
-	return nil
-}
-
-// SetReservedRole assigns a reserved role to a user.
-func (s service) SetReservedRole(ctx context.Context, eventID, userID string, roleName roles.Name) error {
-	sqlTx := txgroup.SQLTx(ctx)
-
-	// I'd prefer to use the user service here but it's not possible
-	row := sqlTx.QueryRowContext(ctx, "SELECT type FROM users WHERE id=$1", userID)
-
-	var typ int64
-	if err := row.Scan(&typ); err != nil {
-		return errors.Wrap(err, "scanning account type")
-	}
-
-	if model.UserType(typ) == model.Business && roleName != roles.Host {
-		return httperr.Forbidden("a bussiness can't take part in third party events")
-	}
-
-	q := "INSERT INTO events_users_roles (event_id, user_id, role_name) VALUES ($1, $2, $3)"
-	if _, err := sqlTx.ExecContext(ctx, q, eventID, userID, roleName); err != nil {
-		return errors.Wrap(err, "setting reserved role")
 	}
 
 	return nil
@@ -560,7 +526,7 @@ func (s *service) UnsetRole(ctx context.Context, eventID, userID string) error {
 }
 
 // UpdatePemission sets new values for a permission.
-func (s service) UpdatePermission(ctx context.Context, eventID, key string, permission model.UpdatePermission) error {
+func (s *service) UpdatePermission(ctx context.Context, eventID, key string, permission model.UpdatePermission) error {
 	sqlTx := txgroup.SQLTx(ctx)
 
 	q := `UPDATE events_permissions SET 
@@ -575,14 +541,47 @@ func (s service) UpdatePermission(ctx context.Context, eventID, key string, perm
 }
 
 // UpdateRole sets new values for a role.
-func (s service) UpdateRole(ctx context.Context, eventID, name string, role model.UpdateRole) error {
+func (s *service) UpdateRole(ctx context.Context, eventID, name string, role model.UpdateRole) error {
 	sqlTx := txgroup.SQLTx(ctx)
+
+	if err := s.permissionKeysExist(ctx, eventID, *role.PermissionKeys); err != nil {
+		return err
+	}
 
 	q := `UPDATE events_roles SET
 	permission_keys = COALESCE($3,permission_keys)
 	WHERE event_id=$1 AND name=$2`
 	if _, err := sqlTx.ExecContext(ctx, q, eventID, name, role.PermissionKeys); err != nil {
 		return errors.Wrap(err, "updating role")
+	}
+
+	return nil
+}
+
+func (s *service) permissionKeysExist(ctx context.Context, eventID string, permissionKeys pq.StringArray) error {
+	if len(permissionKeys) == 0 {
+		return nil
+	}
+
+	q := "SELECT EXISTS(SELECT 1 FROM events_permissions WHERE event_id=$1 AND key=$2)"
+	stmt, err := s.db.PrepareContext(ctx, q)
+	if err != nil {
+		return errors.Wrap(err, "preparing statement")
+	}
+	defer stmt.Close()
+
+	var exists bool // Reuse
+	for _, key := range permissionKeys {
+		if permissions.Reserved.Exists(key) {
+			continue
+		}
+		row := stmt.QueryRowContext(ctx, eventID, key)
+		if err := row.Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return errors.Errorf("permission with key %q does not exist", key)
+		}
 	}
 
 	return nil
