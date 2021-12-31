@@ -3,8 +3,6 @@ package post_test
 import (
 	"context"
 	"database/sql"
-	"log"
-	"os"
 	"testing"
 
 	"github.com/GGP1/groove/config"
@@ -18,6 +16,7 @@ import (
 	"github.com/GGP1/groove/storage/postgres"
 	"github.com/GGP1/groove/test"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 )
@@ -29,33 +28,19 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	pgContainer, postgres, err := test.RunPostgres()
-	if err != nil {
-		log.Fatal(err)
-	}
-	mcContainer, memcached, err := test.RunMemcached()
-	if err != nil {
-		log.Fatal(err)
-	}
+	test.Main(
+		m,
+		func(s *sql.DB, _ *redis.Client, c cache.Client) {
+			db = s
+			cacheClient = c
 
-	cacheClient = memcached
-	db = postgres
-
-	authService := auth.NewService(postgres, nil, config.Sessions{})
-	roleService := role.NewService(postgres, cacheClient)
-	notifService := notification.NewService(postgres, config.Notifications{}, authService, roleService)
-	postSv = post.NewService(postgres, cacheClient, notifService)
-
-	code := m.Run()
-
-	if err := pgContainer.Close(); err != nil {
-		log.Fatal(err)
-	}
-	if err := mcContainer.Close(); err != nil {
-		log.Fatal(err)
-	}
-
-	os.Exit(code)
+			authService := auth.NewService(db, nil, config.Sessions{})
+			roleService := role.NewService(db, cacheClient)
+			notifService := notification.NewService(db, config.Notifications{}, authService, roleService)
+			postSv = post.NewService(db, cacheClient, notifService)
+		},
+		test.Postgres, test.Memcached,
+	)
 }
 
 func TestCreateComment(t *testing.T) {
@@ -90,10 +75,10 @@ func TestCreatePost(t *testing.T) {
 	assert.NoError(t, sqlTx.Commit())
 }
 
-func TestPost(t *testing.T) {
+func TestPosts(t *testing.T) {
 
 }
 
-func TestComment(t *testing.T) {
+func TestComments(t *testing.T) {
 
 }

@@ -2,65 +2,42 @@ package product_test
 
 import (
 	"context"
+	"database/sql"
 	"log"
-	"os"
 	"testing"
 
 	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/txgroup"
-	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/event/product"
 	"github.com/GGP1/groove/test"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
 )
 
 var (
+	db          *sql.DB
+	cacheClient cache.Client
 	productSv   product.Service
 	ctx         context.Context
-	cacheClient cache.Client
 )
 
 func TestMain(m *testing.M) {
-	pgContainer, postgres, err := test.RunPostgres()
-	if err != nil {
-		log.Fatal(err)
-	}
-	mcContainer, memcached, err := test.RunMemcached()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	sqlTx, err := postgres.BeginTx(context.Background(), nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	_, ctx = txgroup.WithContext(ctx, txgroup.NewSQLTx(sqlTx))
-	cacheClient = memcached
-
-	productSv = product.NewService(postgres, cacheClient)
-
-	code := m.Run()
-
-	if err := sqlTx.Rollback(); err != nil {
-		log.Fatal(err)
-	}
-	if err := pgContainer.Close(); err != nil {
-		log.Fatal(err)
-	}
-	if err := mcContainer.Close(); err != nil {
-		log.Fatal(err)
-	}
-
-	os.Exit(code)
+	test.Main(m, func(s *sql.DB, r *redis.Client, c cache.Client) {
+		sqlTx, err := s.BeginTx(context.Background(), nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+		_, ctx = txgroup.WithContext(ctx, txgroup.NewSQLTx(sqlTx))
+		db = s
+		cacheClient = c
+		productSv = product.NewService(s, cacheClient)
+	}, test.Postgres, test.Memcached)
 }
 
 func TestCreateProduct(t *testing.T) {
-	eventID := ulid.NewString()
-
-	err := createEvent(eventID, "create_product")
-	assert.NoError(t, err)
+	eventID := test.CreateEvent(t, db, "create_product")
 
 	product := model.Product{
 		EventID:     eventID,
@@ -73,19 +50,6 @@ func TestCreateProduct(t *testing.T) {
 		Total:       7,
 		Description: "TestCreatePermission",
 	}
-	_, err = productSv.Create(ctx, eventID, product)
+	_, err := productSv.Create(ctx, eventID, product)
 	assert.NoError(t, err)
-}
-
-func TestUserHasRole(t *testing.T) {
-
-}
-
-func createEvent(id, name string) error {
-	sqlTx := txgroup.SQLTx(ctx)
-	q := `INSERT INTO events 
-	(id, name, type, public, virtual, slots, cron) 
-	VALUES ($1,$2,$3,$4,$5,$6,$7)`
-	_, err := sqlTx.ExecContext(ctx, q, id, name, 1, true, false, 100, "15 20 5 12 2 120")
-	return err
 }

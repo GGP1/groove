@@ -2,84 +2,52 @@ package role_test
 
 import (
 	"context"
+	"database/sql"
 	"log"
-	"os"
 	"testing"
-	"time"
 
 	"github.com/GGP1/groove/internal/cache"
+	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/roles"
 	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/model"
+	"github.com/GGP1/groove/service/auth"
 	"github.com/GGP1/groove/service/event/role"
 	"github.com/GGP1/groove/test"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 )
 
 var (
+	db          *sql.DB
+	cacheClient cache.Client
 	roleSv      role.Service
 	ctx         context.Context
-	cacheClient cache.Client
 )
 
 func TestMain(m *testing.M) {
-	pgContainer, postgres, err := test.RunPostgres()
-	if err != nil {
-		log.Fatal(err)
-	}
-	mcContainer, memcached, err := test.RunMemcached()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	sqlTx, err := postgres.BeginTx(context.Background(), nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	_, ctx = txgroup.WithContext(ctx, txgroup.NewSQLTx(sqlTx))
-	cacheClient = memcached
-
-	roleSv = role.NewService(postgres, cacheClient)
-
-	code := m.Run()
-
-	if err := sqlTx.Rollback(); err != nil {
-		log.Fatal(err)
-	}
-	if err := pgContainer.Close(); err != nil {
-		log.Fatal(err)
-	}
-	if err := mcContainer.Close(); err != nil {
-		log.Fatal(err)
-	}
-
-	os.Exit(code)
+	test.Main(
+		m,
+		func(s *sql.DB, _ *redis.Client, c cache.Client) {
+			sqlTx, err := s.BeginTx(context.Background(), nil)
+			if err != nil {
+				log.Fatal(err)
+			}
+			ctx = txgroup.NewContext(ctx, txgroup.NewSQLTx(sqlTx))
+			db = s
+			cacheClient = c
+			roleSv = role.NewService(s, cacheClient)
+		},
+		test.Postgres, test.Memcached,
+	)
 }
 
-func TestCreatePermission(t *testing.T) {
-	eventID := ulid.NewString()
-
-	err := createEvent(eventID, "create_permission")
-	assert.NoError(t, err)
-
-	permission := model.Permission{
-		Name:        "create_permission",
-		Key:         "create_permission",
-		Description: "TestCreatePermission",
-	}
-	err = roleSv.CreatePermission(ctx, eventID, permission)
-	assert.NoError(t, err)
-}
-
-func TestGetPermissions(t *testing.T) {
-	eventID := ulid.NewString()
-
-	err := createEvent(eventID, "permissions")
-	assert.NoError(t, err)
+func TestPermissions(t *testing.T) {
+	eventID := test.CreateEvent(t, db, "permissions")
 
 	expectedKey := "create_permission"
 	t.Run("CreatePermission", func(t *testing.T) {
@@ -88,8 +56,9 @@ func TestGetPermissions(t *testing.T) {
 			Key:         expectedKey,
 			Description: "TestCreatePermission",
 		}
-		err = roleSv.CreatePermission(ctx, eventID, permission)
+		err := roleSv.CreatePermission(ctx, eventID, permission)
 		assert.NoError(t, err)
+		ctx = test.CommitTx(ctx, t, db)
 	})
 
 	t.Run("GetPermissions", func(t *testing.T) {
@@ -99,6 +68,19 @@ func TestGetPermissions(t *testing.T) {
 		assert.Equal(t, expectedKey, permissions[0].Key)
 	})
 
+	t.Run("RequirePermissions", func(t *testing.T) {
+		userID := test.CreateUser(t, db, "email@mail.com", "username")
+		err := roleSv.SetRole(ctx, eventID, roles.Attendant, userID)
+		assert.NoError(t, err)
+		ctx = test.CommitTx(ctx, t, db)
+
+		session := auth.Session{
+			ID: userID,
+		}
+		err = roleSv.RequirePermissions(ctx, session, eventID, permissions.ViewEvent, permissions.ModifyZones)
+		assert.Error(t, err)
+	})
+
 	t.Run("UpdatePermission", func(t *testing.T) {
 		name := "update_permission"
 		uptPermission := model.UpdatePermission{
@@ -106,6 +88,7 @@ func TestGetPermissions(t *testing.T) {
 		}
 		err := roleSv.UpdatePermission(ctx, eventID, expectedKey, uptPermission)
 		assert.NoError(t, err)
+		ctx = test.CommitTx(ctx, t, db)
 
 		permissions, err := roleSv.GetPermissions(ctx, eventID)
 		assert.NoError(t, err)
@@ -116,62 +99,55 @@ func TestGetPermissions(t *testing.T) {
 	t.Run("DeletePermission", func(t *testing.T) {
 		err := roleSv.DeletePermission(ctx, eventID, expectedKey)
 		assert.NoError(t, err)
+		ctx = test.CommitTx(ctx, t, db)
 
-		permissions, err := roleSv.GetPermissions(ctx, eventID)
-		assert.NoError(t, err)
-
-		assert.Equal(t, 0, len(permissions))
+		_, err = roleSv.GetPermission(ctx, eventID, expectedKey)
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, sql.ErrNoRows)
 	})
 }
 
 func TestRoles(t *testing.T) {
-	eventID := ulid.NewString()
-	userID := ulid.NewString()
-
 	email := "role@email.com"
-	err := createUser(userID, email, "role")
-	assert.NoError(t, err)
-
-	err = createEvent(eventID, "roles")
-	assert.NoError(t, err)
+	userID := test.CreateUser(t, db, email, "username")
+	eventID := test.CreateEvent(t, db, "roles")
 
 	expectedRole := model.Role{
-		Name:           string(roles.Attendant),
+		Name:           "invitor",
 		PermissionKeys: pq.StringArray{permissions.InviteUsers},
 	}
 
 	t.Run("CreateRole", func(t *testing.T) {
-		err = roleSv.CreateRole(ctx, eventID, expectedRole)
+		err := roleSv.CreateRole(ctx, eventID, expectedRole)
 		assert.NoError(t, err)
-	})
-
-	t.Run("DeleteRole", func(t *testing.T) {
-		name := "delete"
-		err := roleSv.CreateRole(ctx, eventID, model.Role{Name: name, PermissionKeys: pq.StringArray{"abc"}})
-		assert.NoError(t, err)
-
-		err = roleSv.DeleteRole(ctx, eventID, name)
-		assert.NoError(t, err)
-
-		_, err = roleSv.GetRole(ctx, eventID, name)
-		assert.Error(t, err)
+		ctx = test.CommitTx(ctx, t, db)
 	})
 
 	t.Run("SetRoles", func(t *testing.T) {
-		sr := model.SetRole{
-			UserIDs:  []string{userID},
-			RoleName: expectedRole.Name,
-		}
-		err = roleSv.SetRole(ctx, eventID, sr)
+		err := roleSv.SetRole(ctx, eventID, expectedRole.Name, userID)
 		assert.NoError(t, err)
+		ctx = test.CommitTx(ctx, t, db)
+	})
+
+	t.Run("GetMembers", func(t *testing.T) {
+		gotMembers, err := roleSv.GetMembers(ctx, eventID, params.Query{})
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(gotMembers))
+		assert.Equal(t, userID, gotMembers[0].ID)
+	})
+
+	t.Run("GetMembersCount", func(t *testing.T) {
+		count, err := roleSv.GetMembersCount(ctx, eventID)
+		assert.NoError(t, err)
+		assert.Equal(t, int64(1), count)
 	})
 
 	t.Run("GetRoles", func(t *testing.T) {
 		roles, err := roleSv.GetRoles(ctx, eventID)
 		assert.NoError(t, err)
 
-		assert.Equal(t, 1, len(roles))
-		assert.Equal(t, expectedRole, roles[0])
+		assert.Equal(t, 1+len(model.ReservedRoles), len(roles))
+		assert.Equal(t, expectedRole, roles[len(model.ReservedRoles)])
 	})
 
 	t.Run("GetRole", func(t *testing.T) {
@@ -188,47 +164,71 @@ func TestRoles(t *testing.T) {
 		assert.Equal(t, expectedRole, gotRole)
 	})
 
-	t.Run("SetReservedRole", func(t *testing.T) {
-		expectedRole := roles.Viewer
-		err := roleSv.SetReservedRole(ctx, eventID, userID, expectedRole)
+	t.Run("GetUsersByRole", func(t *testing.T) {
+		gotUsers, err := roleSv.GetUsersByRole(ctx, eventID, expectedRole.Name, params.Query{})
 		assert.NoError(t, err)
+		assert.Equal(t, 1, len(gotUsers))
+		assert.Equal(t, userID, gotUsers[0].ID)
+	})
 
-		gotRole, err := roleSv.GetUserRole(ctx, eventID, userID)
+	t.Run("GetUsersCountByRole", func(t *testing.T) {
+		count, err := roleSv.GetUsersCountByRole(ctx, eventID, expectedRole.Name)
 		assert.NoError(t, err)
-
-		assert.Equal(t, expectedRole, gotRole.Name)
+		assert.Equal(t, int64(1), count)
 	})
 
 	t.Run("UserHasRole", func(t *testing.T) {
 		t.Run("True", func(t *testing.T) {
-			ok, err := roleSv.HasRole(ctx, eventID, userID)
+			hasRole, err := roleSv.HasRole(ctx, eventID, userID)
 			assert.NoError(t, err)
-
-			assert.True(t, ok)
+			assert.True(t, hasRole)
 		})
 
 		t.Run("False", func(t *testing.T) {
-			ok, err := roleSv.HasRole(ctx, eventID, ulid.NewString())
+			hasRole, err := roleSv.HasRole(ctx, eventID, ulid.NewString())
 			assert.NoError(t, err)
-
-			assert.False(t, ok)
+			assert.False(t, hasRole)
 		})
 	})
-}
 
-func createEvent(id, name string) error {
-	sqlTx := txgroup.SQLTx(ctx)
-	q := `INSERT INTO events 
-	(id, name, type, public, virtual, slots, cron) 
-	VALUES ($1,$2,$3,$4,$5,$6,$7)`
-	_, err := sqlTx.ExecContext(ctx, q, id, name, 1, true, false, 100, "15 20 5 12 2 120")
-	return err
-}
+	t.Run("IsHost", func(t *testing.T) {
+		isHost, err := roleSv.IsHost(ctx, userID, eventID)
+		assert.NoError(t, err)
+		assert.False(t, isHost)
+	})
 
-func createUser(id, email, username string) error {
-	sqlTx := txgroup.SQLTx(ctx)
-	q := "INSERT INTO users (id, name, email, username, password, birth_date) VALUES ($1,$2,$3,$4,$5,$6)"
-	_, err := sqlTx.ExecContext(ctx, q, id, "test", email, username, "password", time.Now())
+	t.Run("UpdateRole", func(t *testing.T) {
+		updateRole := model.UpdateRole{
+			PermissionKeys: &pq.StringArray{permissions.SetUserRole},
+		}
 
-	return err
+		err := roleSv.UpdateRole(ctx, eventID, expectedRole.Name, updateRole)
+		assert.NoError(t, err)
+		ctx = test.CommitTx(ctx, t, db)
+
+		role, err := roleSv.GetRole(ctx, eventID, expectedRole.Name)
+		assert.NoError(t, err)
+
+		assert.Equal(t, *updateRole.PermissionKeys, role.PermissionKeys)
+	})
+
+	t.Run("UnsetRole", func(t *testing.T) {
+		err := roleSv.UnsetRole(ctx, eventID, userID)
+		assert.NoError(t, err)
+		ctx = test.CommitTx(ctx, t, db)
+
+		hasRole, err := roleSv.HasRole(ctx, eventID, userID)
+		assert.NoError(t, err)
+		assert.False(t, hasRole)
+	})
+
+	t.Run("DeleteRole", func(t *testing.T) {
+		err := roleSv.DeleteRole(ctx, eventID, expectedRole.Name)
+		assert.NoError(t, err)
+		ctx = test.CommitTx(ctx, t, db)
+
+		_, err = roleSv.GetRole(ctx, eventID, expectedRole.Name)
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, sql.ErrNoRows)
+	})
 }
