@@ -31,7 +31,7 @@ func Connect(ctx context.Context, c config.Postgres) (*sql.DB, error) {
 	if err := CreateTables(ctx, db); err != nil {
 		return nil, err
 	}
-	if err := CreateFunctions(ctx, db); err != nil {
+	if err := CreateProcedures(ctx, db); err != nil {
 		return nil, err
 	}
 
@@ -49,9 +49,9 @@ func CreateTables(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-// CreateFunctions creates the pre-defined postgres functions used by the services.
-func CreateFunctions(ctx context.Context, db *sql.DB) error {
-	likePost := `CREATE OR REPLACE FUNCTION likePost(postID text, userID text) RETURNS void AS $$
+// CreateProcedures creates pre-defined postgres procedures.
+func CreateProcedures(ctx context.Context, db *sql.DB) error {
+	likePost := `CREATE OR REPLACE PROCEDURE likePost(postID text, userID text) AS $$
 	BEGIN
 		IF EXISTS (SELECT 1 FROM events_posts_likes WHERE post_id=postID AND user_id=userID) THEN
 	   		DELETE FROM events_posts_likes WHERE post_id=postID AND user_id=userID;
@@ -60,10 +60,10 @@ func CreateFunctions(ctx context.Context, db *sql.DB) error {
 	   	END IF;
 	END $$ LANGUAGE plpgsql`
 	if _, err := db.ExecContext(ctx, likePost); err != nil {
-		return errors.Wrap(err, "creating likePost function")
+		return errors.Wrap(err, "creating likePost procedure")
 	}
 
-	likeComment := `CREATE OR REPLACE FUNCTION likeComment(commentID text, userID text) RETURNS void AS $$ 
+	likeComment := `CREATE OR REPLACE PROCEDURE likeComment(commentID text, userID text) AS $$ 
 	BEGIN
 		IF EXISTS (SELECT 1 FROM events_posts_comments_likes WHERE comment_id=commentID AND user_id=userID) THEN
 			DELETE FROM events_posts_comments_likes WHERE comment_id=commentID AND user_id=userID;
@@ -72,7 +72,7 @@ func CreateFunctions(ctx context.Context, db *sql.DB) error {
 	   	END IF;
 	END $$ LANGUAGE plpgsql`
 	if _, err := db.ExecContext(ctx, likeComment); err != nil {
-		return errors.Wrap(err, "creating likeComment function")
+		return errors.Wrap(err, "creating likeComment procedure")
 	}
 
 	return nil

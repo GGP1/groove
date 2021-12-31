@@ -344,7 +344,7 @@ func (s *service) GetReplies(ctx context.Context, parentID, userID string, param
 // LikeComment adds a like to a comment, if the like already exists, it removes it.
 func (s *service) LikeComment(ctx context.Context, commentID, userID string) error {
 	sqlTx := txgroup.SQLTx(ctx)
-	if _, err := sqlTx.ExecContext(ctx, "SELECT likeComment($1, $2)", commentID, userID); err != nil {
+	if _, err := sqlTx.ExecContext(ctx, "CALL likeComment($1, $2)", commentID, userID); err != nil {
 		return errors.Wrap(err, "comment like")
 	}
 
@@ -354,7 +354,7 @@ func (s *service) LikeComment(ctx context.Context, commentID, userID string) err
 // LikePost adds a like to a post, if the like already exists, it removes it.
 func (s *service) LikePost(ctx context.Context, postID, userID string) error {
 	sqlTx := txgroup.SQLTx(ctx)
-	if _, err := sqlTx.ExecContext(ctx, "SELECT likePost($1, $2)", postID, userID); err != nil {
+	if _, err := sqlTx.ExecContext(ctx, "CALL likePost($1, $2)", postID, userID); err != nil {
 		return errors.Wrap(err, "post like")
 	}
 	return nil
