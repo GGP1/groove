@@ -24,6 +24,9 @@ type unique string
 
 // NewContext returns a new context with the transactions stored in it.
 func NewContext(ctx context.Context, txs ...Tx) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	for _, tx := range txs {
 		ctx = context.WithValue(ctx, unique(tx.Key()), tx)
 	}
