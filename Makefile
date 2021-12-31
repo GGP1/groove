@@ -19,10 +19,10 @@ docker-run:
 	-v "./server/certs/:/certs/" \
 	groove_server
 
-rebuild-server:
-	docker compose rm -sf server && docker compose up -d --build --no-deps server && docker compose logs -f
+rebuild:
+	docker compose rm -sf server && docker compose up -d --build --no-deps server
 
 remove-images:
 	docker rmi $(docker images -f dangling=true -q | tail -n +2)
 
-.PHONY: run test rebuild-server remove-images
+.PHONY: run test rebuild remove-images
