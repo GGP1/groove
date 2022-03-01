@@ -1,55 +1,52 @@
 package middleware
 
 import (
-	"log"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/GGP1/groove/internal/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // MetricsHandler implements a scrapper middleware.
 type MetricsHandler struct {
-	requestInFlight *prometheus.GaugeVec
-	requestCount    *prometheus.CounterVec
+	requestInFlight prometheus.Gauge
+	requestCount    prometheus.Counter
 	requestDuration *prometheus.HistogramVec
 	requestSize     *prometheus.HistogramVec
 	responseSize    *prometheus.HistogramVec
-	serverIP        string
 }
 
 // NewMetrics initializes the metrics and returns the handler used to scrap.
-func NewMetrics() MetricsHandler {
+func NewMetrics() *MetricsHandler {
 	const ns, sub = "groove", "http"
-
-	basicLabels := []string{"server_ip"}
 	httpLabels := []string{"path", "method", "code"}
 	sizeBuckets := prometheus.ExponentialBuckets(256, 4, 8)
+	log.Sugar().Info("Server IP:", getOutboundIP())
 
-	return MetricsHandler{
-		serverIP: getOutboundIP(),
-		requestInFlight: promauto.NewGaugeVec(prometheus.GaugeOpts{
+	return &MetricsHandler{
+		requestInFlight: promauto.NewGauge(prometheus.GaugeOpts{
 			Namespace: ns,
 			Subsystem: sub,
 			Name:      "requests_in_flight",
 			Help:      "Number of requests currently handled by this server.",
-		}, basicLabels),
-		requestCount: promauto.NewCounterVec(prometheus.CounterOpts{
+		}),
+		requestCount: promauto.NewCounter(prometheus.CounterOpts{
 			Namespace: ns,
 			Subsystem: sub,
 			Name:      "requests_total",
 			Help:      "Counter of HTTP(s) requests made.",
-		}, basicLabels),
+		}),
 		requestDuration: promauto.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: ns,
 			Subsystem: sub,
 			Name:      "request_duration_seconds",
 			Help:      "Histogram of round-trip request durations.",
-			Buckets:   prometheus.DefBuckets,
+			Buckets:   sizeBuckets,
 		}, httpLabels),
 		requestSize: promauto.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: ns,
@@ -69,24 +66,22 @@ func NewMetrics() MetricsHandler {
 }
 
 // Scrap registers endpoint behavior metrics.
-func (m MetricsHandler) Scrap(next http.Handler) http.Handler {
+func (m *MetricsHandler) Scrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		basicLabels := prometheus.Labels{"server_ip": m.serverIP}
 		httpLabels := prometheus.Labels{"path": basePath(r.URL.Path), "method": r.Method, "code": ""}
 
-		m.requestCount.With(basicLabels).Inc()
-		inFlight := m.requestInFlight.With(basicLabels)
-		inFlight.Inc()
+		m.requestCount.Inc()
+		m.requestInFlight.Inc()
 
 		interceptor := newInterceptor(w)
 		next.ServeHTTP(interceptor, r)
 
-		m.requestDuration.With(httpLabels).Observe(time.Since(start).Seconds())
 		httpLabels["code"] = strCode(interceptor.statusCode)
+		m.requestDuration.With(httpLabels).Observe(time.Since(start).Seconds())
 		m.requestSize.With(httpLabels).Observe(float64(approxReqSize(r)))
 		m.responseSize.With(httpLabels).Observe(float64(interceptor.size))
-		inFlight.Dec()
+		m.requestInFlight.Dec()
 	})
 }
 
@@ -154,7 +149,7 @@ func basePath(path string) string {
 func getOutboundIP() string {
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err.Error())
 	}
 	localAddr := conn.LocalAddr().(*net.UDPAddr)
 	conn.Close()
