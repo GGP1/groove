@@ -9,11 +9,7 @@ import (
 	"net"
 	"os"
 	"testing"
-	"time"
 
-	"github.com/GGP1/groove/config"
-	"github.com/GGP1/groove/internal/cache"
-	"github.com/GGP1/groove/storage/memcached"
 	"github.com/GGP1/groove/storage/postgres"
 
 	"github.com/go-redis/redis/v8"
@@ -32,10 +28,9 @@ const resourceExpiration uint = 120 // Seconds
 const (
 	Postgres dependency = iota
 	Redis
-	Memcached
 )
 
-type setupFunc func(s *sql.DB, r *redis.Client, c cache.Client)
+type setupFunc func(s *sql.DB, r *redis.Client)
 
 type dependency uint8
 
@@ -47,9 +42,6 @@ func Main(m *testing.M, setup setupFunc, dependencies ...dependency) {
 
 		rdbContainer *dockertest.Resource
 		rdb          *redis.Client
-
-		mcContainer *dockertest.Resource
-		mc          cache.Client
 
 		err error
 	)
@@ -72,12 +64,8 @@ func Main(m *testing.M, setup setupFunc, dependencies ...dependency) {
 		rdbContainer, rdb, err = RunRedis()
 		fatal(err)
 	}
-	if _, ok := deps[Memcached]; ok {
-		mcContainer, mc, err = RunMemcached()
-		fatal(err)
-	}
 
-	setup(db, rdb, mc)
+	setup(db, rdb)
 
 	code := m.Run()
 
@@ -88,9 +76,6 @@ func Main(m *testing.M, setup setupFunc, dependencies ...dependency) {
 	if rdbContainer != nil {
 		fatal(rdb.Close())
 		fatal(rdbContainer.Close())
-	}
-	if mcContainer != nil {
-		fatal(mcContainer.Close())
 	}
 
 	os.Exit(code)
@@ -120,29 +105,6 @@ func NewDockerContainer(repository, tag string, env []string) (*dockertest.Pool,
 	container.Expire(resourceExpiration)
 
 	return pool, container, nil
-}
-
-// RunMemcached initializes a docker container with memcached running in it.
-func RunMemcached() (*dockertest.Resource, cache.Client, error) {
-	pool, container, err := NewDockerContainer("memcached", "1.6.12-alpine", nil)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	var cache cache.Client
-	err = pool.Retry(func() error {
-		cache, err = memcached.NewClient(config.Memcached{
-			Servers:      []string{fmt.Sprintf("localhost:%s", container.GetPort("11211/tcp"))},
-			MaxIdleConns: 1,
-			Timeout:      2 * time.Second,
-		})
-		return err
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return container, cache, nil
 }
 
 // RunPostgres initializes a docker container with postgres running in it.
@@ -198,18 +160,6 @@ func RunRedis() (*dockertest.Resource, *redis.Client, error) {
 	}
 
 	return container, rdb, nil
-}
-
-// StartMemcached starts a memcached container and makes the cleanup.
-func StartMemcached(t testing.TB) cache.Client {
-	container, mc, err := RunMemcached()
-	assert.NoError(t, err)
-
-	t.Cleanup(func() {
-		assert.NoError(t, container.Close(), "Couldn't remove container")
-	})
-
-	return mc
 }
 
 // StartPostgres starts a postgres container and makes the cleanup.

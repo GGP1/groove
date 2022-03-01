@@ -9,9 +9,8 @@ import (
 	"github.com/GGP1/groove/config"
 	"github.com/GGP1/groove/http/rest/router"
 
-	"github.com/stretchr/testify/assert"
-
 	_ "github.com/lib/pq"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNew(t *testing.T) {
@@ -20,7 +19,7 @@ func TestNew(t *testing.T) {
 	cfg, err := config.New()
 	assert.NoError(t, err)
 
-	srv := httptest.NewServer(router.New(cfg, nil, nil, nil))
+	srv := httptest.NewServer(router.New(cfg, nil, nil))
 	defer srv.Close()
 
 	res, err := srv.Client().Get(srv.URL)

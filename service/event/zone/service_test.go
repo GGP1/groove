@@ -3,53 +3,31 @@ package zone_test
 import (
 	"context"
 	"database/sql"
-	"log"
-	"os"
 	"testing"
 
-	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/event/zone"
 	"github.com/GGP1/groove/test"
+	"github.com/go-redis/redis/v8"
 
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 )
 
 var (
-	zoneSv      zone.Service
-	db          *sql.DB
-	cacheClient cache.Client
+	zoneSv zone.Service
+	db     *sql.DB
+	rdb    *redis.Client
 )
 
 func TestMain(m *testing.M) {
-	pgContainer, postgres, err := test.RunPostgres()
-	if err != nil {
-		log.Fatal(err)
-	}
-	mcContainer, memcached, err := test.RunMemcached()
-	if err != nil {
-		log.Fatal(err)
-	}
+	test.Main(m, func(s *sql.DB, r *redis.Client) {
+		db = s
+		rdb = r
+		zoneSv = zone.NewService(s, r)
+	}, test.Postgres, test.Redis)
 
-	db = postgres
-	cacheClient = memcached
-	zoneSv = zone.NewService(db, cacheClient)
-
-	code := m.Run()
-
-	if err := db.Close(); err != nil {
-		log.Fatal(err)
-	}
-	if err := pgContainer.Close(); err != nil {
-		log.Fatal(err)
-	}
-	if err := mcContainer.Close(); err != nil {
-		log.Fatal(err)
-	}
-
-	os.Exit(code)
 }
 
 func TestZoneService(t *testing.T) {

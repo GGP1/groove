@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/roles"
 	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/model"
@@ -13,6 +12,7 @@ import (
 	"github.com/GGP1/groove/storage/postgres"
 	"github.com/GGP1/sqan"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
 )
 
@@ -43,17 +43,17 @@ type Service interface {
 }
 
 type service struct {
-	db    *sql.DB
-	cache cache.Client
+	db  *sql.DB
+	rdb *redis.Client
 
 	roleService role.Service
 }
 
 // NewService returns a new service
-func NewService(db *sql.DB, cache cache.Client, roleService role.Service) Service {
+func NewService(db *sql.DB, rdb *redis.Client, roleService role.Service) Service {
 	return &service{
 		db:          db,
-		cache:       cache,
+		rdb:         rdb,
 		roleService: roleService,
 	}
 }
@@ -170,27 +170,28 @@ func (s *service) Refund(ctx context.Context, session auth.Session, eventID, tic
 }
 
 // Update updates a ticket from the event.
-func (s *service) Update(ctx context.Context, eventID, ticketName string, updateTicket model.UpdateTicket) error {
+func (s *service) Update(ctx context.Context, eventID, ticketName string, ticket model.UpdateTicket) error {
 	sqlTx := txgroup.SQLTx(ctx)
 
 	q := `UPDATE events_tickets SET 
-	description = COALESCE($3,description),
-	available_count = COALESCE($4,available_count), 
-	cost = COALESCE($5,cost), 
-	linked_role = COALESCE($6,linked_role) 
+	name = COALESCE($3,name),
+	description = COALESCE($4,description),
+	available_count = COALESCE($5,available_count), 
+	cost = COALESCE($6,cost), 
+	linked_role = COALESCE($7,linked_role) 
 	WHERE event_id=$1 AND name=$2
 	RETURNING (SELECT available_count FROM events_tickets WHERE event_id=$1 AND name=$2)`
-	row := sqlTx.QueryRowContext(ctx, q, eventID, ticketName, updateTicket.Description,
-		updateTicket.AvailableCount, updateTicket.Cost, updateTicket.LinkedRole)
+	row := sqlTx.QueryRowContext(ctx, q, eventID, ticketName, ticket.Name, ticket.Description,
+		ticket.AvailableCount, ticket.Cost, ticket.LinkedRole)
 
 	var oldAvailableCount int64
 	if err := row.Scan(&oldAvailableCount); err != nil {
 		return errors.Wrap(err, "updating ticket")
 	}
-	if updateTicket.AvailableCount != nil {
+	if ticket.AvailableCount != nil {
 		// if available_count is updated, update the event's total slots
 		q2 := `UPDATE events SET slots = slots + $2 WHERE event_id=$1`
-		if _, err := sqlTx.ExecContext(ctx, q2, eventID, *updateTicket.AvailableCount-oldAvailableCount); err != nil {
+		if _, err := sqlTx.ExecContext(ctx, q2, eventID, *ticket.AvailableCount-oldAvailableCount); err != nil {
 			return errors.Wrap(err, "updating event slots")
 		}
 	}

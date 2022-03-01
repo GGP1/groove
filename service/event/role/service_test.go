@@ -6,7 +6,6 @@ import (
 	"log"
 	"testing"
 
-	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/internal/roles"
@@ -23,26 +22,26 @@ import (
 )
 
 var (
-	db          *sql.DB
-	cacheClient cache.Client
-	roleSv      role.Service
-	ctx         context.Context
+	db     *sql.DB
+	rdb    *redis.Client
+	roleSv role.Service
+	ctx    context.Context
 )
 
 func TestMain(m *testing.M) {
 	test.Main(
 		m,
-		func(s *sql.DB, _ *redis.Client, c cache.Client) {
+		func(s *sql.DB, r *redis.Client) {
 			sqlTx, err := s.BeginTx(context.Background(), nil)
 			if err != nil {
 				log.Fatal(err)
 			}
 			ctx = txgroup.NewContext(ctx, txgroup.NewSQLTx(sqlTx))
 			db = s
-			cacheClient = c
-			roleSv = role.NewService(s, cacheClient)
+			rdb = r
+			roleSv = role.NewService(s, r)
 		},
-		test.Postgres, test.Memcached,
+		test.Postgres, test.Redis,
 	)
 }
 

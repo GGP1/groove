@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"unicode"
 
-	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/httperr"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/roles"
@@ -18,6 +17,7 @@ import (
 	"github.com/GGP1/groove/storage/postgres"
 	"github.com/GGP1/sqan"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
 )
 
@@ -43,15 +43,15 @@ type Service interface {
 
 type service struct {
 	db                  *sql.DB
-	cache               cache.Client
+	rdb                 *redis.Client
 	notificationService notification.Service
 }
 
 // NewService returns a new post service.
-func NewService(db *sql.DB, cache cache.Client, notificationService notification.Service) Service {
+func NewService(db *sql.DB, rdb *redis.Client, notificationService notification.Service) Service {
 	return &service{
 		db:                  db,
-		cache:               cache,
+		rdb:                 rdb,
 		notificationService: notificationService,
 	}
 }

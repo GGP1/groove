@@ -15,6 +15,7 @@ import (
 	"github.com/GGP1/groove/storage/postgres"
 	"github.com/GGP1/sqan"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/lib/pq"
 	"github.com/pkg/errors"
 )
@@ -55,15 +56,15 @@ type Service interface {
 }
 
 type service struct {
-	db    *sql.DB
-	cache cache.Client
+	db  *sql.DB
+	rdb *redis.Client
 }
 
 // NewService returns a new role service.
-func NewService(db *sql.DB, cache cache.Client) Service {
+func NewService(db *sql.DB, rdb *redis.Client) Service {
 	return &service{
-		db:    db,
-		cache: cache,
+		db:  db,
+		rdb: rdb,
 	}
 }
 
@@ -128,7 +129,7 @@ func (s *service) CreatePermission(ctx context.Context, eventID string, permissi
 		return errors.Wrap(err, "creating permission")
 	}
 
-	if err := s.cache.Delete(cache.PermissionsKey(eventID)); err != nil {
+	if err := s.rdb.Del(ctx, cache.PermissionsKey(eventID)).Err(); err != nil {
 		return errors.Wrap(err, "deleting permission")
 	}
 
@@ -148,7 +149,7 @@ func (s *service) CreateRole(ctx context.Context, eventID string, role model.Rol
 		return errors.Wrap(err, "creating role")
 	}
 
-	if err := s.cache.Delete(cache.RolesKey(eventID)); err != nil {
+	if err := s.rdb.Del(ctx, cache.RolesKey(eventID)).Err(); err != nil {
 		return errors.Wrap(err, "deleting roles")
 	}
 
@@ -526,14 +527,17 @@ func (s *service) UnsetRole(ctx context.Context, eventID, userID string) error {
 }
 
 // UpdatePemission sets new values for a permission.
+// TODO: allow updating the key?
 func (s *service) UpdatePermission(ctx context.Context, eventID, key string, permission model.UpdatePermission) error {
 	sqlTx := txgroup.SQLTx(ctx)
 
 	q := `UPDATE events_permissions SET 
-	name = COALESCE($3,name), 
-	description = COALESCE($4,description) 
+	name = COALESCE($3,name),
+	description = COALESCE($4,description),
+	key = COALESCE($5,key)
 	WHERE event_id=$1 AND key=$2`
-	if _, err := sqlTx.ExecContext(ctx, q, eventID, key, permission.Name, permission.Description); err != nil {
+	_, err := sqlTx.ExecContext(ctx, q, eventID, key, permission.Name, permission.Description, permission.Key)
+	if err != nil {
 		return errors.Wrap(err, "updating permission")
 	}
 
@@ -549,9 +553,10 @@ func (s *service) UpdateRole(ctx context.Context, eventID, name string, role mod
 	}
 
 	q := `UPDATE events_roles SET
-	permission_keys = COALESCE($3,permission_keys)
+	name = COALESCE($3,name),
+	permission_keys = COALESCE($4,permission_keys)
 	WHERE event_id=$1 AND name=$2`
-	if _, err := sqlTx.ExecContext(ctx, q, eventID, name, role.PermissionKeys); err != nil {
+	if _, err := sqlTx.ExecContext(ctx, q, eventID, name, role.Name, role.PermissionKeys); err != nil {
 		return errors.Wrap(err, "updating role")
 	}
 

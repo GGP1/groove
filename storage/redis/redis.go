@@ -3,6 +3,7 @@ package redis
 import (
 	"context"
 	"net"
+	"time"
 
 	"github.com/GGP1/groove/config"
 	"github.com/GGP1/groove/internal/log"
@@ -10,6 +11,15 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
 )
+
+// ItemExpiration represents the time until an object is considered expired.
+//
+// TODO: find a better way to initialize this value
+var ItemExpiration time.Duration
+
+func init() {
+	ItemExpiration = 10 * time.Minute
+}
 
 // Connect establishes a connection with the redis client.
 func Connect(ctx context.Context, config config.Redis) (*redis.Client, error) {
@@ -30,6 +40,8 @@ func Connect(ctx context.Context, config config.Redis) (*redis.Client, error) {
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		return nil, errors.Wrap(err, "ping error")
 	}
+
+	ItemExpiration = config.DefaultExpiration * time.Minute
 
 	runMetrics(rdb, config)
 

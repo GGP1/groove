@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/model"
@@ -32,15 +31,15 @@ const adminEmail = "admin@email.com"
 func TestMain(m *testing.M) {
 	test.Main(
 		m,
-		func(pg *sql.DB, _ *redis.Client, cacheClient cache.Client) {
+		func(pg *sql.DB, r *redis.Client) {
 			db = pg
-			roleService := role.NewService(db, cacheClient)
+			roleService := role.NewService(db, r)
 			admins := map[string]interface{}{adminEmail: struct{}{}}
 			// TODO: mock notification service (firabase api)
-			userSv = user.NewService(db, cacheClient, admins, nil)
-			eventSv = event.NewService(db, cacheClient, nil, roleService)
+			userSv = user.NewService(db, r, admins, nil)
+			eventSv = event.NewService(db, r, nil, roleService)
 		},
-		test.Postgres, test.Memcached,
+		test.Postgres, test.Redis,
 	)
 }
 

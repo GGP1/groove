@@ -1,11 +1,11 @@
 package cache
 
 const (
-	eventPrivacySuffix = "_privacy"
-	permissionsSuffix  = "_permissions"
-	rolesSuffix        = "_roles"
-	userTypeSuffix     = "_type"
-	zonesSuffix        = "_zones"
+	eventPrivacySuffix = ":privacy"
+	permissionsSuffix  = ":permissions"
+	rolesSuffix        = ":roles"
+	userTypeSuffix     = ":type"
+	zonesSuffix        = ":zones"
 )
 
 // EventPrivacy returns eventID + privacy's key suffix.

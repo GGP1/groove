@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/internal/roles"
@@ -17,6 +16,7 @@ import (
 	"github.com/GGP1/groove/service/event/role"
 	"github.com/GGP1/groove/storage/postgres"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/julienschmidt/httprouter"
 	"github.com/pkg/errors"
 )
@@ -30,18 +30,18 @@ type userIDBody struct {
 
 // Handler handles events endpoints.
 type Handler struct {
-	db    *sql.DB
-	cache cache.Client
+	db  *sql.DB
+	rdb *redis.Client
 
 	service     Service
 	roleService role.Service
 }
 
 // NewHandler returns an event handler.
-func NewHandler(db *sql.DB, cache cache.Client, service Service, roleService role.Service) Handler {
+func NewHandler(db *sql.DB, rdb *redis.Client, service Service, roleService role.Service) Handler {
 	return Handler{
 		db:          db,
-		cache:       cache,
+		rdb:         rdb,
 		service:     service,
 		roleService: roleService,
 	}
@@ -302,7 +302,7 @@ func (h *Handler) GetByID() http.HandlerFunc {
 		}
 
 		cacheKey := model.T.Event.CacheKey(eventID)
-		if v, err := h.cache.Get(cacheKey); err == nil {
+		if v, err := h.rdb.Get(ctx, cacheKey).Bytes(); err == nil {
 			response.EncodedJSON(w, v)
 			return
 		}
@@ -313,7 +313,7 @@ func (h *Handler) GetByID() http.HandlerFunc {
 			return
 		}
 
-		response.JSONAndCache(h.cache, w, cacheKey, event)
+		response.JSONAndCache(h.rdb, w, cacheKey, event)
 	}
 }
 
@@ -641,6 +641,40 @@ func (h *Handler) Join() http.HandlerFunc {
 		defer sqlTx.Rollback()
 
 		if err := h.roleService.SetRole(ctx, eventID, session.ID, roles.Attendant); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		if err := sqlTx.Commit(); err != nil {
+			response.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		response.NoContent(w)
+	}
+}
+
+// Leave leaves an event.
+func (h *Handler) Leave() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		session, err := auth.GetSession(ctx, r)
+		if err != nil {
+			response.Error(w, http.StatusForbidden, err)
+			return
+		}
+
+		eventID, err := params.IDFromCtx(ctx)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err)
+			return
+		}
+
+		sqlTx, ctx := postgres.BeginTx(ctx, h.db)
+		defer sqlTx.Rollback()
+
+		if err := h.roleService.UnsetRole(ctx, eventID, session.ID); err != nil {
 			response.Error(w, http.StatusInternalServerError, err)
 			return
 		}

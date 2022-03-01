@@ -13,22 +13,24 @@ import (
 	"github.com/GGP1/groove/service/auth"
 	"github.com/GGP1/groove/service/event/role"
 	"github.com/GGP1/groove/storage/postgres"
+
+	"github.com/go-redis/redis/v8"
 )
 
 // Handler handles zone service endpoints.
 type Handler struct {
-	db    *sql.DB
-	cache cache.Client
+	db  *sql.DB
+	rdb *redis.Client
 
 	service     Service
 	roleService role.Service
 }
 
 // NewHandler returns a new zone handler.
-func NewHandler(db *sql.DB, cache cache.Client, service Service, roleService role.Service) Handler {
+func NewHandler(db *sql.DB, rdb *redis.Client, service Service, roleService role.Service) Handler {
 	return Handler{
 		db:          db,
-		cache:       cache,
+		rdb:         rdb,
 		service:     service,
 		roleService: roleService,
 	}
@@ -142,7 +144,7 @@ func (h *Handler) Get() http.HandlerFunc {
 		}
 
 		cacheKey := cache.ZonesKey(eventID)
-		if v, err := h.cache.Get(cacheKey); err == nil {
+		if v, err := h.rdb.Get(ctx, cacheKey).Bytes(); err == nil {
 			response.EncodedJSON(w, v)
 			return
 		}
@@ -153,7 +155,7 @@ func (h *Handler) Get() http.HandlerFunc {
 			return
 		}
 
-		response.JSONAndCache(h.cache, w, cacheKey, zones)
+		response.JSONAndCache(h.rdb, w, cacheKey, zones)
 	}
 }
 

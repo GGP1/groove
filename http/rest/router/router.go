@@ -8,7 +8,6 @@ import (
 
 	"github.com/GGP1/groove/config"
 	"github.com/GGP1/groove/http/rest/middleware"
-	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/log"
 	"github.com/GGP1/groove/internal/response"
 
@@ -28,7 +27,7 @@ type Router struct {
 }
 
 // New returns a new router.
-func New(config config.Config, db *sql.DB, rdb *redis.Client, cache cache.Client) http.Handler {
+func New(config config.Config, db *sql.DB, rdb *redis.Client) http.Handler {
 	router := &Router{
 		Router: &httprouter.Router{
 			RedirectTrailingSlash:  true,
@@ -52,7 +51,7 @@ func New(config config.Config, db *sql.DB, rdb *redis.Client, cache cache.Client
 		router.middlewares = append([]Middleware{rateLimiter.Limit}, router.middlewares...)
 	}
 
-	registerEndpoints(router, db, rdb, cache, config)
+	registerEndpoints(router, db, rdb, config)
 
 	return router
 }

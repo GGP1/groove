@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/GGP1/groove/config"
-	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/ulid"
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/groove/service/auth"
@@ -22,24 +21,22 @@ import (
 )
 
 var (
-	postSv      post.Service
-	db          *sql.DB
-	cacheClient cache.Client
+	postSv post.Service
+	db     *sql.DB
 )
 
 func TestMain(m *testing.M) {
 	test.Main(
 		m,
-		func(s *sql.DB, _ *redis.Client, c cache.Client) {
+		func(s *sql.DB, r *redis.Client) {
 			db = s
-			cacheClient = c
 
 			authService := auth.NewService(db, nil, config.Sessions{})
-			roleService := role.NewService(db, cacheClient)
+			roleService := role.NewService(db, r)
 			notifService := notification.NewService(db, config.Notifications{}, authService, roleService)
-			postSv = post.NewService(db, cacheClient, notifService)
+			postSv = post.NewService(db, r, notifService)
 		},
-		test.Postgres, test.Memcached,
+		test.Postgres, test.Redis,
 	)
 }
 

@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/GGP1/groove/internal/apikey"
-	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/response"
 	"github.com/GGP1/groove/internal/sanitize"
@@ -17,6 +16,7 @@ import (
 	"github.com/GGP1/groove/service/auth"
 	"github.com/GGP1/groove/storage/postgres"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/julienschmidt/httprouter"
 )
 
@@ -30,17 +30,17 @@ type friendIDBody struct {
 
 // Handler is the user handler.
 type Handler struct {
-	db    *sql.DB
-	cache cache.Client
+	db  *sql.DB
+	rdb *redis.Client
 
 	service Service
 }
 
 // NewHandler returns a new user handler
-func NewHandler(db *sql.DB, cache cache.Client, service Service) Handler {
+func NewHandler(db *sql.DB, rdb *redis.Client, service Service) Handler {
 	return Handler{
 		db:      db,
-		cache:   cache,
+		rdb:     rdb,
 		service: service,
 	}
 }
@@ -391,7 +391,7 @@ func (h *Handler) GetByID() http.HandlerFunc {
 		}
 
 		cacheKey := model.T.User.CacheKey(userID)
-		if v, err := h.cache.Get(cacheKey); err == nil {
+		if v, err := h.rdb.Get(ctx, cacheKey).Bytes(); err == nil {
 			response.EncodedJSON(w, v)
 			return
 		}
@@ -402,7 +402,7 @@ func (h *Handler) GetByID() http.HandlerFunc {
 			return
 		}
 
-		response.JSONAndCache(h.cache, w, cacheKey, user)
+		response.JSONAndCache(h.rdb, w, cacheKey, user)
 	}
 }
 

@@ -1,12 +1,15 @@
 package response
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
 	"github.com/GGP1/groove/internal/bufferpool"
-	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/httperr"
+	redi "github.com/GGP1/groove/storage/redis"
+
+	"github.com/go-redis/redis/v8"
 )
 
 // Performance optimizations:
@@ -86,7 +89,7 @@ func JSON(w http.ResponseWriter, status int, v interface{}) {
 // JSONAndCache works just like json but saves the encoding of v to the cache before writing the response.
 //
 // The status should always be 200 (OK). Usually, only single users and events will be cached.
-func JSONAndCache(cache cache.Client, w http.ResponseWriter, key string, v interface{}) {
+func JSONAndCache(rdb *redis.Client, w http.ResponseWriter, key string, v interface{}) {
 	buf := bufferpool.Get()
 
 	if err := json.NewEncoder(buf).Encode(v); err != nil {
@@ -99,7 +102,7 @@ func JSONAndCache(cache cache.Client, w http.ResponseWriter, key string, v inter
 	value := buf.Bytes()
 	bufferpool.Put(buf)
 
-	if err := cache.Set(key, value); err != nil {
+	if err := rdb.Set(context.Background(), key, value, redi.ItemExpiration).Err(); err != nil {
 		Error(w, http.StatusInternalServerError, err)
 		return
 	}

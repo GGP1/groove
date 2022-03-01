@@ -16,8 +16,10 @@ import (
 	"github.com/GGP1/groove/service/auth"
 	"github.com/GGP1/groove/service/notification"
 	"github.com/GGP1/groove/storage/postgres"
+	redi "github.com/GGP1/groove/storage/redis"
 	"github.com/GGP1/sqan"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
@@ -74,8 +76,8 @@ type Service interface {
 }
 
 type service struct {
-	db    *sql.DB
-	cache cache.Client
+	db  *sql.DB
+	rdb *redis.Client
 
 	admins  map[string]interface{}
 	metrics metrics
@@ -86,13 +88,13 @@ type service struct {
 // NewService returns a new user service.
 func NewService(
 	db *sql.DB,
-	cache cache.Client,
+	rdb *redis.Client,
 	admins map[string]interface{},
 	notificationService notification.Service,
 ) Service {
 	return &service{
 		db:                  db,
-		cache:               cache,
+		rdb:                 rdb,
 		admins:              admins,
 		metrics:             initMetrics(),
 		notificationService: notificationService,
@@ -215,7 +217,7 @@ func (s *service) Delete(ctx context.Context, userID string) error {
 		return errors.Wrap(err, "deleting user")
 	}
 
-	return s.cache.Delete(model.T.User.CacheKey(userID))
+	return s.rdb.Del(ctx, model.T.User.CacheKey(userID)).Err()
 }
 
 // Follow follows a business.
@@ -685,8 +687,8 @@ func (s *service) Type(ctx context.Context, userID string) (model.UserType, erro
 	s.metrics.incMethodCalls("Type")
 
 	cacheKey := cache.UserTypeKey(userID)
-	if v, err := s.cache.Get(cacheKey); err == nil {
-		return model.UserType(cache.BytesToInt(v)), nil
+	if v, err := s.rdb.Get(ctx, cacheKey).Int64(); err == nil {
+		return model.UserType(v), nil
 	}
 
 	accType, err := postgres.QueryInt(ctx, s.db, "SELECT type FROM users WHERE id=$1", userID)
@@ -694,7 +696,7 @@ func (s *service) Type(ctx context.Context, userID string) (model.UserType, erro
 		return 0, errors.Wrap(err, "querying user type")
 	}
 
-	if err := s.cache.Set(cacheKey, cache.IntToBytes(accType)); err != nil {
+	if err := s.rdb.Set(ctx, cacheKey, accType, redi.ItemExpiration).Err(); err != nil {
 		return 0, errors.Wrap(err, "saving user type to the cache")
 	}
 
@@ -764,7 +766,7 @@ func (s *service) Update(ctx context.Context, userID string, user model.UpdateUs
 		return errors.Wrap(err, "updating user")
 	}
 
-	if err := s.cache.Delete(model.T.User.CacheKey(userID)); err != nil {
+	if err := s.rdb.Del(ctx, model.T.User.CacheKey(userID)).Err(); err != nil {
 		return errors.Wrap(err, "deleting user")
 	}
 	return nil

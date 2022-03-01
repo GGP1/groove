@@ -2,6 +2,7 @@ package response_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -86,8 +87,8 @@ func TestJSON(t *testing.T) {
 }
 
 func TestJSONAndCache(t *testing.T) {
-	// Requires dockertest to initialize memcached.
-	mc := test.StartMemcached(t)
+	// Requires dockertest to initialize redis.
+	rdb := test.StartRedis(t)
 	expectedHeader := "application/json; charset=UTF-8"
 	expectedStatus := 200
 	expectedRes := "\"test\"\n"
@@ -95,7 +96,7 @@ func TestJSONAndCache(t *testing.T) {
 	value := "test"
 
 	rec := httptest.NewRecorder()
-	response.JSONAndCache(mc, rec, key, value)
+	response.JSONAndCache(rdb, rec, key, value)
 
 	assert.Equal(t, expectedHeader, rec.Header().Get("Content-Type"))
 
@@ -106,7 +107,7 @@ func TestJSONAndCache(t *testing.T) {
 	assert.NoError(t, err, "Failed reading response body")
 	assert.Equal(t, expectedRes, resContent.String())
 
-	v, err := mc.Get(key)
+	v, err := rdb.Get(context.Background(), key).Bytes()
 	assert.NoError(t, err)
 
 	var cacheContent bytes.Buffer

@@ -10,6 +10,7 @@ import (
 	"github.com/GGP1/groove/model"
 	"github.com/GGP1/sqan"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
 )
 
@@ -23,15 +24,15 @@ type Service interface {
 }
 
 type service struct {
-	db    *sql.DB
-	cache cache.Client
+	db  *sql.DB
+	rdb *redis.Client
 }
 
-// NewService returns a new zones service.
-func NewService(db *sql.DB, cache cache.Client) Service {
+// NewService returns a new zone service.
+func NewService(db *sql.DB, rdb *redis.Client) Service {
 	return &service{
-		db:    db,
-		cache: cache,
+		db:  db,
+		rdb: rdb,
 	}
 }
 
@@ -78,7 +79,7 @@ func (s *service) Delete(ctx context.Context, eventID, name string) error {
 		return errors.Wrap(err, "deleting zone")
 	}
 
-	if err := s.cache.Delete(cache.ZonesKey(eventID)); err != nil {
+	if err := s.rdb.Del(ctx, cache.ZonesKey(eventID)).Err(); err != nil {
 		return errors.Wrap(err, "deleting zone")
 	}
 
@@ -119,10 +120,11 @@ func (s *service) Update(ctx context.Context, eventID, name string, zone model.U
 	sqlTx := txgroup.SQLTx(ctx)
 
 	q := `UPDATE events_zones SET
-	required_permission_keys = COALESCE($3, required_permission_keys)
+	name = COALESCE($3,name),
+	required_permission_keys = COALESCE($4,required_permission_keys)
 	WHERE event_id=$1 AND name=$2`
-	if _, err := sqlTx.ExecContext(ctx, q, eventID, name, zone.RequiredPermissionKeys); err != nil {
-		return errors.Wrap(err, "updating role")
+	if _, err := sqlTx.ExecContext(ctx, q, eventID, name, zone.Name, zone.RequiredPermissionKeys); err != nil {
+		return errors.Wrap(err, "updating zone")
 	}
 
 	return nil

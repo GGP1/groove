@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/GGP1/groove/internal/log"
-	"github.com/bradfitz/gomemcache/memcache"
 
 	"github.com/pkg/errors"
 	"github.com/spf13/viper"
@@ -19,7 +18,6 @@ type Config struct {
 	TLS           TLS
 	Logger        Logger
 	Notifications Notifications
-	Memcached     Memcached
 	Postgres      Postgres
 	Redis         Redis
 	Server        Server
@@ -31,14 +29,6 @@ type Config struct {
 // Logger contains Zap's configurations.
 type Logger struct {
 	OutFiles []string
-}
-
-// Memcached configuration.
-type Memcached struct {
-	Servers         []string
-	MaxIdleConns    int
-	Timeout         time.Duration
-	ItemsExpiration int32
 }
 
 // Notifications configuration.
@@ -70,13 +60,14 @@ type RateLimiter struct {
 
 // Redis configuration.
 type Redis struct {
-	Host            string
-	Port            string
-	Password        string
-	TLSCertificates []tls.Certificate
-	PoolSize        int
-	MinIdleConns    int
-	MetricsRate     time.Duration
+	Host              string
+	Port              string
+	Password          string
+	TLSCertificates   []tls.Certificate
+	PoolSize          int
+	MinIdleConns      int
+	MetricsRate       time.Duration
+	DefaultExpiration time.Duration
 }
 
 // Server configuration.
@@ -219,12 +210,6 @@ var (
 		"logger": map[string]interface{}{
 			"outFiles": []string{},
 		},
-		"memcached": map[string]interface{}{
-			"itemsExpiration": 0,
-			"maxIdleConns":    memcache.DefaultMaxIdleConns,
-			"servers":         []string{"localhost:11211"},
-			"timeout":         memcache.DefaultTimeout,
-		},
 		"notifications": map[string]interface{}{
 			"credentialsFile": "/firebase_credentials.json",
 			"maxRetries":      5,
@@ -247,12 +232,13 @@ var (
 			"rate": 5,
 		},
 		"redis": map[string]interface{}{
-			"host":         "localhost",
-			"port":         6379,
-			"password":     "redis",
-			"poolSize":     0, // Use default (GOMAXPROCS * 10)
-			"minIdleConns": 10,
-			"metricsRate":  60, // Seconds
+			"host":              "localhost",
+			"port":              6379,
+			"password":          "redis",
+			"poolSize":          0, // Use default (GOMAXPROCS * 10)
+			"minIdleConns":      10,
+			"metricsRate":       60, // Seconds
+			"defaultExpiration": 30, // Minutes
 		},
 		"secrets": map[string]interface{}{
 			"encryption": "{X]_?4-6)hgp(P_w9nTO8f =2Gki",
@@ -290,11 +276,6 @@ var (
 		"development": "DEVELOPMENT",
 		// Logger
 		"logger.outFiles": "LOGGER_OUT_FILES",
-		// Memcached
-		"memcached.itemsExpiration": "MEMCACHED_ITEMS_EXPIRATION",
-		"memcached.maxIdleConns":    "MEMCACHED_MAX_IDLE_CONS",
-		"memcached.servers":         "MEMCACHED_SERVERS",
-		"memcached.timeout":         "MEMCACHED_TIMEOUT",
 		// Notifications
 		"notifications.credentialsFile": "NOTIFICATIONS_CREDENTIALS_FILE",
 		"notifications.maxRetries":      "NOTIFICATIONS_MAX_RETRIES",
@@ -314,12 +295,13 @@ var (
 		// Rate limiter
 		"rateLimiter.rate": "RATE_LIMITER_RATE",
 		// Redis
-		"redis.host":         "REDIS_HOST",
-		"redis.port":         "REDIS_PORT",
-		"redis.password":     "REDIS_PASSWORD",
-		"redis.poolSize":     "REDIS_POOL_SIZE",
-		"redis.minIdleConns": "REDIS_MIN_IDLE_CONS",
-		"redis.metricsRate":  "REDIS_METRICS_RATE",
+		"redis.host":              "REDIS_HOST",
+		"redis.port":              "REDIS_PORT",
+		"redis.password":          "REDIS_PASSWORD",
+		"redis.poolSize":          "REDIS_POOL_SIZE",
+		"redis.minIdleConns":      "REDIS_MIN_IDLE_CONS",
+		"redis.metricsRate":       "REDIS_METRICS_RATE",
+		"redis.defaultExpiration": "REDIS_DEFAULT_EXPIRATION",
 		// Secrets
 		"secrets.encryption": "SECRETS_ENCRYPTION",
 		"secrets.apiKeys":    "SECRETS_API_KEYS",

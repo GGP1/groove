@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/txgroup"
 	"github.com/GGP1/groove/internal/ulid"
@@ -13,6 +12,7 @@ import (
 	"github.com/GGP1/groove/storage/postgres"
 	"github.com/GGP1/sqan"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
 )
 
@@ -25,15 +25,15 @@ type Service interface {
 }
 
 type service struct {
-	db    *sql.DB
-	cache cache.Client
+	db  *sql.DB
+	rdb *redis.Client
 }
 
-// NewService returns a new products service.
-func NewService(db *sql.DB, cache cache.Client) Service {
+// NewService returns a new product service.
+func NewService(db *sql.DB, rdb *redis.Client) Service {
 	return &service{
-		db:    db,
-		cache: cache,
+		db:  db,
+		rdb: rdb,
 	}
 }
 

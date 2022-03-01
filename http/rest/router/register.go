@@ -7,7 +7,6 @@ import (
 
 	"github.com/GGP1/groove/config"
 	"github.com/GGP1/groove/http/rest/middleware"
-	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/permissions"
 	"github.com/GGP1/groove/service/auth"
 	"github.com/GGP1/groove/service/event"
@@ -42,16 +41,16 @@ type register struct {
 	config       config.Config
 }
 
-func registerEndpoints(router *Router, db *sql.DB, rdb *redis.Client, cache cache.Client, config config.Config) {
+func registerEndpoints(router *Router, db *sql.DB, rdb *redis.Client, config config.Config) {
 	authService := auth.NewService(db, rdb, config.Sessions)
-	roleService := role.NewService(db, cache)
+	roleService := role.NewService(db, rdb)
 	notificationService := notification.NewService(db, config.Notifications, authService, roleService)
-	eventService := event.NewService(db, cache, notificationService, roleService)
-	postService := post.NewService(db, cache, notificationService)
-	productService := product.NewService(db, cache)
-	userService := user.NewService(db, cache, config.Admins, notificationService)
-	ticketService := ticket.NewService(db, cache, roleService)
-	zoneService := zone.NewService(db, cache)
+	eventService := event.NewService(db, rdb, notificationService, roleService)
+	postService := post.NewService(db, rdb, notificationService)
+	productService := product.NewService(db, rdb)
+	userService := user.NewService(db, rdb, config.Admins, notificationService)
+	ticketService := ticket.NewService(db, rdb, roleService)
+	zoneService := zone.NewService(db, rdb)
 
 	register := register{
 		config: config,
@@ -64,15 +63,15 @@ func registerEndpoints(router *Router, db *sql.DB, rdb *redis.Client, cache cach
 			DisableCompression: true,
 		}),
 		auth:         auth.NewHandler(authService),
-		role:         role.NewHandler(db, cache, roleService),
+		role:         role.NewHandler(db, rdb, roleService),
 		notification: notification.NewHandler(db, notificationService),
-		event:        event.NewHandler(db, cache, eventService, roleService),
+		event:        event.NewHandler(db, rdb, eventService, roleService),
 		post:         post.NewHandler(db, postService),
 		product:      product.NewHandler(db, productService),
 		report:       report.NewHandler(report.NewService(db)),
-		user:         user.NewHandler(db, cache, userService),
+		user:         user.NewHandler(db, rdb, userService),
 		ticket:       ticket.NewHandler(db, ticketService),
-		zone:         zone.NewHandler(db, cache, zoneService, roleService),
+		zone:         zone.NewHandler(db, rdb, zoneService, roleService),
 	}
 
 	register.All()
@@ -124,6 +123,7 @@ func (r register) Events() {
 	events.delete("/delete", r.event.Delete(), r.authMw.RequirePermissions(permissions.All))
 	events.get("/hosts", r.event.GetHosts(), r.authMw.NotBanned, r.authMw.EventPrivacyFilter)
 	events.post("/join", r.event.Join(), r.authMw.NotBanned, r.authMw.EventPrivacyFilter)
+	events.post("/leave", r.event.Leave(), r.authMw.NotBanned, r.authMw.EventPrivacyFilter)
 	events.get("/stats", r.event.GetStatistics(), r.authMw.NotBanned, r.authMw.EventPrivacyFilter)
 	events.put("/update", r.event.Update(), r.authMw.RequirePermissions(permissions.UpdateEvent))
 
@@ -205,7 +205,7 @@ func (r register) Roles() {
 	roles.post("/clone", r.role.CloneRoles(), r.authMw.RequirePermissions(permissions.ModifyRoles))
 	roles.post("/create", r.role.CreateRole(), r.authMw.RequirePermissions(permissions.ModifyRoles))
 	roles.delete("/delete/:name", r.role.DeleteRole(), r.authMw.RequirePermissions(permissions.ModifyRoles))
-	roles.post("/set", r.role.SetRoles(), r.authMw.RequirePermissions(permissions.SetUserRole))
+	roles.post("/set", r.role.SetRole(), r.authMw.RequirePermissions(permissions.SetUserRole))
 	roles.post("/user", r.role.GetUserRole(), r.authMw.EventPrivacyFilter)
 	roles.put("/update/:name", r.role.UpdateRole(), r.authMw.RequirePermissions(permissions.ModifyRoles))
 

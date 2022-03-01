@@ -17,8 +17,10 @@ import (
 	"github.com/GGP1/groove/service/event/role"
 	"github.com/GGP1/groove/service/notification"
 	"github.com/GGP1/groove/storage/postgres"
+	redi "github.com/GGP1/groove/storage/redis"
 	"github.com/GGP1/sqan"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
 )
 
@@ -57,8 +59,8 @@ type Service interface {
 }
 
 type service struct {
-	db    *sql.DB
-	cache cache.Client
+	db  *sql.DB
+	rdb *redis.Client
 
 	notificationService notification.Service
 	roleService         role.Service
@@ -69,13 +71,13 @@ type service struct {
 // NewService returns a new event service.
 func NewService(
 	db *sql.DB,
-	cache cache.Client,
+	rdb *redis.Client,
 	notificationService notification.Service,
 	roleService role.Service,
 ) Service {
 	return &service{
 		db:                  db,
-		cache:               cache,
+		rdb:                 rdb,
 		notificationService: notificationService,
 		roleService:         roleService,
 		metrics:             initMetrics(),
@@ -151,7 +153,7 @@ func (s *service) Delete(ctx context.Context, eventID string) error {
 		return errors.Wrap(err, "postgres: deleting event")
 	}
 
-	if err := s.cache.Delete(model.T.Event.CacheKey(eventID)); err != nil {
+	if err := s.rdb.Del(ctx, model.T.Event.CacheKey(eventID)).Err(); err != nil {
 		return errors.Wrap(err, "deleting event")
 	}
 
@@ -392,8 +394,8 @@ func (s *service) IsPublic(ctx context.Context, eventID string) (bool, error) {
 	s.metrics.incMethodCalls("IsPublic")
 
 	cacheKey := cache.EventPrivacy(eventID)
-	if v, err := s.cache.Get(cacheKey); err == nil {
-		return cache.BytesToBool(v), nil
+	if v, err := s.rdb.Get(ctx, cacheKey).Bool(); err == nil {
+		return v, nil
 	}
 
 	var public bool
@@ -405,7 +407,7 @@ func (s *service) IsPublic(ctx context.Context, eventID string) (bool, error) {
 		return false, err
 	}
 
-	if err := s.cache.Set(cacheKey, cache.BoolToBytes(public)); err != nil {
+	if err := s.rdb.Set(ctx, cacheKey, public, redi.ItemExpiration).Err(); err != nil {
 		return false, errors.Wrap(err, "setting event visibility to the cache")
 	}
 
@@ -575,7 +577,7 @@ func (s *service) Update(ctx context.Context, eventID string, event model.Update
 		return errors.Wrap(err, "postgres: updating event")
 	}
 
-	if err := s.cache.Delete(model.T.Event.CacheKey(eventID)); err != nil {
+	if err := s.rdb.Del(ctx, model.T.Event.CacheKey(eventID)).Err(); err != nil {
 		return errors.Wrap(err, "updating event")
 	}
 

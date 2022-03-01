@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/GGP1/groove/config"
-	"github.com/GGP1/groove/internal/cache"
 	"github.com/GGP1/groove/internal/params"
 	"github.com/GGP1/groove/internal/roles"
 	"github.com/GGP1/groove/internal/txgroup"
@@ -30,25 +29,25 @@ var (
 	eventSv     event.Service
 	db          *sql.DB
 	ctx         context.Context
-	cacheClient cache.Client
+	rdb         *redis.Client
 	roleService role.Service
 )
 
 func TestMain(m *testing.M) {
-	test.Main(m, func(s *sql.DB, _ *redis.Client, c cache.Client) {
+	test.Main(m, func(s *sql.DB, r *redis.Client) {
 		db = s
 		sqlTx, err := db.BeginTx(context.Background(), nil)
 		if err != nil {
 			log.Fatal(err)
 		}
 		_, ctx = txgroup.WithContext(ctx, txgroup.NewSQLTx(sqlTx))
-		cacheClient = c
+		rdb = r
 
 		authService := auth.NewService(db, nil, config.Sessions{})
-		roleService = role.NewService(db, cacheClient)
+		roleService = role.NewService(db, r)
 		notifService := notification.NewService(db, config.Notifications{}, authService, roleService)
-		eventSv = event.NewService(s, cacheClient, notifService, roleService)
-	}, test.Postgres, test.Memcached)
+		eventSv = event.NewService(s, r, notifService, roleService)
+	}, test.Postgres, test.Redis)
 }
 
 func TestBans(t *testing.T) {
@@ -280,7 +279,8 @@ func TestGetStatistics(t *testing.T) {
 
 	stats2, err := eventSv.GetStatistics(ctx, eventID)
 	assert.NoError(t, err)
-	expectedStats := model.EventStatistics{Likes: 1}
+	one := int64(1)
+	expectedStats := model.EventStatistics{Likes: &one}
 	assert.Equal(t, expectedStats, stats2)
 }
 
