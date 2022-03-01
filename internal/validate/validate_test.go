@@ -116,12 +116,16 @@ func TestKey(t *testing.T) {
 		assert.NoError(t, Key("valid_key"))
 	})
 
-	t.Run("Too loong", func(t *testing.T) {
+	t.Run("Too long", func(t *testing.T) {
 		assert.Error(t, Key("jetliner_earldom_uranium_token_caudal"))
 	})
 
 	t.Run("Invalid characters", func(t *testing.T) {
 		assert.Error(t, Key("invalid-key"))
+	})
+
+	t.Run("Consecutive underscores", func(t *testing.T) {
+		assert.Error(t, Key("consecutive__underscores"))
 	})
 }
 
@@ -144,13 +148,17 @@ func TestPassword(t *testing.T) {
 	})
 }
 
-func TestRoleName(t *testing.T) {
+func TestName(t *testing.T) {
 	t.Run("Valid", func(t *testing.T) {
-		assert.NoError(t, RoleName("chef"))
+		assert.NoError(t, Name("chef"))
 	})
 
-	t.Run("Invalid", func(t *testing.T) {
-		assert.Error(t, RoleName("alveoli_simile_stargaze_atelier_gaseous_poesy"))
+	t.Run("Empty", func(t *testing.T) {
+		assert.Error(t, Name(""))
+	})
+
+	t.Run("Too long", func(t *testing.T) {
+		assert.Error(t, Name("alveoli_simile_stargaze_atelier_gaseous_poesy"))
 	})
 }
 
@@ -232,6 +240,12 @@ func BenchmarkCron(b *testing.B) {
 func BenchmarkEmail(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		Email("testing_email_regex@test.com")
+	}
+}
+
+func BenchmarkKey(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Key("test_a_very_long_key")
 	}
 }
 
