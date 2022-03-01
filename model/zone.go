@@ -1,6 +1,7 @@
 package model
 
 import (
+	"github.com/GGP1/groove/internal/validate"
 	"github.com/lib/pq"
 	"github.com/pkg/errors"
 )
@@ -13,21 +14,36 @@ type Zone struct {
 
 // Validate validates zone values.
 func (z Zone) Validate() error {
-	if z.Name == "" {
-		return errors.New("name required")
+	if err := validate.Name(z.Name); err != nil {
+		return err
+	}
+	for _, key := range z.RequiredPermissionKeys {
+		if err := validate.Key(key); err != nil {
+			return errors.Wrapf(err, "%q is invalid", key)
+		}
 	}
 	return nil
 }
 
 // UpdateZone is used to update a zone.
 type UpdateZone struct {
+	Name                   *string         `json:"name,omitempty"`
 	RequiredPermissionKeys *pq.StringArray `json:"required_permission_keys,omitempty"`
 }
 
 // Validate validates zone values.
 func (z UpdateZone) Validate() error {
-	if z.RequiredPermissionKeys == nil {
-		return errors.New("required_permission_keys required")
+	if z.Name != nil {
+		if err := validate.Name(*z.Name); err != nil {
+			return err
+		}
+	}
+	if z.RequiredPermissionKeys != nil {
+		for _, key := range *z.RequiredPermissionKeys {
+			if err := validate.Key(key); err != nil {
+				return errors.Wrapf(err, "%q is invalid", key)
+			}
+		}
 	}
 	return nil
 }

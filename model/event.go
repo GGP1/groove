@@ -34,10 +34,10 @@ type Event struct {
 
 // EventStatistics contains statistics from an event.
 type EventStatistics struct {
-	Banned  int64 `json:"banned_count,omitempty" db:"banned_count"`
-	Invited int64 `json:"invited_count,omitempty" db:"invited_count"`
-	Likes   int64 `json:"likes_count,omitempty" db:"likes_count"`
-	Members int64 `json:"members_count,omitempty" db:"members_count"`
+	Banned  *int64 `json:"banned_count,omitempty" db:"banned_count"`
+	Invited *int64 `json:"invited_count,omitempty" db:"invited_count"`
+	Likes   *int64 `json:"likes_count,omitempty" db:"likes_count"`
+	Members *int64 `json:"members_count,omitempty" db:"members_count"`
 }
 
 // CreateEvent is the structure used to create an event.
@@ -62,8 +62,8 @@ type CreateEvent struct {
 
 // Validate verifies if the event received is valid.
 func (c CreateEvent) Validate() error {
-	if c.Name == "" {
-		return errors.New("name required")
+	if err := validate.Name(c.Name); err != nil {
+		return err
 	}
 	if c.Public == nil {
 		return errors.New("public required")
@@ -92,17 +92,11 @@ func (c CreateEvent) Validate() error {
 		if len(c.Location.Address) > 120 {
 			return errors.New("maximum characters for an address is 120")
 		}
-		if c.Location.Coordinates.Latitude == 0 {
-			return errors.New("invalid latitude")
-		}
-		if c.Location.Coordinates.Longitude == 0 {
-			return errors.New("invalid longitude")
+		if err := c.Location.Coordinates.Validate(); err != nil {
+			return err
 		}
 	} else if !*c.Virtual {
 		return errors.New("location required")
-	}
-	if len(c.Name) > 60 {
-		return errors.New("invalid name, maximum length is 60 characters")
 	}
 	if len(c.Description) > 200 {
 		return errors.New("invalid description, maximum length is 200 characters")
@@ -118,20 +112,20 @@ func (c CreateEvent) Validate() error {
 		}
 	}
 	if c.HeaderURL != nil {
-		if err := validate.URL(*c.LogoURL); err != nil {
+		if err := validate.URL(*c.HeaderURL); err != nil {
 			return errors.Wrap(err, "header_url")
 		}
 	}
 	if c.TicketType < Free && c.TicketType > Donation {
 		return errors.New("invalid ticket_type")
 	}
-	if c.MinAge < 0 || c.MinAge > 100 {
-		return errors.New("min_age must be between 0 and 100")
+	if c.MinAge < 0 || c.MinAge > 120 {
+		return errors.New("min_age must be between 0 and 120")
 	}
 	if err := validate.Cron(c.Cron); err != nil {
 		return errors.Wrap(err, "invalid cron")
 	}
-	if c.EndDate.Before(time.Now()) {
+	if c.EndDate.Before(time.Now()) || c.EndDate.Before(c.StartDate) {
 		return errors.New("invalid end_date")
 	}
 	return nil
@@ -161,8 +155,13 @@ func (u UpdateEvent) Validate() error {
 		return errors.New("no values provided")
 	}
 	if u.Name != nil {
-		if *u.Name == "" {
-			return errors.New("invalid name")
+		if err := validate.Name(*u.Name); err != nil {
+			return err
+		}
+	}
+	if u.Description != nil {
+		if len(*u.Description) > 150 {
+			return errors.New("invalid description, maximum length is 150 characters")
 		}
 	}
 	if u.URL != nil {
@@ -185,6 +184,14 @@ func (u UpdateEvent) Validate() error {
 			return errors.New("invalid type")
 		}
 	}
+	if u.Location != nil {
+		if len(u.Location.Address) > 120 {
+			return errors.New("maximum characters for an address is 120")
+		}
+		if err := u.Location.Coordinates.Validate(); err != nil {
+			return err
+		}
+	}
 	if u.Cron != nil {
 		if err := validate.Cron(*u.Cron); err != nil {
 			return errors.Wrap(err, "invalid cron")
@@ -196,13 +203,13 @@ func (u UpdateEvent) Validate() error {
 		}
 	}
 	if u.EndDate != nil {
-		if u.EndDate.IsZero() || u.EndDate.Before(time.Now()) {
+		if u.EndDate.IsZero() || u.EndDate.Before(time.Now()) || u.EndDate.Before(*u.StartDate) {
 			return errors.New("invalid end_date")
 		}
 	}
 	if u.MinAge != nil {
-		if *u.MinAge == 0 {
-			return errors.New("min_age must be higher than zero")
+		if *u.MinAge < 0 || *u.MinAge > 120 {
+			return errors.New("min_age must be between 0 and 120")
 		}
 	}
 	if u.Slots != nil {
@@ -232,7 +239,7 @@ func (c Coordinates) Validate() error {
 		return errors.Errorf("invalid latitude (%f), must be a value between -90 and 90", c.Latitude)
 	}
 	if c.Longitude < -180 || c.Longitude > 180 {
-		return errors.Errorf("invalid longitude (%f), must be a value between -180 and 180", c.Latitude)
+		return errors.Errorf("invalid longitude (%f), must be a value between -180 and 180", c.Longitude)
 	}
 	return nil
 }
@@ -251,7 +258,7 @@ func (ls LocationSearch) Validate() error {
 		return errors.Errorf("invalid latitude (%f), must be a value between -90 and 90", ls.Latitude)
 	}
 	if ls.Longitude < -180 || ls.Longitude > 180 {
-		return errors.Errorf("invalid longitude (%f), must be a value between -180 and 180", ls.Latitude)
+		return errors.Errorf("invalid longitude (%f), must be a value between -180 and 180", ls.Longitude)
 	}
 	if ls.LatitudeDelta > 1.2 {
 		return errors.Errorf("invalid latitude_delta (%f), maximum value allowed is 1.2", ls.LatitudeDelta)

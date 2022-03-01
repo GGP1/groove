@@ -19,11 +19,8 @@ type Ticket struct {
 
 // Validate verifies if the ticket values are valid.
 func (t Ticket) Validate() error {
-	if t.Name == "" {
-		return errors.New("name required")
-	}
-	if len(t.Name) > 60 {
-		return errors.New("invalid name, maximum length is 60 characters")
+	if err := validate.Name(t.Name); err != nil {
+		return err
 	}
 	if len(t.Description) > 200 {
 		return errors.New("invalid description, maximum length is 200 characters")
@@ -35,10 +32,12 @@ func (t Ticket) Validate() error {
 	}
 	if t.Cost == nil {
 		return errors.New("cost required")
+	} else if *t.Cost < 0 {
+		return errors.New("cost must be equal to or higher than 0")
 	}
 	if t.LinkedRole != "" {
-		if err := validate.RoleName(t.LinkedRole); err != nil {
-			return err
+		if len(t.LinkedRole) > 60 {
+			return errors.New("invalid linked_role length, maximum is 60")
 		}
 	}
 	return nil
@@ -46,6 +45,7 @@ func (t Ticket) Validate() error {
 
 // UpdateTicket is the structure used to update a ticket.
 type UpdateTicket struct {
+	Name           *string `json:"name,omitempty"`
 	AvailableCount *int64  `json:"available,omitempty" db:"available_count"`
 	Cost           *int64  `json:"cost,omitempty"`
 	LinkedRole     *string `json:"linked_role,omitempty" db:"linked_role"`
@@ -54,6 +54,11 @@ type UpdateTicket struct {
 
 // Validate verifies if the ticket values for update are valid.
 func (u UpdateTicket) Validate() error {
+	if u.Name != nil {
+		if err := validate.Name(*u.Name); err != nil {
+			return err
+		}
+	}
 	if u.Description != nil && len(*u.Description) > 200 {
 		return errors.New("invalid description, maximum length is 200 characters")
 	}

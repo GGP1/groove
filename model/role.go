@@ -37,10 +37,7 @@ type Role struct {
 
 // Validate returns an error if the role is invalid.
 func (r Role) Validate() error {
-	if r.Name == "" {
-		return errors.New("name required")
-	}
-	if err := validate.RoleName(r.Name); err != nil {
+	if err := validate.Name(r.Name); err != nil {
 		return err
 	}
 	if roles.Reserved.Exists(r.Name) {
@@ -65,25 +62,30 @@ type SetRole struct {
 
 // Validate verifies the ids and the role name passed is correct.
 func (sr SetRole) Validate() error {
-	if err := validate.RoleName(sr.RoleName); err != nil {
-		return err
+	if err := validate.Name(sr.RoleName); err != nil {
+		return errors.Wrap(err, "role_name")
 	}
 	return validate.ULIDs(sr.UserIDs...)
 }
 
 // UpdateRole is the structure used to update roles.
 type UpdateRole struct {
+	Name           *string         `json:"name,omitempty"`
 	PermissionKeys *pq.StringArray `json:"permission_keys,omitempty" db:"permission_keys"`
 }
 
 // Validate validates update roles fields.
 func (r UpdateRole) Validate() error {
-	if r.PermissionKeys == nil || len(*r.PermissionKeys) == 0 {
-		return errors.New("permission_keys required")
+	if r.Name != nil {
+		if err := validate.Name(*r.Name); err != nil {
+			return err
+		}
 	}
-	for i, k := range *r.PermissionKeys {
-		if err := validate.Key(k); err != nil {
-			return errors.Wrapf(err, "permission_keys [%d]", i)
+	if r.PermissionKeys != nil {
+		for i, k := range *r.PermissionKeys {
+			if err := validate.Key(k); err != nil {
+				return errors.Wrapf(err, "permission_keys [%d]", i)
+			}
 		}
 	}
 	return nil
