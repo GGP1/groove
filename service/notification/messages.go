@@ -122,7 +122,7 @@ func MentionContent(session auth.Session) string {
 	return tmplString(mentionTmpl, session.Username)
 }
 
-func tmplString(t *template.Template, data interface{}) string {
+func tmplString(t *template.Template, data any) string {
 	buf := bufferpool.Get()
 	if err := t.Execute(buf, data); err != nil {
 		panic(err)

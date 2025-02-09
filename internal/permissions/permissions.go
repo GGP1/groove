@@ -24,20 +24,20 @@ const (
 )
 
 // Reserved is a read-only map containing all reserved permissions keys.
-var Reserved = romap.New(map[string]interface{}{
-	All:               struct{}{},
-	Access:            struct{}{},
-	BanUsers:          struct{}{},
-	ModifyPermissions: struct{}{},
-	ModifyPosts:       struct{}{},
-	ModifyProducts:    struct{}{},
-	ModifyRoles:       struct{}{},
-	ModifyTickets:     struct{}{},
-	ModifyZones:       struct{}{},
-	InviteUsers:       struct{}{},
-	SetUserRole:       struct{}{},
-	UpdateEvent:       struct{}{},
-	ViewEvent:         struct{}{},
+var Reserved = romap.New(map[string]struct{}{
+	All:               {},
+	Access:            {},
+	BanUsers:          {},
+	ModifyPermissions: {},
+	ModifyPosts:       {},
+	ModifyProducts:    {},
+	ModifyRoles:       {},
+	ModifyTickets:     {},
+	ModifyZones:       {},
+	InviteUsers:       {},
+	SetUserRole:       {},
+	UpdateEvent:       {},
+	ViewEvent:         {},
 })
 
 // Require makes sure the user has all the permissions required.

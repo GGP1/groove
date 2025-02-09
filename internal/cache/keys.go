@@ -1,34 +1,34 @@
 package cache
 
 const (
-	eventPrivacySuffix = ":privacy"
-	permissionsSuffix  = ":permissions"
-	rolesSuffix        = ":roles"
-	userTypeSuffix     = ":type"
-	zonesSuffix        = ":zones"
+	eventPrivacyPrefix = "event_privacy:"
+	permissionsPrefix  = "permissions:"
+	rolesPrefix        = "roles:"
+	userTypePrefix     = "type:"
+	zonesPrefix        = "zones:"
 )
 
-// EventPrivacy returns eventID + privacy's key suffix.
+// EventPrivacy returns event privacy cache key .
 func EventPrivacy(eventID string) string {
-	return eventID + eventPrivacySuffix
+	return eventPrivacyPrefix + eventID
 }
 
-// PermissionsKey returns eventID + permissions' key suffix.
+// PermissionsKey returns permissions cache key.
 func PermissionsKey(eventID string) string {
-	return eventID + permissionsSuffix
+	return permissionsPrefix + eventID
 }
 
-// RolesKey returns eventID + roles' key suffix.
+// RolesKey returns roles cache key.
 func RolesKey(eventID string) string {
-	return eventID + rolesSuffix
+	return rolesPrefix + eventID
 }
 
-// UserTypeKey returns userID + type's key suffix.
+// UserTypeKey returns user type cache key.
 func UserTypeKey(userID string) string {
-	return userID + userTypeSuffix
+	return userTypePrefix + userID
 }
 
-// ZonesKey returns eventID + zones' key suffix.
+// ZonesKey returns zones cache key.
 func ZonesKey(eventID string) string {
-	return eventID + zonesSuffix
+	return zonesPrefix + eventID
 }

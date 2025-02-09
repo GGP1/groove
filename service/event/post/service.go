@@ -125,11 +125,11 @@ func (s *service) CreateComment(ctx context.Context, session auth.Session, comme
 	}
 
 	if comment.PostID != nil {
-		if _, err := sqlTx.ExecContext(ctx, "UPDATE events_posts SET comments_count = comments_count + 1"); err != nil {
+		if _, err := sqlTx.ExecContext(ctx, "UPDATE events_posts SET comments_count = comments_count + 1 WHERE id = $1", comment.PostID); err != nil {
 			return "", errors.Wrap(err, "updating post comments count")
 		}
 	} else if comment.ParentCommentID != nil {
-		if _, err := sqlTx.ExecContext(ctx, "UPDATE events_posts_comments SET replies_count = replies_count + 1"); err != nil {
+		if _, err := sqlTx.ExecContext(ctx, "UPDATE events_posts_comments SET replies_count = replies_count + 1 WHERE id = $1", comment.ParentCommentID); err != nil {
 			return "", errors.Wrap(err, "updating comment replies count")
 		}
 	}
@@ -229,7 +229,7 @@ func (s *service) GetCommentLikes(ctx context.Context, commentID string, params 
 
 func (s *service) GetCommentLikesCount(ctx context.Context, commentID string) (int64, error) {
 	q := "SELECT COUNT(*) FROM events_posts_comments_likes WHERE comment_id=$1"
-	return postgres.QueryInt(ctx, s.db, q, commentID)
+	return postgres.Query[int64](ctx, s.db, q, commentID)
 }
 
 // GetHomePosts returns a user's home posts.
@@ -294,7 +294,7 @@ func (s *service) GetPostLikes(ctx context.Context, postID string, params params
 // GetPostLikesCount returns the number of likes in a comment.
 func (s *service) GetPostLikesCount(ctx context.Context, postID string) (int64, error) {
 	q := "SELECT COUNT(*) FROM events_posts_likes WHERE post_id=$1"
-	return postgres.QueryInt(ctx, s.db, q, postID)
+	return postgres.Query[int64](ctx, s.db, q, postID)
 }
 
 // GetPosts returns all the posts corresponding to an event.
@@ -321,7 +321,6 @@ func (s *service) GetPosts(ctx context.Context, eventID, userID string, params p
 
 // GetReplies returns a comment's replies.
 func (s *service) GetReplies(ctx context.Context, parentID, userID string, params params.Query) ([]model.Comment, error) {
-	// TODO: benchmark OR vs UNION
 	q := `SELECT 
 	{fields},
 	(SELECT COUNT(*) FROM events_posts_comments_likes WHERE comment_id = c.id) as likes_count,

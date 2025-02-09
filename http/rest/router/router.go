@@ -128,7 +128,7 @@ func home() http.HandlerFunc {
 	}
 }
 
-func panicHandler(w http.ResponseWriter, r *http.Request, err interface{}) {
+func panicHandler(w http.ResponseWriter, r *http.Request, err any) {
 	response.Error(w, http.StatusInternalServerError, errors.New(fmt.Sprint("recovered from panic:", err)))
 	log.DPanic("panic", zap.Any("error", err))
 }

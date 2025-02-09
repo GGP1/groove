@@ -13,13 +13,7 @@ import (
 )
 
 // ItemExpiration represents the time until an object is considered expired.
-//
-// TODO: find a better way to initialize this value
-var ItemExpiration time.Duration
-
-func init() {
-	ItemExpiration = 10 * time.Minute
-}
+var ItemExpiration = 10 * time.Minute
 
 // Connect establishes a connection with the redis client.
 func Connect(ctx context.Context, config config.Redis) (*redis.Client, error) {

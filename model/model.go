@@ -63,7 +63,7 @@ func (c comment) URLQueryKey() string {
 	return "comment.fields"
 }
 func (c comment) CacheKey(id string) string {
-	return id + "_comments"
+	return "comments:" + id
 }
 func (c comment) Tablename() string {
 	return "events_posts_comments"
@@ -92,7 +92,7 @@ func (e event) URLQueryKey() string {
 	return "event.fields"
 }
 func (e event) CacheKey(id string) string {
-	return id + "_events"
+	return "events:" + id
 }
 func (e event) Tablename() string {
 	return "events"
@@ -119,7 +119,7 @@ func (n notification) URLQueryKey() string {
 	return "notification.fields"
 }
 func (n notification) CacheKey(id string) string {
-	return id + "_notifications"
+	return "notifications:" + id
 }
 func (n notification) Tablename() string {
 	return "notifications"
@@ -146,7 +146,7 @@ func (p post) URLQueryKey() string {
 	return "post.fields"
 }
 func (p post) CacheKey(eventID string) string {
-	return eventID + "_posts"
+	return "posts:" + eventID
 }
 func (p post) Tablename() string {
 	return "events_posts"
@@ -173,7 +173,7 @@ func (pr product) URLQueryKey() string {
 	return "product.fields"
 }
 func (pr product) CacheKey(eventID string) string {
-	return eventID + "_product"
+	return "product:" + eventID
 }
 func (pr product) Tablename() string {
 	return "events_products"
@@ -200,7 +200,7 @@ func (u user) URLQueryKey() string {
 	return "user.fields"
 }
 func (u user) CacheKey(id string) string {
-	return id + "_users"
+	return ":users" + id
 }
 func (u user) Tablename() string {
 	return "users"
@@ -210,8 +210,8 @@ func (u user) ValidField(field string) bool {
 	return ok
 }
 
-// getFields returns a slice with the name of the files of an object.
-func getFields(obj interface{}) map[string]struct{} {
+// getFields returns a slice with the name of the fields of an object.
+func getFields(obj any) map[string]struct{} {
 	vPtr := reflect.ValueOf(obj)
 	v := reflect.Indirect(vPtr)
 	t := baseType(v.Type())
