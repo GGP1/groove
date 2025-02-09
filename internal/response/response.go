@@ -66,7 +66,7 @@ func Error(w http.ResponseWriter, status int, err error) {
 }
 
 // JSON is the function used to send JSON responses.
-func JSON(w http.ResponseWriter, status int, v interface{}) {
+func JSON(w http.ResponseWriter, status int, v any) {
 	buf := bufferpool.Get()
 
 	if err := json.NewEncoder(buf).Encode(v); err != nil {
@@ -89,7 +89,7 @@ func JSON(w http.ResponseWriter, status int, v interface{}) {
 // JSONAndCache works just like json but saves the encoding of v to the cache before writing the response.
 //
 // The status should always be 200 (OK). Usually, only single users and events will be cached.
-func JSONAndCache(rdb *redis.Client, w http.ResponseWriter, key string, v interface{}) {
+func JSONAndCache(rdb *redis.Client, w http.ResponseWriter, key string, v any) {
 	buf := bufferpool.Get()
 
 	if err := json.NewEncoder(buf).Encode(v); err != nil {
@@ -116,16 +116,16 @@ func JSONAndCache(rdb *redis.Client, w http.ResponseWriter, key string, v interf
 }
 
 // JSONCount sends a json encoded response with the status and a count.
-func JSONCount(w http.ResponseWriter, status int, fieldName string, count interface{}) {
-	JSON(w, status, map[string]interface{}{
+func JSONCount(w http.ResponseWriter, status int, fieldName string, count any) {
+	JSON(w, status, map[string]any{
 		"status":  status,
 		fieldName: count,
 	})
 }
 
 // JSONCursor sends a json encoded response with the next cursor and items.
-func JSONCursor(w http.ResponseWriter, nextCursor, fieldName string, items interface{}) {
-	JSON(w, http.StatusOK, map[string]interface{}{
+func JSONCursor(w http.ResponseWriter, nextCursor, fieldName string, items any) {
+	JSON(w, http.StatusOK, map[string]any{
 		"next_cursor": nextCursor,
 		fieldName:     items,
 	})

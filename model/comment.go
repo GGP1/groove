@@ -10,7 +10,7 @@ import (
 
 // Comment represents a comment.
 //
-// A comment can be a post comment (PostID != null) or a reply on another comment (ParentCommentID != null)
+// A comment can be a post comment or a reply to another comment (ParentCommentID != null)
 type Comment struct {
 	CreatedAt       time.Time `json:"created_at,omitempty" db:"created_at"`
 	ParentCommentID *string   `json:"parent_comment_id,omitempty" db:"parent_comment_id"`

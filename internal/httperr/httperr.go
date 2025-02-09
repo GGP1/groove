@@ -31,10 +31,10 @@ func New(message string, status int) error {
 }
 
 // Errorf creates a formatted error.
-func Errorf(status int, format string, args ...interface{}) error {
+func Errorf(status int, format string, args ...any) error {
 	return &Err{
 		msg:    fmt.Sprintf(format, args...),
-		status: int(status),
+		status: status,
 	}
 }
 

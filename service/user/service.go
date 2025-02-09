@@ -79,7 +79,7 @@ type service struct {
 	db  *sql.DB
 	rdb *redis.Client
 
-	admins  map[string]interface{}
+	admins  map[string]struct{}
 	metrics metrics
 
 	notificationService notification.Service
@@ -89,7 +89,7 @@ type service struct {
 func NewService(
 	db *sql.DB,
 	rdb *redis.Client,
-	admins map[string]interface{},
+	admins map[string]struct{},
 	notificationService notification.Service,
 ) Service {
 	return &service{
@@ -124,10 +124,8 @@ func (s *service) AreFriends(ctx context.Context, userID, targetID string) (bool
 		UNION
 		SELECT 1 FROM users_friends WHERE user_id=$2 AND friend_id=$1
 	)`
-	row := s.db.QueryRowContext(ctx, q, userID, targetID)
-
-	var areFriends bool
-	if err := row.Scan(&areFriends); err != nil {
+	areFriends, err := postgres.Query[bool](ctx, s.db, q, userID, targetID)
+	if err != nil {
 		return false, errors.Wrap(err, "checking friendship")
 	}
 
@@ -268,7 +266,7 @@ func (s *service) GetAttendingEventsCount(ctx context.Context, userID string) (i
 	s.metrics.incMethodCalls("GetAttendingEventsCount")
 
 	q := "SELECT COUNT(*) FROM events_users_roles WHERE user_id=$1 AND role_name NOT IN ($2, $3)"
-	return postgres.QueryInt(ctx, s.db, q, userID, roles.Viewer, roles.Host)
+	return postgres.Query[int64](ctx, s.db, q, userID, roles.Viewer, roles.Host)
 }
 
 // GetBannedEvents returns the events that the user is banned from.
@@ -294,7 +292,7 @@ func (s *service) GetBannedEvents(ctx context.Context, userID string, params par
 func (s *service) GetBannedEventsCount(ctx context.Context, userID string) (int64, error) {
 	s.metrics.incMethodCalls("GetBannedEventsCount")
 
-	return postgres.QueryInt(ctx, s.db, "SELECT COUNT(*) FROM events_banned WHERE user_id=$1", userID)
+	return postgres.Query[int64](ctx, s.db, "SELECT COUNT(*) FROM events_banned WHERE user_id=$1", userID)
 }
 
 func (s *service) GetBlocked(ctx context.Context, userID string, params params.Query) ([]model.User, error) {
@@ -307,7 +305,7 @@ func (s *service) GetBlocked(ctx context.Context, userID string, params params.Q
 func (s *service) GetBlockedCount(ctx context.Context, userID string) (int64, error) {
 	s.metrics.incMethodCalls("GetBlockedCount")
 
-	return postgres.QueryInt(ctx, s.db, "SELECT COUNT(*) FROM users_blocked WHERE user_id=$1", userID)
+	return postgres.Query[int64](ctx, s.db, "SELECT COUNT(*) FROM users_blocked WHERE user_id=$1", userID)
 }
 
 func (s *service) GetBlockedBy(ctx context.Context, userID string, params params.Query) ([]model.User, error) {
@@ -320,7 +318,7 @@ func (s *service) GetBlockedBy(ctx context.Context, userID string, params params
 func (s *service) GetBlockedByCount(ctx context.Context, userID string) (int64, error) {
 	s.metrics.incMethodCalls("GetBlockedByCount")
 
-	return postgres.QueryInt(ctx, s.db, "SELECT COUNT(*) FROM users_blocked WHERE blocked_id=$1", userID)
+	return postgres.Query[int64](ctx, s.db, "SELECT COUNT(*) FROM users_blocked WHERE blocked_id=$1", userID)
 }
 
 func (s *service) GetByEmail(ctx context.Context, email string) (model.User, error) {
@@ -367,7 +365,7 @@ func (s *service) GetFollowers(ctx context.Context, userID string, params params
 func (s *service) GetFollowersCount(ctx context.Context, userID string) (int64, error) {
 	s.metrics.incMethodCalls("GetFollowersCount")
 
-	return postgres.QueryInt(ctx, s.db, "SELECT COUNT(*) FROM users_followers WHERE user_id=$1", userID)
+	return postgres.Query[int64](ctx, s.db, "SELECT COUNT(*) FROM users_followers WHERE user_id=$1", userID)
 }
 
 // GetFollowing returns the businesses the user is following.
@@ -382,7 +380,7 @@ func (s *service) GetFollowing(ctx context.Context, userID string, params params
 func (s *service) GetFollowingCount(ctx context.Context, userID string) (int64, error) {
 	s.metrics.incMethodCalls("GetFollowingCount")
 
-	return postgres.QueryInt(ctx, s.db, "SELECT COUNT(*) FROM users_followers WHERE follower_id=$1", userID)
+	return postgres.Query[int64](ctx, s.db, "SELECT COUNT(*) FROM users_followers WHERE follower_id=$1", userID)
 }
 
 // GetFriends returns people the user fetched is friend of.
@@ -406,7 +404,7 @@ func (s *service) GetFriendsCount(ctx context.Context, userID string) (int64, er
 		UNION
 		SELECT 1 FROM users_friends WHERE friend_id=$1
 	) AS x`
-	return postgres.QueryInt(ctx, s.db, q, userID)
+	return postgres.Query[int64](ctx, s.db, q, userID)
 }
 
 // GetFriendsInCommon returns the friends in common between userID and friendID.
@@ -438,7 +436,7 @@ func (s *service) GetFriendsInCommonCount(ctx context.Context, userID, friendID 
 		UNION
 		SELECT 1 FROM users_friends WHERE friend_id=$2
 	) AS x`
-	return postgres.QueryInt(ctx, s.db, q, userID, friendID)
+	return postgres.Query[int64](ctx, s.db, q, userID, friendID)
 }
 
 // GetFriendsNotInCommon returns the friends that are not in common between userID and friendID.
@@ -478,7 +476,7 @@ func (s *service) GetFriendsNotInCommonCount(ctx context.Context, userID, friend
 			SELECT 1 FROM users_friends WHERE friend_id=$2
 		)
 	)`
-	return postgres.QueryInt(ctx, s.db, q, userID, friendID)
+	return postgres.Query[int64](ctx, s.db, q, userID, friendID)
 }
 
 // GetHostedEvents returns the events hosted by the user with the given id.
@@ -488,7 +486,7 @@ func (s *service) GetHostedEvents(ctx context.Context, userID string, params par
 	q := `SELECT {fields} FROM {table} WHERE id IN 
 	(SELECT event_id FROM events_users_roles WHERE user_id=$1 AND role_name=$2)
 	{pag}`
-	return s.scanEvents(ctx, params, q, userID, string(roles.Host))
+	return s.scanEvents(ctx, params, q, userID, roles.Host)
 }
 
 // GetHostedEventsCount returns the number of events hosted by the user with the given id.
@@ -496,7 +494,7 @@ func (s *service) GetHostedEventsCount(ctx context.Context, userID string) (int6
 	s.metrics.incMethodCalls("GetHostedEventsCount")
 
 	q := "SELECT COUNT(*) FROM events_users_roles WHERE user_id=$1 AND role_name=$2"
-	return postgres.QueryInt(ctx, s.db, q, userID, roles.Host)
+	return postgres.Query[int64](ctx, s.db, q, userID, roles.Host)
 }
 
 // GetInvitedEvents returns the events that the user is invited to.
@@ -506,7 +504,7 @@ func (s *service) GetInvitedEvents(ctx context.Context, userID string, params pa
 	q := `SELECT {fields} FROM {table} WHERE id IN 
 	(SELECT event_id FROM events_users_roles WHERE user_id=$1 AND role_name=$2)
 	{pag}`
-	return s.scanEvents(ctx, params, q, userID, string(roles.Viewer))
+	return s.scanEvents(ctx, params, q, userID, roles.Viewer)
 }
 
 // GetInvitedEventsCount returns the number of events that the user is invited to.
@@ -514,7 +512,7 @@ func (s *service) GetInvitedEventsCount(ctx context.Context, userID string) (int
 	s.metrics.incMethodCalls("GetInvitedEventsCount")
 
 	q := "SELECT COUNT(*) FROM events_users_roles WHERE user_id=$1 AND role_name=$2"
-	return postgres.QueryInt(ctx, s.db, q, userID, roles.Viewer)
+	return postgres.Query[int64](ctx, s.db, q, userID, roles.Viewer)
 }
 
 // GetLikedEvents returns the events that the user likes.
@@ -531,7 +529,7 @@ func (s *service) GetLikedEvents(ctx context.Context, userID string, params para
 func (s *service) GetLikedEventsCount(ctx context.Context, userID string) (int64, error) {
 	s.metrics.incMethodCalls("GetLikedEventsCount")
 
-	return postgres.QueryInt(ctx, s.db, "SELECT COUNT(*) FROM events_likes WHERE user_id=$1", userID)
+	return postgres.Query[int64](ctx, s.db, "SELECT COUNT(*) FROM events_likes WHERE user_id=$1", userID)
 }
 
 // GetStatistics returns a users' predicates statistics.
@@ -602,7 +600,7 @@ func (s *service) InviteToEvent(ctx context.Context, session auth.Session, invit
 func (s *service) IsAdmin(ctx context.Context, userID string) (bool, error) {
 	s.metrics.incMethodCalls("IsAdmin")
 
-	return postgres.QueryBool(ctx, s.db, "SELECT is_admin FROM users WHERE id=$1", userID)
+	return postgres.Query[bool](ctx, s.db, "SELECT is_admin FROM users WHERE id=$1", userID)
 }
 
 // IsBlocked returns if the blockedID user is blocked by the userID one or not.
@@ -610,14 +608,14 @@ func (s *service) IsBlocked(ctx context.Context, userID, blockedID string) (bool
 	s.metrics.incMethodCalls("IsBlocked")
 
 	q := "SELECT EXISTS(SELECT 1 FROM users_blocked WHERE user_id=$1 AND blocked_id=$2)"
-	return postgres.QueryBool(ctx, s.db, q, userID, blockedID)
+	return postgres.Query[bool](ctx, s.db, q, userID, blockedID)
 }
 
 // ProfileIsPrivate returns if the user's profile is private or not.
 func (s *service) ProfileIsPrivate(ctx context.Context, userID string) (bool, error) {
 	s.metrics.incMethodCalls("ProfileIsPrivate")
 
-	return postgres.QueryBool(ctx, s.db, "SELECT private FROM users WHERE id=$1", userID)
+	return postgres.Query[bool](ctx, s.db, "SELECT private FROM users WHERE id=$1", userID)
 }
 
 // RemoveFriend removes a friend.
@@ -691,7 +689,7 @@ func (s *service) Type(ctx context.Context, userID string) (model.UserType, erro
 		return model.UserType(v), nil
 	}
 
-	accType, err := postgres.QueryInt(ctx, s.db, "SELECT type FROM users WHERE id=$1", userID)
+	accType, err := postgres.Query[int64](ctx, s.db, "SELECT type FROM users WHERE id=$1", userID)
 	if err != nil {
 		return 0, errors.Wrap(err, "querying user type")
 	}
@@ -772,7 +770,7 @@ func (s *service) Update(ctx context.Context, userID string, user model.UpdateUs
 	return nil
 }
 
-func (s *service) scanEvents(ctx context.Context, params params.Query, query string, args ...interface{}) ([]model.Event, error) {
+func (s *service) scanEvents(ctx context.Context, params params.Query, query string, args ...any) ([]model.Event, error) {
 	q := postgres.Select(model.T.Event, query, params)
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -801,7 +799,7 @@ func (s *service) scanUser(ctx context.Context, query, value string) (model.User
 	return user, nil
 }
 
-func (s *service) scanUsers(ctx context.Context, params params.Query, query string, args ...interface{}) ([]model.User, error) {
+func (s *service) scanUsers(ctx context.Context, params params.Query, query string, args ...any) ([]model.User, error) {
 	q := postgres.Select(model.T.User, query, params)
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {

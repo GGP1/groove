@@ -14,6 +14,10 @@ import (
 	"github.com/pkg/errors"
 )
 
+// We always use 'id' as the pagination field, in case we need a different one
+// in the future we could simply take it from the parameters
+const paginationField = "id"
+
 // BeginTx returns a new sql transaction and a context with it stored.
 func BeginTx(ctx context.Context, db *sql.DB) (*sql.Tx, context.Context) {
 	tx, err := db.BeginTx(ctx, nil)
@@ -67,46 +71,18 @@ func BulkInsert(ctx context.Context, tx *sql.Tx, table string, fields ...string)
 	return stmt, nil
 }
 
-// QueryBool returns a boolean scanned from a single row.
-func QueryBool(ctx context.Context, db *sql.DB, query string, args ...interface{}) (bool, error) {
+// Query returns a value T scanned from a single row.
+func Query[T any](ctx context.Context, db *sql.DB, query string, args ...any) (T, error) {
 	row := db.QueryRowContext(ctx, query, args...)
-	var b bool
-	if err := row.Scan(&b); err != nil {
+	var v T
+	if err := row.Scan(&v); err != nil {
 		if err == sql.ErrNoRows {
-			return false, nil
+			return v, nil
 		}
-		return false, err
+		return v, err
 	}
 
-	return b, nil
-}
-
-// QueryInt returns a string scanned from a single row.
-func QueryInt(ctx context.Context, db *sql.DB, query string, args ...interface{}) (int64, error) {
-	row := db.QueryRowContext(ctx, query, args...)
-	var i int64
-	if err := row.Scan(&i); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, errors.Wrap(err, "value not found")
-		}
-		return 0, errors.Wrap(err, "scanning value")
-	}
-
-	return i, nil
-}
-
-// QueryString returns a string scanned from a single row.
-func QueryString(ctx context.Context, db *sql.DB, query string, args ...interface{}) (string, error) {
-	row := db.QueryRowContext(ctx, query, args...)
-	var str string
-	if err := row.Scan(&str); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", errors.Wrap(err, "value not found")
-		}
-		return "", errors.Wrap(err, "scanning value")
-	}
-
-	return str, nil
+	return v, nil
 }
 
 // ToTSQuery formats a string to a tsquery-like syntax.
@@ -120,7 +96,6 @@ func ToTSQuery(query string) string {
 type selector struct {
 	model    model.Model
 	buf      *bytes.Buffer
-	pagField string
 	params   params.Query
 	useAlias bool
 }
@@ -134,7 +109,6 @@ func Select(m model.Model, query string, params params.Query) string {
 		buf:      bufferpool.Get(),
 		model:    m,
 		useAlias: strings.IndexByte(query, '.') != -1,
-		pagField: "id",
 		params:   params,
 	}
 
@@ -163,9 +137,6 @@ func Select(m model.Model, query string, params params.Query) string {
 				s.buf.WriteString(m.Alias())
 			}
 		case "pag":
-			// TODO: pagination is always at the end so it would be better
-			// to look for it the other way around. A decision is needed on
-			// whether the query can contain only unique tokens or many of the same kind.
 			s.addPagination()
 		}
 
@@ -199,7 +170,7 @@ func (s *selector) writeFields() {
 func (s *selector) addPagination() {
 	if s.params.LookupID != "" {
 		s.buf.WriteString("AND ")
-		s.writeField(s.pagField)
+		s.writeField(paginationField)
 		s.buf.WriteString("='")
 		s.buf.WriteString(s.params.LookupID)
 		s.buf.WriteRune('\'')
@@ -207,13 +178,13 @@ func (s *selector) addPagination() {
 	}
 	if s.params.Cursor != params.DefaultCursor && s.params.Cursor != "" {
 		s.buf.WriteString("AND ")
-		s.writeField(s.pagField)
+		s.writeField(paginationField)
 		s.buf.WriteString(" < '")
 		s.buf.WriteString(s.params.Cursor)
 		s.buf.WriteString("' ")
 	}
 	s.buf.WriteString("ORDER BY ")
-	s.writeField(s.pagField)
+	s.writeField(paginationField)
 	s.buf.WriteString(" DESC LIMIT ")
 	if s.params.Limit == "" {
 		s.params.Limit = params.DefaultLimit

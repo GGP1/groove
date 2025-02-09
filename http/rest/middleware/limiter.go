@@ -78,6 +78,8 @@ func (rl RateLimiter) Limit(next http.Handler) http.Handler {
 }
 
 func getKey(ctx context.Context, r *http.Request) (string, error) {
+	// This should happen after other middlewares used auth.AlreadyLoggedIn
+	// since this method does not validate it on redis
 	session, err := auth.GetSession(ctx, r)
 	if err == nil {
 		return session.ID, nil

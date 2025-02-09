@@ -18,9 +18,9 @@ const (
 
 // Reserved is a read-only map that contains reserved roles
 // and its permission keys applying to all events.
-var Reserved = romap.New(map[string]interface{}{
-	Host:      []string{permissions.All},
-	Attendant: []string{permissions.Access},
-	Moderator: []string{permissions.Access, permissions.BanUsers},
-	Viewer:    []string{permissions.ViewEvent},
+var Reserved = romap.New(map[string][]string{
+	Host:      {permissions.All},
+	Attendant: {permissions.Access},
+	Moderator: {permissions.Access, permissions.BanUsers},
+	Viewer:    {permissions.ViewEvent},
 })

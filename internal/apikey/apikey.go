@@ -81,7 +81,7 @@ func Check(key string) error {
 		return ErrInvalidAPIKey
 	}
 
-	token, err := jwt.ParseWithClaims(key[len(prefix):], &Claims{}, func(t *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(key[len(prefix):], &Claims{}, func(t *jwt.Token) (any, error) {
 		return secretKey, nil
 	})
 	if err != nil {

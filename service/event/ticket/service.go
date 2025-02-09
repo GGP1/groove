@@ -61,7 +61,7 @@ func NewService(db *sql.DB, rdb *redis.Client, roleService role.Service) Service
 // Available returns the number of available tickets.
 func (s *service) Available(ctx context.Context, eventID, ticketName string) (int64, error) {
 	q := "SELECT available_count FROM events_tickets WHERE event_id=$1 AND name=$2"
-	return postgres.QueryInt(ctx, s.db, q, eventID, ticketName)
+	return postgres.Query[int64](ctx, s.db, q, eventID, ticketName)
 }
 
 // Buy performs the operations necessary when a ticket is bought.

@@ -14,7 +14,7 @@ import (
 
 // Config represents groove's configuration.
 type Config struct {
-	Admins        map[string]interface{}
+	Admins        map[string]struct{}
 	TLS           TLS
 	Logger        Logger
 	Notifications Notifications
@@ -204,17 +204,17 @@ func validateValues(config *Config) error {
 }
 
 var (
-	defaults = map[string]interface{}{
-		"admins":      map[string]interface{}{},
+	defaults = map[string]any{
+		"admins":      map[string]any{},
 		"development": true,
-		"logger": map[string]interface{}{
+		"logger": map[string]any{
 			"outFiles": []string{},
 		},
-		"notifications": map[string]interface{}{
+		"notifications": map[string]any{
 			"credentialsFile": "/firebase_credentials.json",
 			"maxRetries":      5,
 		},
-		"postgres": map[string]interface{}{
+		"postgres": map[string]any{
 			"host":            "postgres",
 			"port":            "5432",
 			"name":            "postgres",
@@ -228,10 +228,10 @@ var (
 			"maxConnIdleTime": 300, // Seconds
 			"metricsRate":     60,  // Seconds
 		},
-		"rateLimiter": map[string]interface{}{
+		"rateLimiter": map[string]any{
 			"rate": 5,
 		},
-		"redis": map[string]interface{}{
+		"redis": map[string]any{
 			"host":              "localhost",
 			"port":              6379,
 			"password":          "redis",
@@ -240,30 +240,30 @@ var (
 			"metricsRate":       60, // Seconds
 			"defaultExpiration": 30, // Minutes
 		},
-		"secrets": map[string]interface{}{
+		"secrets": map[string]any{
 			"encryption": "{X]_?4-6)hgp(P_w9nTO8f =2Gki",
 			"apiKeys":    "u3xLK_7HBf!s@1p-*Gj/]oUgQ>E4",
 		},
-		"server": map[string]interface{}{
+		"server": map[string]any{
 			"host": "localhost",
 			"port": 4000,
-			"letsEncrypt": map[string]interface{}{
+			"letsEncrypt": map[string]any{
 				"enabled":   false,
 				"acceptTOS": false,
 				"cache":     "",
 				"hosts":     []string{},
 			},
-			"timeout": map[string]interface{}{
+			"timeout": map[string]any{
 				"read":     5, // Seconds
 				"write":    5, // Seconds
 				"shutdown": 5, // Seconds
 			},
 		},
-		"sessions": map[string]interface{}{
+		"sessions": map[string]any{
 			"verifyEmails": false,
 			"expiration":   "168h", // 7 days
 		},
-		"tls": map[string]interface{}{
+		"tls": map[string]any{
 			"certFile": "",
 			"keyFile":  "",
 		},

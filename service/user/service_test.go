@@ -34,7 +34,7 @@ func TestMain(m *testing.M) {
 		func(pg *sql.DB, r *redis.Client) {
 			db = pg
 			roleService := role.NewService(db, r)
-			admins := map[string]interface{}{adminEmail: struct{}{}}
+			admins := map[string]struct{}{adminEmail: {}}
 			// TODO: mock notification service (firabase api)
 			userSv = user.NewService(db, r, admins, nil)
 			eventSv = event.NewService(db, r, nil, roleService)

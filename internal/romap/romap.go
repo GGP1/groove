@@ -2,53 +2,42 @@
 package romap
 
 // ReadOnlyMap is a map that cannot be modified.
-type ReadOnlyMap struct {
-	mp   map[string]interface{}
+type ReadOnlyMap[T any] struct {
+	mp   map[string]T
 	keys []string
 }
 
 // New returns a new read-only map.
-func New(mp map[string]interface{}) ReadOnlyMap {
+func New[T any](mp map[string]T) ReadOnlyMap[T] {
 	keys := make([]string, 0, len(mp))
 	for key := range mp {
 		keys = append(keys, key)
 	}
 
-	return ReadOnlyMap{
+	return ReadOnlyMap[T]{
 		keys: keys,
 		mp:   mp,
 	}
 }
 
 // Exists returns if the key is inside the map or not.
-func (r ReadOnlyMap) Exists(key string) bool {
+func (r ReadOnlyMap[T]) Exists(key string) bool {
 	_, ok := r.mp[key]
 	return ok
 }
 
 // Get returns the value corresponding to the key passed.
-func (r ReadOnlyMap) Get(key string) (interface{}, bool) {
+func (r ReadOnlyMap[T]) Get(key string) (T, bool) {
 	v, ok := r.mp[key]
 	return v, ok
 }
 
-// GetStringSlice is like Get but it casts the value to a []string.
-//
-// Panic is not avoided on purpose.
-func (r ReadOnlyMap) GetStringSlice(key string) ([]string, bool) {
-	v, ok := r.Get(key)
-	if v == nil {
-		return nil, false
-	}
-	return v.([]string), ok
-}
-
 // Keys returns a slice with all the map's keys.
-func (r ReadOnlyMap) Keys() []string {
+func (r ReadOnlyMap[T]) Keys() []string {
 	return r.keys
 }
 
 // Map returns a modifiable copy of the underlying map.
-func (r ReadOnlyMap) Map() map[string]interface{} {
+func (r ReadOnlyMap[T]) Map() map[string]T {
 	return r.mp
 }

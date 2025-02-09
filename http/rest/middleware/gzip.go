@@ -23,7 +23,7 @@ const (
 )
 
 var gzipPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return newGzipResponseWriter(nil)
 	},
 }

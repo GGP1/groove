@@ -268,10 +268,8 @@ func (s *service) GetFromUserCount(ctx context.Context, userID string) (int64, e
 	s.metrics.incMethodCalls("GetFromUserCount")
 
 	q := "SELECT COUNT(*) FROM notifications WHERE receiver_id=$1 AND seen=false"
-	row := s.db.QueryRowContext(ctx, q, userID)
-
-	var count int64
-	if err := row.Scan(&count); err != nil {
+	count, err := postgres.Query[int64](ctx, s.db, q, userID)
+	if err != nil {
 		return 0, errors.Wrap(err, "scanning notifications count")
 	}
 

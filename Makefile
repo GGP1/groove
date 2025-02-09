@@ -13,12 +13,6 @@ test:
 docker-build:
 	docker build -t groove_server .
 
-docker-run:
-	docker run \ 
-	-e SV_HOST="0.0.0.0" -e SV_SSL_CERTFILE="/certs/server.crt" -e SV_SSL_KEYFILE="/certs/server.key" \
-	-v "./server/certs/:/certs/" \
-	groove_server
-
 rebuild:
 	docker compose rm -sf server && docker compose up -d --build --no-deps server
 
