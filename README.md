@@ -21,5 +21,5 @@ Groove is more than just an event planning app, it's your go-to platform for cre
 ### Screenshots
 
 <div align="center">
-	<img src="https://github.com/user-attachments/assets/a558642f-a7e7-44ef-9f0e-818876cb50ed" height=700 width=1000 />
+	<img src="https://github.com/user-attachments/assets/a558642f-a7e7-44ef-9f0e-818876cb50ed" height=700 width=1100 />
 </div>
